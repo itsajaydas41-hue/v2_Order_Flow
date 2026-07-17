@@ -112,10 +112,10 @@ const SHEETS = {
   LoadItems:         ['GateEntryNo','PlanNo','OrderNo','SKUCode','SKUName','PlannedQty','DispatchQty'],
   Invoice:           ['GateEntryNo','OrderNo','InvoiceNo','InvoiceDate','InvoiceAmount','FileUrl','Status','CreatedAt'],
   GateOut:           ['GateEntryNo','OrderNo','VehicleNo','DriverName','InvoiceNo','InvoiceVerified','LRVerified','VehicleVerified','DocsVerified','WeighmentDone','GateOutDate','GateOutTime','Status'],
-  POD:               ['GateEntryNo','OrderNo','DeliveryDate','ReceiverName','ReceiverMobile','FileUrl','Remarks','HasReturn','Status'],
+  POD:               ['GateEntryNo','OrderNo','DeliveryDate','ReceiverName','ReceiverMobile','GrossWeight','NetWeight','PartyNetWeight','FileUrl','Remarks','HasReturn','Status'],
   PODItems:          ['GateEntryNo','OrderNo','SKUCode','SKUName','LoadedQty','DeliveredQty','RejectedQty'],
   Returns:           ['ReturnNo','GateEntryNo','OrderNo','ReturnDate','ReturnTime','VehicleNo','DriverName','Status','ReceivedDate','ReceiverName'],
-  Collection:        ['CollectionNo','OrderNo','InvoiceNo','VendorName','InvoiceAmount','CollectionDate','CollectionAmount','DeductionAmount','ActualReceived','GrossWeight','NetWeight','PartyNetWeight','PaymentMode','RefNo','Remarks','CreatedAt'],
+  Collection:        ['CollectionNo','OrderNo','InvoiceNo','VendorName','InvoiceAmount','CollectionDate','CollectionAmount','DeductionAmount','ActualReceived','PaymentMode','RefNo','Remarks','CreatedAt'],
   Schedule:          ['ScheduleNo','OrderNo','VendorName','PromisedDate','PromisedTime','Remarks','CreatedBy','CreatedAt'],
   ScheduleItems:     ['ScheduleNo','OrderNo','SKUCode','SKUName','OrderedQty','ScheduledQty'],
   /* ---- Purchase-to-Payment (P2P) ---- */
@@ -613,6 +613,15 @@ function authenticate(p){
   if(rA!==rB) throw new Error('Wrong role selected. Your role is: '+u.Role);
   return { email:u.Email, name:u.Name||u.Email, role:u.Role, perms:parsePerms_(u.Permissions) };
 }
+/* Forgot-password: sirf batata hai ki email registered hai ya nahi (koi private data nahi) */
+function emailExists(p){ return !!findUser_(p&&p.email); }
+/* OTP verify hone ke BAAD hi call hota hai — password reset karta hai */
+function resetPasswordWithOtp(p){
+  const u=findUser_(p&&p.email); if(!u) throw new Error('This email is not registered.');
+  if(!p.pwHash) throw new Error('New password missing.');
+  updateWhere_('Users','Email',u.Email,{ Password:p.pwHash, Status:'Active' });
+  return { ok:true };
+}
 /* Login screen ke role dropdown ke liye (koi private data nahi bhejta) */
 function getLoginRoles(){
   const set={}; readAll_('Users').forEach(function(u){ if(u.Role && String(u.Status||'Active')==='Active') set[u.Role]=1; });
@@ -1094,7 +1103,9 @@ function savePOD(p){
   const rejected = items.reduce((s,i)=>s+(Number(i.rejectedQty)||0),0);
   const hasReturn = rejected>0;
   append_('POD', { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, DeliveryDate:p.deliveryDate,
-                   ReceiverName:p.receiverName, ReceiverMobile:p.receiverMobile, FileUrl:url, Remarks:p.remarks||'',
+                   ReceiverName:p.receiverName, ReceiverMobile:p.receiverMobile,
+                   GrossWeight:Number(p.grossWeight)||0, NetWeight:Number(p.netWeight)||0, PartyNetWeight:Number(p.partyNetWeight)||0,
+                   FileUrl:url, Remarks:p.remarks||'',
                    HasReturn:hasReturn?'Yes':'No', Status:hasReturn?'Partial Delivery':'Delivered' });
   appendMany_('PODItems', items.map(it=>{
     const loaded=Number(it.loadedQty)||0, rej=Number(it.rejectedQty)||0;
@@ -1200,8 +1211,7 @@ function getCollection(orderNo){
   const invoiced = invoices.reduce((s,i)=>s+(Number(i.InvoiceAmount)||0),0);
   const hist = readAll_('Collection').filter(c=>c.OrderNo===orderNo).reverse()
     .map(c=>({ date:fmtDate_(c.CollectionDate), amount:Number(c.CollectionAmount)||0, deduction:Number(c.DeductionAmount)||0,
-               actual:Number(c.ActualReceived)||0, gross:Number(c.GrossWeight)||0, net:Number(c.NetWeight)||0, partyNet:Number(c.PartyNetWeight)||0,
-               mode:c.PaymentMode, ref:c.RefNo, remarks:c.Remarks }));
+               actual:Number(c.ActualReceived)||0, mode:c.PaymentMode, ref:c.RefNo, remarks:c.Remarks }));
   const collected = hist.reduce((s,c)=>s+c.amount,0);
   return {
     orderNo:orderNo, vendorName:o?o.VendorName:'',
@@ -1219,7 +1229,6 @@ function saveCollection(p){
   append_('Collection', { CollectionNo:colNo, OrderNo:p.orderNo, InvoiceNo:p.invoiceNo, VendorName:p.vendorName,
                           InvoiceAmount:Number(p.invoiceAmount)||0, CollectionDate:p.collectionDate||new Date(),
                           CollectionAmount:_amt, DeductionAmount:_ded, ActualReceived:_actual,
-                          GrossWeight:Number(p.grossWeight)||0, NetWeight:Number(p.netWeight)||0, PartyNetWeight:Number(p.partyNetWeight)||0,
                           PaymentMode:p.mode, RefNo:p.refNo||'', Remarks:p.remarks||'', CreatedAt:new Date() });
   const c = getCollection(p.orderNo);
   recomputeOrderStatus_(p.orderNo);   // Fully Collected only if every ordered unit was dispatched
@@ -1588,7 +1597,7 @@ function fmsLog_(where,err){ try{ console.error('[FMS]',where,err); }catch(e){} 
 
 
 /* ---- API dispatcher used by the app ---- */
-var SB_FNS={authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
+var SB_FNS={emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
 
 var SBAPI={
   ready:null,
