@@ -3,7 +3,9 @@
 <head>
 <base target="_top">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16A34A">
+<meta name="mobile-web-app-capable" content="apple-mobile-web-app-capable">
 <title>OrderFlow — Order to Collection</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -94,7 +96,9 @@ body{max-width:100%}
 .ic-btn:hover{background:var(--canvas)}.ic-btn svg{width:19px;height:19px}
 .ic-btn .dt{position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--err);border:2px solid #fff}
 
-.content{padding:24px;max-width:1280px;width:100%}
+.content{padding:24px;width:100%;max-width:100%}
+@media(min-width:1500px){.content{padding:28px 40px}}
+@media(min-width:1900px){.content{padding:30px 64px}}
 .phead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap}
 .crumbs{font-size:12.5px;color:var(--t3);margin-bottom:8px}
 .crumbs a{cursor:pointer}.crumbs a:hover{color:var(--indigo)}
@@ -269,6 +273,23 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
   .two-col{grid-template-columns:1fr}
   .ptitle{font-size:19px}
 }
+/* ---- mobile: sab kuch ek column, badi tap targets, notch safe ---- */
+@media(max-width:640px){
+  .grid2,.grid3{grid-template-columns:1fr}
+  .flow{gap:8px}
+  .fnode{flex:1 1 calc(50% - 4px);min-width:0}          /* 2 boxes per row */
+  .fnode .fv{font-size:22px}
+  .inp,.sel{font-size:16px;padding:11px 12px}            /* 16px = iOS zoom nahi karega */
+  .btn{padding:12px 14px}
+  .dv2-card{padding:12px}
+  .pmx-wrap{max-height:70vh}
+  .pmx td.u,.pmx th.u{min-width:150px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .hdr{padding-top:env(safe-area-inset-top)}
+  .botnav{padding-bottom:env(safe-area-inset-bottom)}
+  .content{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+}
+@media(max-width:400px){ .fnode{flex:1 1 100%} }
 @media(max-width:560px){
   .kpi-grid{grid-template-columns:repeat(2,1fr)}
   .grid2{grid-template-columns:1fr}
@@ -364,6 +385,9 @@ body.dark .btn-primary:hover{background:#15803D}
 .qc-opt:hover{border-color:var(--indigo)}
 .qc-opt.on{border-color:var(--indigo);background:var(--indigo-50);color:var(--indigo)}
 .upcase{text-transform:uppercase}
+.lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
+  cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
+.lo-btn:hover{background:rgba(255,255,255,.10);color:#fff;border-color:rgba(255,255,255,.35)}
 .vo-banner{background:var(--warn-bg);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);
   border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px}
 .pmx-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
@@ -460,7 +484,23 @@ body.dark{--nb:#39493F}
     </div>
     <div class="lg-err" id="lgErr"></div>
     <button class="btn btn-primary" id="loginBtn">Sign in →</button>
+    <div style="text-align:center;margin-top:10px"><a href="#" id="fpLink" style="font-size:12.5px;color:var(--indigo);font-weight:600">Forgot password?</a></div>
     <div class="lg-hint">You'll only see the pages your admin allowed for you.</div>
+    <div id="fpBox" style="display:none;border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <div class="login-title" style="font-size:16px">Reset password</div>
+      <div class="login-sub" style="margin-bottom:10px">Aapke email par 6-digit code aayega.</div>
+      <div class="lg-field"><label>Email</label><input id="fpEmail" type="email" placeholder="you@company.com"></div>
+      <div id="fpStep2" style="display:none">
+        <div class="lg-field"><label>6-digit code (email me aaya hua)</label><input id="fpOtp" inputmode="numeric" maxlength="6" placeholder="123456"></div>
+        <div class="lg-field"><label>New password</label><input id="fpPw1" type="password" placeholder="Min 4 characters"></div>
+        <div class="lg-field"><label>Confirm new password</label><input id="fpPw2" type="password" placeholder="Repeat password"></div>
+      </div>
+      <div class="lg-err" id="fpErr"></div>
+      <div id="fpOk" style="font-size:12.5px;color:var(--ok);font-weight:600;margin-bottom:8px"></div>
+      <button class="btn btn-primary" id="fpSend">Send code →</button>
+      <button class="btn btn-primary" id="fpVerify" style="display:none">Update password →</button>
+      <div style="text-align:center;margin-top:10px"><a href="#" id="fpBack" style="font-size:12.5px;color:var(--t2)">← Back to sign in</a></div>
+    </div>
   </div>
 </div>
 <div class="shell">
@@ -471,7 +511,8 @@ body.dark{--nb:#39493F}
       <div class="bn">Order<b>Flow</b></div>
     </div>
     <nav class="nav" id="nav"></nav>
-    <div class="sb-foot"><div class="uchip"><div class="uav" id="uav">—</div><div><div class="nm" id="uname">—</div><div class="rl" id="urole">—</div></div></div></div>
+    <div class="sb-foot"><div class="uchip"><div class="uav" id="uav">—</div><div style="flex:1"><div class="nm" id="uname">—</div><div class="rl" id="urole">—</div></div>
+      <button class="lo-btn" id="logoutBtn" title="Sign out">⏻</button></div></div>
   </aside>
   <div class="overlay" id="overlay"></div>
 
@@ -483,7 +524,7 @@ body.dark{--nb:#39493F}
       <div class="hacts">
         <button class="theme-btn" id="themeBtn" title="Toggle dark / light"></button>
         <button class="ic-btn desk-only"><span class="dt"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></button>
-        <div class="uav" id="uav2" style="border-radius:10px">—</div>
+        <div class="uav" id="uav2" style="border-radius:10px;cursor:pointer" title="Sign out">—</div>
       </div>
     </header>
     <main class="content" id="view"><div class="loading"><div class="spin"></div>Loading…</div></main>
@@ -1218,6 +1259,11 @@ function renderPOD(arg){
       <div class="field"><label>Receiver Mobile</label><input class="inp" id="podMob" placeholder="Mobile number"></div>
     </div>
     <div class="field"><label>Receiver Name <span class="rq">*</span></label><input class="inp" id="podRcv" placeholder="Who received the goods"></div>
+    <div class="grid3">
+      <div class="field"><label>Gross Weight</label><input class="inp tnum" id="podGW" type="number" step="0.001" placeholder="0.000"></div>
+      <div class="field"><label>Net Weight</label><input class="inp tnum" id="podNW" type="number" step="0.001" placeholder="0.000"></div>
+      <div class="field"><label>Party Net Weight</label><input class="inp tnum" id="podPNW" type="number" step="0.001" placeholder="0.000"></div>
+    </div>
     <div class="field"><label>Remarks</label><textarea class="inp" id="podRem" placeholder="Delivery notes…"></textarea></div>
     <div class="sec"><h3>Upload POD (PDF / JPG / PNG)</h3></div>
     <label class="upl" for="podUp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><div class="t">Signed POD or delivery photo</div><div class="s">PDF, JPG, PNG</div></label>
@@ -1311,7 +1357,7 @@ function loadCollection(orderNo){
         <div class="coll-stats"><div class="coll-stat" style="background:var(--info-bg)"><div class="l">Invoiced</div><div class="v">${inrS(c.invoiced)}</div></div><div class="coll-stat" style="background:var(--ok-bg)"><div class="l" style="color:var(--ok)">Collected</div><div class="v" style="color:var(--ok)">${inrS(c.collected)}</div></div><div class="coll-stat" style="background:var(--err-bg)"><div class="l" style="color:var(--err)">Outstanding</div><div class="v" style="color:var(--err)">${inrS(c.outstanding)}</div></div></div>
       </div></div>
       <div class="sec"><h3>Collection History</h3></div>
-      ${c.history.length?c.history.map(h=>`<div class="hrow"><div class="hic" style="background:var(--indigo-50);color:var(--indigo)">${(h.mode||'').slice(0,3).toUpperCase()}</div><div class="hm"><div class="a">${h.mode}${h.deduction?` · <span style="color:var(--err)">less ${inr(h.deduction)}</span>`:''}</div><div class="b">${h.date}${h.ref?' · '+h.ref:''}${h.net?` · net ${h.net}`:''}</div></div><div class="amt">${inr(h.actual||h.amount)}</div></div>`).join(''):'<div class="empty">No collections recorded yet.</div>'}
+      ${c.history.length?c.history.map(h=>`<div class="hrow"><div class="hic" style="background:var(--indigo-50);color:var(--indigo)">${(h.mode||'').slice(0,3).toUpperCase()}</div><div class="hm"><div class="a">${h.mode}${h.deduction?` · <span style="color:var(--err)">less ${inr(h.deduction)}</span>`:''}</div><div class="b">${h.date}${h.ref?' · '+h.ref:''}</div></div><div class="amt">${inr(h.actual||h.amount)}</div></div>`).join(''):'<div class="empty">No collections recorded yet.</div>'}
       <div class="sec"><h3>Record Payment</h3></div>
       <div class="grid2">
         <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="payAmt" type="number" value="${c.outstanding}"></div>
@@ -1320,11 +1366,6 @@ function loadCollection(orderNo){
       <div class="grid2">
         <div class="field"><label>Deduction Amount</label><input class="inp tnum" id="payDed" type="number" value="0"></div>
         <div class="field"><label>Actual Received Amount</label><input class="inp tnum" id="payAct" type="number" value="${c.outstanding}" readonly></div>
-      </div>
-      <div class="grid3">
-        <div class="field"><label>Gross Weight</label><input class="inp tnum" id="payGW" type="number" step="0.001" placeholder="0.000"></div>
-        <div class="field"><label>Net Weight</label><input class="inp tnum" id="payNW" type="number" step="0.001" placeholder="0.000"></div>
-        <div class="field"><label>Party Net Weight</label><input class="inp tnum" id="payPNW" type="number" step="0.001" placeholder="0.000"></div>
       </div>
       <div class="grid2">
         <div class="field"><label>Payment Mode <span class="rq">*</span></label><select class="sel" id="payMode"><option>Cash</option><option>Cheque</option><option selected>Bank Transfer</option><option>UPI</option><option>Other</option></select></div>
@@ -2038,7 +2079,12 @@ function doSavePOD(){
     return {skuCode:it.SKUCode,skuName:it.SKUName,loadedQty:loaded,deliveredQty:loaded-rej,rejectedQty:rej};
   });
   busy('savePOD');
-  api('savePOD',{gateEntryNo:sel.value,orderNo:opt.dataset.order,deliveryDate:document.getElementById('podDate').value,receiverName:document.getElementById('podRcv').value,receiverMobile:document.getElementById('podMob').value,remarks:document.getElementById('podRem').value,file:podFile,items:its})
+  api('savePOD',{gateEntryNo:sel.value,orderNo:opt.dataset.order,deliveryDate:document.getElementById('podDate').value,
+    receiverName:document.getElementById('podRcv').value,receiverMobile:document.getElementById('podMob').value,
+    grossWeight:+(document.getElementById('podGW')||{}).value||0,
+    netWeight:+(document.getElementById('podNW')||{}).value||0,
+    partyNetWeight:+(document.getElementById('podPNW')||{}).value||0,
+    remarks:document.getElementById('podRem').value,file:podFile,items:its})
     .then(r=>{toast(r&&r.hasReturn?('Partial delivery — '+r.rejected+' returned, go to Return Gate Entry'):'Delivery confirmed');refreshReturns();go(r&&r.hasReturn?'returnentry':'collection');refreshDash();})
     .catch(err=>toast(err.message||'Failed',true));
 }
@@ -2070,9 +2116,6 @@ function doSavePay(btn){
     collectionDate:document.getElementById('payDate').value,amount:amt,
     deductionAmount:+(document.getElementById('payDed')||{}).value||0,
     actualReceived:+(document.getElementById('payAct')||{}).value||0,
-    grossWeight:+(document.getElementById('payGW')||{}).value||0,
-    netWeight:+(document.getElementById('payNW')||{}).value||0,
-    partyNetWeight:+(document.getElementById('payPNW')||{}).value||0,
     mode:document.getElementById('payMode').value,refNo:_ref})
     .then(()=>{toast('Payment '+inr(amt)+' recorded');loadCollection(btn.dataset.order);refreshDash();})
     .catch(err=>toast(err.message||'Failed',true));
@@ -2162,7 +2205,7 @@ async function doLogin(){
     STATE.user={email:email,name:email,role:role,perms:{}};             // temp, taaki api() chal sake
     const u=await api('authenticate',{email:email, pwHash:await pwHash(pw), role:role});
     STATE.user={email:u.email,name:u.name,role:u.role,perms:u.perms||{}};
-    PERMS=STATE.user.perms;
+    PERMS=STATE.user.perms; saveSession(STATE.user);
     const b=await api('getBootstrap');
     STATE.masters=b.masters; STATE.dashboard=b.dashboard; STATE.orders=b.orders; STATE.showReturns=!!b.showReturns;
     document.getElementById('login').style.display='none';
@@ -2172,9 +2215,115 @@ async function doLogin(){
     err.textContent=(e&&e.message)||'Could not sign in.';
   }
 }
+/* ================= SESSION (refresh par logged-in raho) ================= */
+const SESS_KEY='o2c-session', SESS_HOURS=12;
+function saveSession(u){ try{ localStorage.setItem(SESS_KEY, JSON.stringify({u:u, t:Date.now()})); }catch(e){} }
+function clearSession(){ try{ localStorage.removeItem(SESS_KEY); }catch(e){} }
+function readSession(){
+  try{ const s=JSON.parse(localStorage.getItem(SESS_KEY)||'null');
+    if(!s||!s.u||!s.t) return null;
+    if(Date.now()-s.t > SESS_HOURS*3600000){ clearSession(); return null; }   // purana session hata do
+    return s.u;
+  }catch(e){ return null; }
+}
+function logout(){
+  clearSession(); STATE.user=null; PERMS={};
+  document.getElementById('loginPw').value='';
+  document.getElementById('lgErr').textContent='';
+  document.getElementById('login').style.display='';
+  document.getElementById('loginBtn').disabled=false;
+  document.getElementById('loginBtn').textContent='Sign in →';
+}
+/* Page load par: agar session hai to seedha andar le jao (permissions DB se taaza karke) */
+async function restoreSession(){
+  const u=readSession(); if(!u) return false;
+  try{
+    STATE.user=u; PERMS=u.perms||{};
+    const b=await api('getBootstrap');
+    const fresh=(await api('getUsers')).find(x=>String(x.Email).toLowerCase()===String(u.email).toLowerCase());
+    if(!fresh || fresh.Status!=='Active'){ clearSession(); return false; }    // hataya/disable kiya gaya user
+    STATE.user={email:fresh.Email,name:fresh.Name||fresh.Email,role:fresh.Role,perms:fresh.Permissions||{}};
+    PERMS=STATE.user.perms; saveSession(STATE.user);
+    STATE.masters=b.masters; STATE.dashboard=b.dashboard; STATE.orders=b.orders; STATE.showReturns=!!b.showReturns;
+    document.getElementById('login').style.display='none';
+    setUser(STATE.user); buildNav(); go(defaultRoute());
+    return true;
+  }catch(e){ clearSession(); return false; }
+}
+
+/* ================= FORGOT PASSWORD (email OTP) =================
+ * OTP Supabase Auth bhejta hai aur wahi verify karta hai (server-side) —
+ * code browser me kabhi nahi banta, isliye ise bypass nahi kiya ja sakta.  */
+function sbBase(){ return String(window.SUPABASE_URL||'').trim().replace(/\/+$/,''); }
+async function sbAuth(path, body){
+  const r=await fetch(sbBase()+'/auth/v1/'+path,{ method:'POST',
+    headers:{'apikey':window.SUPABASE_KEY,'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error(j.msg||j.error_description||j.message||('Request failed ('+r.status+')'));
+  return j;
+}
+function fpShow(on){
+  document.getElementById('fpBox').style.display=on?'block':'none';
+  ['loginEmail','loginPw','loginRole'].forEach(id=>{ const el=document.getElementById(id); if(el) el.closest('.lg-field').style.display=on?'none':''; });
+  document.getElementById('loginBtn').style.display=on?'none':'';
+  document.getElementById('fpLink').parentElement.style.display=on?'none':'';
+  document.querySelector('.lg-hint').style.display=on?'none':'';
+  if(on){ document.getElementById('fpEmail').value=document.getElementById('loginEmail').value||''; }
+}
+async function fpSendCode(){
+  const em=(document.getElementById('fpEmail').value||'').trim();
+  const err=document.getElementById('fpErr'), ok=document.getElementById('fpOk');
+  err.textContent=''; ok.textContent='';
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ err.textContent='Valid email daaliye.'; return; }
+  const btn=document.getElementById('fpSend'); btn.disabled=true; btn.textContent='Sending…';
+  try{
+    STATE.user={email:em,name:em,role:'',perms:{}};                 // taaki api() chal sake
+    const known=await api('emailExists',{email:em});
+    if(!known) throw new Error('Ye email registered nahi hai. Apne admin se poochhein.');
+    await sbAuth('otp',{ email:em, create_user:true });
+    ok.textContent='Code bhej diya — apna email (aur spam folder) dekhein.';
+    document.getElementById('fpStep2').style.display='block';
+    btn.style.display='none';
+    document.getElementById('fpVerify').style.display='';
+  }catch(e){ err.textContent=e.message||'Code bhejne me dikkat aayi.'; btn.disabled=false; btn.textContent='Send code →'; }
+  finally{ STATE.user=null; }
+}
+async function fpVerifyCode(){
+  const em=(document.getElementById('fpEmail').value||'').trim();
+  const otp=(document.getElementById('fpOtp').value||'').trim();
+  const p1=document.getElementById('fpPw1').value||'', p2=document.getElementById('fpPw2').value||'';
+  const err=document.getElementById('fpErr'), ok=document.getElementById('fpOk');
+  err.textContent=''; ok.textContent='';
+  if(otp.length<6){ err.textContent='6-digit code daaliye.'; return; }
+  if(p1.length<4){ err.textContent='Password kam se kam 4 characters ka ho.'; return; }
+  if(p1!==p2){ err.textContent='Dono passwords same nahi hain.'; return; }
+  const btn=document.getElementById('fpVerify'); btn.disabled=true; btn.textContent='Checking…';
+  try{
+    await sbAuth('verify',{ type:'email', email:em, token:otp });   // Supabase khud verify karta hai
+    STATE.user={email:em,name:em,role:'',perms:{}};
+    await api('resetPasswordWithOtp',{ email:em, pwHash:await pwHash(p1) });
+    ok.textContent='✓ Password badal gaya. Ab naye password se sign in karein.';
+    setTimeout(()=>{ fpShow(false); document.getElementById('loginEmail').value=em; document.getElementById('loginPw').focus(); }, 1400);
+  }catch(e){ err.textContent=e.message||'Code galat ya expire ho gaya.'; btn.disabled=false; btn.textContent='Update password →'; }
+  finally{ STATE.user=null; }
+}
+document.getElementById('fpLink').addEventListener('click',e=>{ e.preventDefault(); fpShow(true); });
+document.getElementById('fpBack').addEventListener('click',e=>{ e.preventDefault(); fpShow(false); });
+document.getElementById('fpSend').addEventListener('click',fpSendCode);
+document.getElementById('fpVerify').addEventListener('click',fpVerifyCode);
+document.getElementById('logoutBtn').addEventListener('click',()=>askConfirm('Sign out from OrderFlow?',logout));
+document.getElementById('uav2').addEventListener('click',()=>askConfirm('Sign out from OrderFlow?',logout));
 document.getElementById('loginPw').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('loginBtn').addEventListener('click',doLogin);
 document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+
+/* App khulte hi: agar pichhla session zinda hai to seedha andar */
+(function boot(){
+  if(!readSession()) return;
+  const lg=document.getElementById('login');
+  if(lg) lg.insertAdjacentHTML('afterbegin','<div id="bootMsg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--canvas);z-index:5"><div class="loading"><div class="spin"></div>Signing you in…</div></div>');
+  restoreSession().then(ok=>{ const b=document.getElementById('bootMsg'); if(b) b.remove(); });
+})();
 
 /*****************************************************************
  * MOCK BACKEND (preview only — real data comes from Sheets)
