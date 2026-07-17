@@ -569,8 +569,9 @@ const PERM_MODULES=PERM_GROUPS.reduce((a,g)=>a.concat(g.items.map(i=>i[0])),[]);
 const PERM_LABEL={}; PERM_GROUPS.forEach(g=>g.items.forEach(i=>PERM_LABEL[i[0]]=i[1]));
 const PERM_OPTS=[['edit','View/Edit'],['view','View only'],['none','No access']];
 
+function isAdminRole(r){ return String(r||'').trim().toLowerCase()==='admin'; }
 function perm(id){
-  if(STATE.user && STATE.user.role==='Admin') return 'edit';    // Admin = full access
+  if(STATE.user && isAdminRole(STATE.user.role)) return 'edit';    // Admin = full access
   const v=PERMS&&PERMS[id];
   return (v==='edit'||v==='view')?v:'none';
 }
@@ -1817,7 +1818,7 @@ function loadUsers(){
       <tr><th class="u" rowspan="2">User</th>${head1}<th rowspan="2">Actions</th></tr>
       <tr>${head2}</tr></thead><tbody>
       ${list.map(u=>{
-        const isAdmin=u.Role==='Admin';
+        const isAdmin=isAdminRole(u.Role);
         return `<tr data-urow="${u.Email}">
           <td class="u"><div class="un">${u.Name||u.Email}</div>
             <div class="ue">${u.Email}</div>
