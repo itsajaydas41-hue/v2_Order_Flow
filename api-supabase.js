@@ -609,7 +609,8 @@ function authenticate(p){
   if(String(u.Status||'Active')!=='Active') throw new Error('Your account is disabled. Contact your admin.');
   if(!u.Password) throw new Error('No password set for this account. Ask your admin to set one.');
   if(String(u.Password)!==String(p.pwHash||'')) throw new Error('Wrong password.');
-  if(String(u.Role)!==String(p.role||'')) throw new Error('Wrong role selected. Your role is: '+u.Role);
+  const rA=String(u.Role||'').trim().toLowerCase(), rB=String(p.role||'').trim().toLowerCase();
+  if(rA!==rB) throw new Error('Wrong role selected. Your role is: '+u.Role);
   return { email:u.Email, name:u.Name||u.Email, role:u.Role, perms:parsePerms_(u.Permissions) };
 }
 /* Login screen ke role dropdown ke liye (koi private data nahi bhejta) */
@@ -649,8 +650,9 @@ function saveUserPermissions(p){ return updateUser({ email:p.email, perms:p.perm
 function deleteUser(email){
   const list=readAll_('Users');
   const target=findUser_(email); if(!target) throw new Error('User not found.');
-  const admins=list.filter(function(u){ return u.Role==='Admin' && String(u.Status||'Active')==='Active'; });
-  if(target.Role==='Admin' && admins.length<=1) throw new Error('Cannot remove the last Admin.');
+  const isAdm=function(r){ return String(r||'').trim().toLowerCase()==='admin'; };
+  const admins=list.filter(function(u){ return isAdm(u.Role) && String(u.Status||'Active')==='Active'; });
+  if(isAdm(target.Role) && admins.length<=1) throw new Error('Cannot remove the last Admin.');
   deleteWhere_('Users','Email',target.Email);
   return getUsers();
 }
