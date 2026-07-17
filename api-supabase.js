@@ -103,7 +103,7 @@ const SHEETS = {
   VendorMaster:      ['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
   SKUMaster:         ['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate'],
   TransporterMaster: ['TransporterName','ContactNumber'],
-  Users:             ['Email','Name','Role'],
+  Users:             ['Email','Name','Role','Password','Permissions','Status'],
   Orders:            ['OrderNo','OrderDate','VendorCode','VendorName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
   OrderItems:        ['OrderNo','SKUCode','SKUName','Qty','Rate','SGST','CGST','Taxable','TaxAmount','Amount'],
   Planning:          ['PlanNo','OrderNo','PlannedDate','PlannedTime','TransporterName','Remarks','Status','CreatedAt'],
@@ -594,12 +594,99 @@ function getMasters(){
 function saveVendor(v){ append_('VendorMaster', v); return getMasters().vendors; }
 function saveSKU(s){ append_('SKUMaster', s); return getMasters().skus; }
 function saveTransporter(t){ append_('TransporterMaster', t); return getMasters().transporters; }
-function saveUser(u){ append_('Users', u); return readAll_('Users'); }
-function getUsers(){ return readAll_('Users'); }
+/* ================= USERS · AUTH · PERMISSIONS =================
+ * Permissions ek JSON string me store hote hain: {"moduleId":"edit|view|none", ...}
+ * Password frontend par SHA-256 hash hokar aata hai (plain password kabhi store nahi hota).
+ * NOTE: ye access-control hai (kaun kya dekhe), asli database-level security nahi.        */
+function normEmail_(e){ return String(e||'').trim().toLowerCase(); }
+function findUser_(email){ const t=normEmail_(email); return readAll_('Users').find(function(u){ return normEmail_(u.Email)===t; }); }
+function parsePerms_(s){ try{ return (typeof s==='string' && s) ? JSON.parse(s) : (s||{}); }catch(e){ return {}; } }
+
+/* Login: teeno match hone chahiye — email registered, password sahi, role assigned role se same. */
+function authenticate(p){
+  const u=findUser_(p&&p.email);
+  if(!u) throw new Error('This email is not registered. Ask your admin to add you.');
+  if(String(u.Status||'Active')!=='Active') throw new Error('Your account is disabled. Contact your admin.');
+  if(!u.Password) throw new Error('No password set for this account. Ask your admin to set one.');
+  if(String(u.Password)!==String(p.pwHash||'')) throw new Error('Wrong password.');
+  if(String(u.Role)!==String(p.role||'')) throw new Error('Wrong role selected. Your role is: '+u.Role);
+  return { email:u.Email, name:u.Name||u.Email, role:u.Role, perms:parsePerms_(u.Permissions) };
+}
+/* Login screen ke role dropdown ke liye (koi private data nahi bhejta) */
+function getLoginRoles(){
+  const set={}; readAll_('Users').forEach(function(u){ if(u.Role && String(u.Status||'Active')==='Active') set[u.Role]=1; });
+  const list=Object.keys(set); return list.length?list.sort():['Admin'];
+}
+function getUsers(){
+  return readAll_('Users').map(function(u){
+    return { Email:u.Email, Name:u.Name, Role:u.Role, Status:u.Status||'Active',
+             HasPassword: !!u.Password, Permissions:parsePerms_(u.Permissions) };
+  });
+}
+function saveUser(u){
+  if(!u || !u.Email) throw new Error('Email is required.');
+  const email=normEmail_(u.Email);
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
+  if(findUser_(email)) throw new Error('This email already exists.');
+  if(!u.Role) throw new Error('Role is required.');
+  if(!u.pwHash) throw new Error('Password is required.');
+  append_('Users',{ Email:email, Name:u.Name||email, Role:u.Role, Password:u.pwHash,
+                    Permissions:JSON.stringify(u.perms||{}), Status:'Active' });
+  return getUsers();
+}
+function updateUser(p){
+  const u=findUser_(p&&p.email); if(!u) throw new Error('User not found.');
+  const upd={};
+  if(p.name!==undefined)  upd.Name=p.name;
+  if(p.role!==undefined)  upd.Role=p.role;
+  if(p.status!==undefined)upd.Status=p.status;
+  if(p.perms!==undefined) upd.Permissions=JSON.stringify(p.perms||{});
+  if(p.pwHash)            upd.Password=p.pwHash;
+  updateWhere_('Users','Email',u.Email,upd);
+  return getUsers();
+}
+function saveUserPermissions(p){ return updateUser({ email:p.email, perms:p.perms }); }
+function deleteUser(email){
+  const list=readAll_('Users');
+  const target=findUser_(email); if(!target) throw new Error('User not found.');
+  const admins=list.filter(function(u){ return u.Role==='Admin' && String(u.Status||'Active')==='Active'; });
+  if(target.Role==='Admin' && admins.length<=1) throw new Error('Cannot remove the last Admin.');
+  deleteWhere_('Users','Email',target.Email);
+  return getUsers();
+}
+
+/* ================= BULK IMPORT (Vendor / SKU / Transporter) ================= */
+const BULK_CFG = {
+  VendorMaster:      { key:'VendorCode', required:['VendorCode','VendorName'] },
+  SKUMaster:         { key:'SKUCode',    required:['SKUCode','SKUName'] },
+  TransporterMaster: { key:'TransporterCode', required:['TransporterCode','TransporterName'] }
+};
+/* rows = [{ColumnName:value, ...}]. Duplicates skip ho jate hain, baaki import. */
+function bulkImport(p){
+  const table=p&&p.table, rows=(p&&p.rows)||[];
+  const cfg=BULK_CFG[table]; if(!cfg) throw new Error('Bulk import not allowed for: '+table);
+  const cols=SHEETS[table];
+  const existing={}; readAll_(table).forEach(function(r){ existing[String(r[cfg.key]||'').trim().toLowerCase()]=1; });
+  const add=[], errors=[]; let dupes=0;
+  rows.forEach(function(raw,i){
+    const row={}; cols.forEach(function(cn){ row[cn]=raw[cn]!==undefined?raw[cn]:''; });
+    const miss=cfg.required.filter(function(f){ return !String(row[f]||'').trim(); });
+    if(miss.length){ errors.push('Row '+(i+2)+': missing '+miss.join(', ')); return; }
+    const k=String(row[cfg.key]).trim().toLowerCase();
+    if(existing[k]){ dupes++; return; }
+    existing[k]=1;
+    ['CreditDays','Rate','GSTPercent'].forEach(function(nf){ if(cols.indexOf(nf)>-1) row[nf]=Number(row[nf])||0; });
+    add.push(row);
+  });
+  if(add.length) appendMany_(table, add);
+  return { imported:add.length, duplicates:dupes, errors:errors.slice(0,12), total:rows.length };
+}
+function getBulkTemplate(table){ const cfg=BULK_CFG[table]; if(!cfg) throw new Error('Not allowed'); return { columns:SHEETS[table], required:cfg.required }; }
+
 function deleteVendor(code){ deleteWhere_('VendorMaster','VendorCode',code); return getMasters().vendors; }
 function deleteSKU(code){ deleteWhere_('SKUMaster','SKUCode',code); return getMasters().skus; }
 function deleteTransporter(name){ deleteWhere_('TransporterMaster','TransporterName',name); return getMasters().transporters; }
-function deleteUser(email){ deleteWhere_('Users','Email',email); return readAll_('Users'); }
+
 
 /* ============================ DASHBOARD ========================== */
 function getDashboard(){
@@ -1499,7 +1586,7 @@ function fmsLog_(where,err){ try{ console.error('[FMS]',where,err); }catch(e){} 
 
 
 /* ---- API dispatcher used by the app ---- */
-var SB_FNS={getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
+var SB_FNS={authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
 
 var SBAPI={
   ready:null,
