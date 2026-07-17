@@ -364,6 +364,33 @@ body.dark .btn-primary:hover{background:#15803D}
 .qc-opt:hover{border-color:var(--indigo)}
 .qc-opt.on{border-color:var(--indigo);background:var(--indigo-50);color:var(--indigo)}
 .upcase{text-transform:uppercase}
+.vo-banner{background:var(--warn-bg);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);
+  border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px}
+.pmx-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.pmx{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px}
+.pmx th,.pmx td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.pmx thead th{position:sticky;top:0;background:var(--surface-2);z-index:3;font-weight:700;color:var(--t2);text-align:left}
+.pmx thead th.grp{background:var(--indigo-50);color:var(--indigo-7);text-align:center;border-left:2px solid var(--indigo-100)}
+.pmx td.u,.pmx th.u{position:sticky;left:0;background:var(--surface);z-index:2;border-right:2px solid var(--line);min-width:190px;white-space:normal}
+.pmx thead th.u{z-index:4;background:var(--surface-2)}
+.pmx tbody tr:hover td{background:var(--surface-2)}
+.pmx tbody tr:hover td.u{background:var(--surface-2)}
+.pmx .un{font-weight:700;color:var(--t1)}
+.pmx .ue{font-size:11px;color:var(--t3)}
+.psel{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:11.5px;background:var(--surface);color:var(--t1);cursor:pointer}
+.psel.p-edit{border-color:#16A34A;background:#E7F8EE;color:#15803D;font-weight:700}
+body.dark .psel.p-edit{background:rgba(22,163,74,.18)}
+.psel.p-view{border-color:#2563EB;background:#E7EFFE;color:#1D4ED8;font-weight:700}
+body.dark .psel.p-view{background:rgba(37,99,235,.18)}
+.psel.p-none{border-color:var(--line);background:var(--surface-2);color:var(--t3)}
+.rowsave{border:0;background:var(--indigo);color:#fff;border-radius:7px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer}
+.rowsave:disabled{opacity:.45;cursor:default}
+.qbtn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--t2)}
+.qbtn:hover{border-color:var(--indigo);color:var(--indigo)}
+.bulk-drop{border:2px dashed var(--line);border-radius:12px;padding:20px;text-align:center;background:var(--surface-2);cursor:pointer}
+.bulk-drop:hover{border-color:var(--indigo);background:var(--indigo-50)}
+.bulk-res{font-size:12.5px;margin-top:10px}
+.bulk-res .ok{color:var(--ok)}.bulk-res .er{color:var(--err)}
 
 /* ---- Dashboard V2: pipeline (Design D — style D1 / D2 switchable) ---- */
 :root{--nb:#CFDCD4}
@@ -414,8 +441,9 @@ body.dark{--nb:#39493F}
       <div class="bn">Order<b>Flow</b></div>
     </div>
     <div class="login-title">Sign in</div>
-    <div class="login-sub">Enter your email and choose your role to continue.</div>
+    <div class="login-sub">Enter your email, password and role to continue.</div>
     <div class="lg-field"><label>Email</label><input id="loginEmail" type="email" placeholder="you@company.com" autocomplete="email"></div>
+    <div class="lg-field"><label>Password</label><input id="loginPw" type="password" placeholder="••••••••" autocomplete="current-password"></div>
     <div class="lg-field"><label>Role</label>
       <select id="loginRole">
         <option value="">Select role…</option>
@@ -424,12 +452,15 @@ body.dark{--nb:#39493F}
         <option>Security</option>
         <option>Billing Executive</option>
         <option>Accounts</option>
+        <option>HOD</option>
+        <option>Purchase Executive</option>
+        <option>Store Executive</option>
         <option>Admin</option>
       </select>
     </div>
     <div class="lg-err" id="lgErr"></div>
     <button class="btn btn-primary" id="loginBtn">Sign in →</button>
-    <div class="lg-hint">You'll only see the pages mapped to your role.</div>
+    <div class="lg-hint">You'll only see the pages your admin allowed for you.</div>
   </div>
 </div>
 <div class="shell">
@@ -463,6 +494,7 @@ body.dark{--nb:#39493F}
 <nav class="botnav" id="botnav"></nav>
 <div class="toast" id="toast"><svg id="toastIc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span id="toastMsg"></span></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script src="api-supabase.js"></script>
 <script>
@@ -516,6 +548,64 @@ const badgeCls=s=>({'Pending Dispatch Planning':'b-gray','Partial Planning':'b-t
 /*****************************************************************
  * NAVIGATION + ROLES
  *****************************************************************/
+/* ================= PERMISSION ENGINE =================
+ * Har module ki permission: 'edit' (View/Edit) | 'view' (sirf dekhna) | 'none' (dikhega hi nahi)
+ * Admin ko hamesha poora access. Baaki sab User Management se control hota hai.            */
+let PERMS={};
+const PERM_GROUPS=[
+  { g:'O2C', items:[
+    ['dashboard','O2C Dashboard'],['orders','All Order View'],['create','New Order Create'],
+    ['schedule','Delivery Schedule'],['dispatch','Dispatch Planning'],['gate','Gate Entry'],
+    ['loading','Vehicle Loading'],['invoice','Invoice Entry'],['gateout','Gate Out'],
+    ['pod','POD'],['collection','Collection'],['returnentry','Return Gate Entry'],
+    ['returnreceived','Return Received'],['reports','Reports'] ]},
+  { g:'P2P', items:[
+    ['p2p_dashboard','P2P Dashboard'],['p2p_po','Purchase Order'],['p2p_polist','PO List / Sent'],
+    ['p2p_gate','Gate Entry (SEN)'],['p2p_qc','QC Check'],['p2p_receiving','Material Received'],
+    ['p2p_return','Material Return'],['p2p_payment','Payment (P2P)'] ]},
+  { g:'Admin', items:[ ['masters','Master Data'],['users','User Management'] ]}
+];
+const PERM_MODULES=PERM_GROUPS.reduce((a,g)=>a.concat(g.items.map(i=>i[0])),[]);
+const PERM_LABEL={}; PERM_GROUPS.forEach(g=>g.items.forEach(i=>PERM_LABEL[i[0]]=i[1]));
+const PERM_OPTS=[['edit','View/Edit'],['view','View only'],['none','No access']];
+
+function perm(id){
+  if(STATE.user && STATE.user.role==='Admin') return 'edit';    // Admin = full access
+  const v=PERMS&&PERMS[id];
+  return (v==='edit'||v==='view')?v:'none';
+}
+function canView(id){ return perm(id)!=='none'; }
+function canEdit(id){ return perm(id)==='edit'; }
+
+/* View-only page ko lock kar do: saare inputs/buttons disable + banner */
+function lockIfViewOnly(id){
+  if(perm(id)!=='view') return;
+  const v=document.getElementById('view'); if(!v) return;
+  if(!v.querySelector('.vo-banner')){
+    const b=document.createElement('div');
+    b.className='vo-banner';
+    b.innerHTML='👁 View only — aapke paas is page par edit permission nahi hai.';
+    v.insertBefore(b, v.firstChild);
+  }
+  v.querySelectorAll('input,select,textarea,button').forEach(el=>{
+    if(el.closest('.vo-banner')) return;
+    if(el.hasAttribute('data-go')||el.closest('[data-go]')) return;    // navigation allowed
+    if(el.classList.contains('stsw')||el.closest('.stsw')) return;      // dashboard style switch allowed
+    if(el.closest('.dv2-bar')) return;                                  // chart clicks allowed
+    el.disabled=true; el.style.cursor='not-allowed';
+  });
+}
+/* Async renders ke liye: DOM badle to dobara lock lagao */
+let _voObs=null;
+function watchViewOnly(id){
+  if(_voObs){ _voObs.disconnect(); _voObs=null; }
+  if(perm(id)!=='view') return;
+  const v=document.getElementById('view'); if(!v) return;
+  _voObs=new MutationObserver(()=>lockIfViewOnly(id));
+  _voObs.observe(v,{childList:true,subtree:true});
+  lockIfViewOnly(id);
+}
+
 const MODULES=[
   {id:'dashboard',label:'Dashboard',group:'',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>'},
   {id:'orders',label:'Orders',group:'Operations',roles:['Admin','Sales'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>'},
@@ -549,7 +639,7 @@ let current='dashboard';
 function allowed(m){
   if(!STATE.user) return true;
   if(m.group==='Returns' && !STATE.showReturns) return false;   // conditional: only when a POD rejection exists
-  return m.roles.indexOf(STATE.user.role)>-1;
+  return canView(m.id);                                          // permission tay karti hai kya dikhega
 }
 function refreshReturns(){
   return api('getReturnFlags').then(f=>{ STATE.showReturns=!!(f&&f.showReturns); buildNav(); }).catch(()=>{});
@@ -634,12 +724,12 @@ const ROUTES={
 };
 const DEFAULT_ROUTE={'Admin':'dashboard','Sales':'orders','Dispatch Executive':'dispatch','Security':'gate','Billing Executive':'invoice','Accounts':'collection'};
 function defaultRoute(){
-  if(STATE.user && DEFAULT_ROUTE[STATE.user.role] && roleCan(DEFAULT_ROUTE[STATE.user.role])) return DEFAULT_ROUTE[STATE.user.role];
+  if(STATE.user && DEFAULT_ROUTE[STATE.user.role] && canView(DEFAULT_ROUTE[STATE.user.role])) return DEFAULT_ROUTE[STATE.user.role];
   const first=MODULES.find(allowed); return first?first.id:'orders';
 }
 function go(id,arg){
   const m=MODULES.find(x=>x.id===id);
-  if(m && STATE.user && m.roles.indexOf(STATE.user.role)<0){ id=defaultRoute(); arg=undefined; }   // block pages not mapped to this role
+  if(m && STATE.user && !canView(m.id)){ id=defaultRoute(); arg=undefined; }   // block pages not mapped to this role
   if(!ROUTES[id]) return;
   current=id;
   // fast path: just flip active classes; rebuild only if the target isn't in the tree yet
@@ -653,13 +743,14 @@ function go(id,arg){
   closeSidebar();
   view.innerHTML='<div class="loading"><div class="spin"></div>Loading…</div>';
   window.scrollTo(0,0);
+  setTimeout(()=>watchViewOnly(id),0);   // view-only pages ko lock kar do (async render ke baad bhi)
   ROUTES[id](arg);
 }
 function head(title,sub,crumb){
   return `<div class="phead"><div>${crumb?`<div class="crumbs"><a data-go="dashboard">Home</a> › ${crumb}</div>`:''}<div class="ptitle">${title}</div>${sub?`<div class="psub">${sub}</div>`:''}</div></div>`;
 }
 /* role check for a module id (used by lifecycle "Continue" buttons) */
-function roleCan(id){ const m=MODULES.find(x=>x.id===id); return !STATE.user || (m && m.roles.indexOf(STATE.user.role)>-1); }
+function roleCan(id){ return !STATE.user || canView(id); }   /* lifecycle 'Continue' buttons */
 /* preselect a dropdown value and trigger its change handler (used for stage deep-links) */
 function presel(id,val){ const s=document.getElementById(id); if(s&&val){ s.value=val; if(s.value===String(val)) s.dispatchEvent(new Event('change')); } }
 /* searchable tappable dropdown bound to an <input> inside a .cmb wrapper */
@@ -1560,12 +1651,110 @@ function renderMasters(){
         <button class="btn btn-ghost btn-sm" id="cancelMaster">Cancel</button>
       </div>
     </div></div></div>
+    <div id="bulkWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 6px"><h3>Bulk Upload — ${masterTab}</h3>
+        <a href="#" id="dlTemplate">Sample file download</a></div>
+      <div class="bulk-drop" id="bulkDrop">
+        <div style="font-size:26px">📄</div>
+        <div style="font-weight:700;margin-top:6px">Excel ya CSV file yahan chuno</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:3px">.xlsx, .xls ya .csv — pehli row me column names honi chahiye</div>
+      </div>
+      <input type="file" id="bulkFile" accept=".csv,.xlsx,.xls" style="display:none">
+      <div class="bulk-res" id="bulkRes"></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-primary btn-sm" id="bulkGo" disabled>${I.check}Import</button>
+        <button class="btn btn-ghost btn-sm" id="bulkCancel">Close</button>
+      </div>
+    </div></div></div>
     ${body||'<div class="empty">No records yet.</div>'}
-    <button class="btn btn-add" id="addMaster" style="margin-top:6px">${I.plus}Add ${masterTab}</button>`;
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn btn-add" id="addMaster">${I.plus}Add ${masterTab}</button>
+      <button class="btn btn-ghost btn-sm" id="bulkBtn">⬆ Bulk Upload</button>
+    </div>`;
   const wrap=document.getElementById('mFormWrap'), addBtn=document.getElementById('addMaster');
   addBtn.onclick=()=>{ document.getElementById('mFields').innerHTML=masterFields(masterTab); wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
   document.getElementById('cancelMaster').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
   document.getElementById('saveMaster').onclick=doSaveMaster;
+  /* ---- bulk upload wiring ---- */
+  const bw=document.getElementById('bulkWrap');
+  document.getElementById('bulkBtn').onclick=()=>{ bw.style.display='block'; BULK_ROWS=[]; document.getElementById('bulkRes').innerHTML=''; document.getElementById('bulkGo').disabled=true; bw.scrollIntoView({behavior:'smooth',block:'center'}); };
+  document.getElementById('bulkCancel').onclick=()=>{ bw.style.display='none'; };
+  document.getElementById('bulkDrop').onclick=()=>document.getElementById('bulkFile').click();
+  document.getElementById('bulkFile').onchange=e=>readBulkFile(e.target.files[0]);
+  document.getElementById('bulkGo').onclick=doBulkImport;
+  document.getElementById('dlTemplate').onclick=e=>{ e.preventDefault(); downloadTemplate(); };
+}
+/* ================= BULK UPLOAD ================= */
+const BULK_TABLE={Vendor:'VendorMaster',SKU:'SKUMaster',Transporter:'TransporterMaster'};
+const BULK_COLS={
+  VendorMaster:['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
+  SKUMaster:['SKUCode','SKUName','Brand','Category','UOM','Rate','GSTPercent'],
+  TransporterMaster:['TransporterCode','TransporterName','ContactPerson','ContactNumber','Address']
+};
+const BULK_REQ={VendorMaster:['VendorCode','VendorName'],SKUMaster:['SKUCode','SKUName'],TransporterMaster:['TransporterCode','TransporterName']};
+let BULK_ROWS=[];
+function downloadTemplate(){
+  const t=BULK_TABLE[masterTab], cols=BULK_COLS[t];
+  const sample=cols.map(c=>BULK_REQ[t].indexOf(c)>-1?('SAMPLE-'+c):'').join(',');
+  const csv=cols.join(',')+'\n'+sample+'\n';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=masterTab+'-template.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+function readBulkFile(file){
+  if(!file) return;
+  const res=document.getElementById('bulkRes'), go=document.getElementById('bulkGo');
+  res.innerHTML='Reading…'; go.disabled=true; BULK_ROWS=[];
+  const t=BULK_TABLE[masterTab], cols=BULK_COLS[t];
+  const finish=rows=>{
+    if(!rows.length){ res.innerHTML='<span class="er">File khaali hai ya padhi nahi ja saki.</span>'; return; }
+    const found=Object.keys(rows[0]||{});
+    const missing=BULK_REQ[t].filter(rq=>found.indexOf(rq)<0);
+    if(missing.length){ res.innerHTML='<span class="er">Ye column(s) file me nahi mile: <b>'+missing.join(', ')+'</b><br>Sample file download karke usi format me bhejein.</span>'; return; }
+    BULK_ROWS=rows;
+    res.innerHTML='<span class="ok">✓ '+rows.length+' rows padhi gayi.</span> Columns: '+found.filter(f=>cols.indexOf(f)>-1).join(', ')+
+      '<br><span style="color:var(--t3)">Pehli row: '+cols.slice(0,3).map(cn=>cn+'=' + (rows[0][cn]||'—')).join(' · ')+'</span>';
+    go.disabled=false;
+  };
+  const name=(file.name||'').toLowerCase();
+  if(name.endsWith('.csv')){
+    const r=new FileReader();
+    r.onload=()=>finish(parseCSV(r.result));
+    r.onerror=()=>res.innerHTML='<span class="er">File read failed.</span>';
+    r.readAsText(file);
+  } else {
+    if(typeof XLSX==='undefined'){ res.innerHTML='<span class="er">Excel reader load nahi hua. File ko CSV me save karke try karein.</span>'; return; }
+    const r=new FileReader();
+    r.onload=()=>{ try{
+        const wb=XLSX.read(new Uint8Array(r.result),{type:'array'});
+        finish(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}));
+      }catch(err){ res.innerHTML='<span class="er">Excel padhi nahi ja saki: '+err.message+'</span>'; } };
+    r.readAsArrayBuffer(file);
+  }
+}
+function parseCSV(text){
+  const lines=String(text).replace(/\r/g,'').split('\n').filter(l=>l.trim());
+  if(!lines.length) return [];
+  const split=l=>{ const out=[]; let cur='',q=false;
+    for(let i=0;i<l.length;i++){ const ch=l[i];
+      if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else if(ch==='"') q=true; else if(ch===','){ out.push(cur); cur=''; } else cur+=ch; }
+    out.push(cur); return out.map(s=>s.trim()); };
+  const head=split(lines[0]);
+  return lines.slice(1).map(l=>{ const v=split(l), o={}; head.forEach((h,i)=>o[h]=v[i]!==undefined?v[i]:''); return o; });
+}
+function doBulkImport(){
+  if(!BULK_ROWS.length) return;
+  const t=BULK_TABLE[masterTab];
+  busy('bulkGo');
+  api('bulkImport',{table:t,rows:BULK_ROWS}).then(r=>{
+    const res=document.getElementById('bulkRes');
+    res.innerHTML='<span class="ok">✓ '+r.imported+' imported</span>'+
+      (r.duplicates?' · <span style="color:var(--warn)">'+r.duplicates+' duplicate skip kiye</span>':'')+
+      (r.errors&&r.errors.length?'<br><span class="er">'+r.errors.join('<br>')+'</span>':'');
+    toast(r.imported+' '+masterTab+' imported');
+    api('getMasters').then(m=>{ STATE.masters=m; BULK_ROWS=[]; setTimeout(()=>renderMasters(),900); });
+  }).catch(e=>toast(e.message||'Import failed',true));
 }
 function doSaveMaster(){
   const cfg=MASTER_CFG[masterTab], obj={};
@@ -1589,21 +1778,29 @@ function delMaster(key){
 /* ---------- USERS ---------- */
 const USER_ROLES=['Sales','Dispatch Executive','Security','Billing Executive','Accounts','Admin'];
 function renderUsers(){
-  view.innerHTML=head('User Management','Roles control which modules each person sees','User Management')+`
+  view.innerHTML=head('User Management','Kaun login kar sakta hai aur kis page par kya kar sakta hai','User Management')+`
     <div id="uFormWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
       <div class="sec" style="margin:0 0 4px"><h3>Add User</h3></div>
       <div class="grid2">
         <div class="field"><label>Email <span class="rq">*</span></label><input class="inp" id="uf_Email" type="email" placeholder="person@company.com"></div>
         <div class="field"><label>Name <span class="rq">*</span></label><input class="inp" id="uf_Name" placeholder="Full name"></div>
         <div class="field"><label>Role <span class="rq">*</span></label><select class="sel" id="uf_Role">${USER_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+        <div class="field"><label>Password <span class="rq">*</span></label><input class="inp" id="uf_Pw" type="password" placeholder="Min 4 characters"></div>
       </div>
+      <div class="field"><label>Start with</label><select class="sel" id="uf_Preset">
+        <option value="none">No access (baad me tick karenge)</option>
+        <option value="view">View only — sab pages</option>
+        <option value="edit">View/Edit — sab pages</option>
+      </select></div>
       <div class="btn-row" style="margin-top:8px">
         <button class="btn btn-primary btn-sm" id="saveUser">${I.check}Save User</button>
         <button class="btn btn-ghost btn-sm" id="cancelUser">Cancel</button>
       </div>
     </div></div></div>
-    <div id="uList"><div class="loading"><div class="spin"></div></div></div>
-    <button class="btn btn-add" id="addUser" style="margin-top:6px">${I.plus}Add User</button>`;
+    <div class="sec" style="margin-top:2px"><h3>Permissions</h3>
+      <span style="font-size:11.5px;color:var(--t3)">Har cell me chuno: View/Edit · View only · No access</span></div>
+    <div class="pmx-wrap" id="uMatrix"><div class="loading"><div class="spin"></div></div></div>
+    <button class="btn btn-add" id="addUser" style="margin-top:10px">${I.plus}Add User</button>`;
   const wrap=document.getElementById('uFormWrap'), addBtn=document.getElementById('addUser');
   addBtn.onclick=()=>{ wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
   document.getElementById('cancelUser').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
@@ -1612,18 +1809,71 @@ function renderUsers(){
 }
 function loadUsers(){
   api('getUsers').then(list=>{
-    const cols=['#16A34A','#0D9488','#D97706','#7C3AED','#2563EB','#DC2626'];
-    document.getElementById('uList').innerHTML=list.map((u,i)=>`<div class="urow"><div class="ua" style="background:${cols[i%cols.length]}">${(u.Name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${u.Name}</div><div class="b">${u.Role} · ${u.Email}</div></div><button class="row-del" data-udel="${u.Email}" title="Remove user">${I.trash}</button></div>`).join('')||'<div class="empty">No users yet.</div>';
-  });
+    const el=document.getElementById('uMatrix'); if(!el) return;
+    if(!list.length){ el.innerHTML='<div class="empty">No users yet.</div>'; return; }
+    const head1=PERM_GROUPS.map(g=>`<th class="grp" colspan="${g.items.length}">${g.g}</th>`).join('');
+    const head2=PERM_GROUPS.map(g=>g.items.map(i=>`<th>${i[1]}</th>`).join('')).join('');
+    el.innerHTML=`<table class="pmx"><thead>
+      <tr><th class="u" rowspan="2">User</th>${head1}<th rowspan="2">Actions</th></tr>
+      <tr>${head2}</tr></thead><tbody>
+      ${list.map(u=>{
+        const isAdmin=u.Role==='Admin';
+        return `<tr data-urow="${u.Email}">
+          <td class="u"><div class="un">${u.Name||u.Email}</div>
+            <div class="ue">${u.Email}</div>
+            <div class="ue">${u.Role}${u.Status!=='Active'?' · <span style="color:var(--err)">Disabled</span>':''}${u.HasPassword?'':' · <span style="color:var(--warn)">No password</span>'}</div>
+            <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">
+              <button class="qbtn" data-uall="edit" data-e="${u.Email}">All Edit</button>
+              <button class="qbtn" data-uall="view" data-e="${u.Email}">All View</button>
+              <button class="qbtn" data-uall="none" data-e="${u.Email}">Clear</button>
+            </div></td>
+          ${PERM_MODULES.map(mid=>{
+            const v=isAdmin?'edit':((u.Permissions&&u.Permissions[mid])||'none');
+            return `<td><select class="psel p-${v}" data-e="${u.Email}" data-m="${mid}" ${isAdmin?'disabled title="Admin ko hamesha full access"':''}>
+              ${PERM_OPTS.map(o=>`<option value="${o[0]}" ${o[0]===v?'selected':''}>${o[1]}</option>`).join('')}</select></td>`;
+          }).join('')}
+          <td><div style="display:flex;gap:5px;flex-wrap:wrap">
+            <button class="rowsave" data-usave="${u.Email}" disabled>Save</button>
+            <button class="qbtn" data-upw="${u.Email}">Password</button>
+            <button class="qbtn" data-utog="${u.Email}" data-st="${u.Status==='Active'?'Disabled':'Active'}">${u.Status==='Active'?'Disable':'Enable'}</button>
+            <button class="row-del" data-udel="${u.Email}" title="Remove user">${I.trash}</button>
+          </div></td></tr>`;
+      }).join('')}</tbody></table>`;
+  }).catch(e=>{ const el=document.getElementById('uMatrix'); if(el) el.innerHTML='<div class="empty">Could not load users. '+(e.message||'')+'</div>'; });
 }
-function doSaveUser(){
+function markDirty(email){ const b=document.querySelector(`[data-usave="${email}"]`); if(b){ b.disabled=false; b.textContent='Save *'; } }
+function collectPerms(email){
+  const o={}; document.querySelectorAll(`.psel[data-e="${email}"]`).forEach(s=>{ if(s.value!=='none') o[s.dataset.m]=s.value; });
+  return o;
+}
+function savePerms(email){
+  const b=document.querySelector(`[data-usave="${email}"]`); if(b){ b.disabled=true; b.textContent='…'; }
+  api('saveUserPermissions',{email:email,perms:collectPerms(email)})
+    .then(()=>{ toast('Permissions saved'); if(b) b.textContent='Saved'; })
+    .catch(err=>{ toast(err.message||'Failed',true); if(b){ b.disabled=false; b.textContent='Save *'; } });
+}
+async function setUserPw(email){
+  const pw=prompt('New password for '+email+' (min 4 characters):');
+  if(pw===null) return;
+  if(pw.length<4) return toast('Password must be at least 4 characters',true);
+  try{ await api('updateUser',{email:email, pwHash:await pwHash(pw)}); toast('Password updated'); }
+  catch(e){ toast(e.message||'Failed',true); }
+}
+async function doSaveUser(){
   const Email=document.getElementById('uf_Email').value.trim();
   const Name=document.getElementById('uf_Name').value.trim();
   const Role=document.getElementById('uf_Role').value;
+  const pw=document.getElementById('uf_Pw').value||'';
+  const preset=document.getElementById('uf_Preset').value;
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(Email)) return toast('A valid email is required',true);
   if(!Name) return toast('Name is required',true);
+  if(pw.length<4) return toast('Password must be at least 4 characters',true);
+  const perms={}; if(preset!=='none') PERM_MODULES.forEach(m=>perms[m]=preset);
   busy('saveUser');
-  api('saveUser',{Email:Email,Name:Name,Role:Role}).then(()=>{ toast('User added'); renderUsers(); }).catch(err=>toast(err.message||'Save failed',true));
+  try{
+    await api('saveUser',{Email:Email,Name:Name,Role:Role,pwHash:await pwHash(pw),perms:perms});
+    toast('User added'); renderUsers();
+  }catch(err){ toast(err.message||'Save failed',true); }
 }
 function delUser(email){
   askConfirm('Remove user “'+email+'”?',()=>{
@@ -1650,6 +1900,10 @@ function renderMore(){
 /*****************************************************************
  * GLOBAL EVENTS
  *****************************************************************/
+document.addEventListener('change',e=>{
+  const p=e.target.closest('.psel');
+  if(p){ p.className='psel p-'+p.value; markDirty(p.dataset.e); }
+});
 document.addEventListener('input',e=>{
   const t=e.target; if(!t) return;
   if(t.classList&&t.classList.contains('upcase')&&t.value){ const p=t.selectionStart; t.value=t.value.toUpperCase(); try{t.setSelectionRange(p,p);}catch(_){}}
@@ -1669,6 +1923,12 @@ document.addEventListener('click',e=>{
   const mt=e.target.closest('[data-mtab]'); if(mt){masterTab=mt.dataset.mtab;renderMasters();return;}
   const md=e.target.closest('[data-mdel]'); if(md){delMaster(md.dataset.mdel);return;}
   const ud=e.target.closest('[data-udel]'); if(ud){delUser(ud.dataset.udel);return;}
+  const us=e.target.closest('[data-usave]'); if(us){savePerms(us.dataset.usave);return;}
+  const upw=e.target.closest('[data-upw]'); if(upw){setUserPw(upw.dataset.upw);return;}
+  const utg=e.target.closest('[data-utog]'); if(utg){ api('updateUser',{email:utg.dataset.utog,status:utg.dataset.st}).then(()=>{toast('Updated');renderUsers();}).catch(err=>toast(err.message||'Failed',true)); return; }
+  const ual=e.target.closest('[data-uall]'); if(ual){ const v=ual.dataset.uall, em=ual.dataset.e;
+    document.querySelectorAll(`.psel[data-e="${em}"]`).forEach(s=>{ if(s.disabled) return; s.value=v; s.className='psel p-'+v; });
+    markDirty(em); return; }
   const sp=e.target.closest('[data-sendpo]'); if(sp){doSendPO(sp.dataset.sendpo);return;}
   const del=e.target.closest('[data-del]'); if(del){nItems.splice(+del.dataset.del,1);if(!nItems.length)nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
   if(e.target.closest('#addLi')){nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
@@ -1881,22 +2141,37 @@ document.getElementById('overlay').addEventListener('click',closeSidebar);
 /*****************************************************************
  * BOOT — role-based login gate
  *****************************************************************/
-function doLogin(){
+async function pwHash(pw){
+  try{
+    const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode('o2c$'+pw));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){ let h=5381; const s='o2c$'+pw; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0; return 'f'+h.toString(16); }
+}
+async function doLogin(){
   const email=(document.getElementById('loginEmail').value||'').trim();
+  const pw=document.getElementById('loginPw').value||'';
   const role=document.getElementById('loginRole').value;
   const err=document.getElementById('lgErr');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent='Enter a valid email address.'; return; }
+  if(!pw){ err.textContent='Enter your password.'; return; }
   if(!role){ err.textContent='Please choose your role.'; return; }
   err.textContent='';
-  const name=email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-  STATE.user={email:email,name:name,role:role};
   const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='Signing in…';
-  api('getBootstrap').then(b=>{
+  try{
+    STATE.user={email:email,name:email,role:role,perms:{}};             // temp, taaki api() chal sake
+    const u=await api('authenticate',{email:email, pwHash:await pwHash(pw), role:role});
+    STATE.user={email:u.email,name:u.name,role:u.role,perms:u.perms||{}};
+    PERMS=STATE.user.perms;
+    const b=await api('getBootstrap');
     STATE.masters=b.masters; STATE.dashboard=b.dashboard; STATE.orders=b.orders; STATE.showReturns=!!b.showReturns;
     document.getElementById('login').style.display='none';
     setUser(STATE.user); buildNav(); go(defaultRoute());
-  }).catch(e=>{ btn.disabled=false; btn.textContent='Sign in →'; err.textContent='Could not load data. '+(e.message||'')+' If in Apps Script, run setupDatabase() first.'; });
+  }catch(e){
+    STATE.user=null; btn.disabled=false; btn.textContent='Sign in →';
+    err.textContent=(e&&e.message)||'Could not sign in.';
+  }
 }
+document.getElementById('loginPw').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('loginBtn').addEventListener('click',doLogin);
 document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 
