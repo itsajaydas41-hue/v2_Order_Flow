@@ -1,0 +1,2056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>OrderFlow — Order to Collection</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --indigo:#16A34A;--indigo-7:#15803D;--indigo-50:#F0FDF4;--indigo-100:#DCFCE7;
+  --canvas:#F3F7F4;--surface:#fff;--surface-2:#F5F8F6;--ink:#0F2A1C;--ink-h:#1C3A2A;
+  --t1:#16261D;--t2:#5B6D62;--t3:#93A399;--t-inv:#C7E6D4;
+  --line:#E6EDE8;
+  --ok:#16A34A;--ok-bg:#E7F8EE;--warn:#D97706;--warn-bg:#FEF4E2;
+  --err:#DC2626;--err-bg:#FDECEC;--info:#2563EB;--info-bg:#E7EFFE;
+  --violet:#7C3AED;--violet-bg:#F0EAFE;--teal:#0D9488;--teal-bg:#D6F5F0;
+  --shadow:rgba(16,40,28,.10);
+  --r:14px;--r-lg:20px;--sb:248px;
+}
+body.dark{
+  --canvas:#0D1512;--surface:#15201B;--surface-2:#1B2822;--ink:#0A130F;--ink-h:#16241C;
+  --t1:#E6EFE9;--t2:#9DB0A4;--t3:#6E8377;--t-inv:#BFE0CC;
+  --line:#26332C;
+  --indigo:#22C55E;--indigo-7:#16A34A;--indigo-50:rgba(34,197,94,.15);--indigo-100:rgba(34,197,94,.22);
+  --ok:#22C55E;--ok-bg:rgba(34,197,94,.16);--warn:#F59E0B;--warn-bg:rgba(245,158,11,.16);
+  --err:#F87171;--err-bg:rgba(248,113,113,.16);--info:#60A5FA;--info-bg:rgba(96,165,250,.16);
+  --violet:#A78BFA;--violet-bg:rgba(167,139,250,.16);--teal:#2DD4BF;--teal-bg:rgba(45,212,191,.16);
+  --shadow:rgba(0,0,0,.4);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var(--t1);-webkit-font-smoothing:antialiased}
+.tnum{font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input,select,textarea{font-family:inherit}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--t3);border-radius:6px}
+
+/* ---------------- SHELL (responsive) ---------------- */
+.shell{display:flex;min-height:100vh}
+.sidebar{width:var(--sb);background:var(--ink);color:var(--t-inv);position:fixed;inset:0 auto 0 0;display:flex;flex-direction:column;z-index:60;transition:transform .25s}
+.brand{height:62px;display:flex;align-items:center;gap:11px;padding:0 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.brand .bm{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#22C55E,#16A34A);display:grid;place-items:center;box-shadow:0 4px 12px rgba(22,163,74,.45)}
+.brand .bm svg{width:18px;height:18px}
+.brand .bn{font-weight:700;font-size:16px;color:#fff;letter-spacing:-.02em}
+.brand .bn b{color:#86EFAC}
+.nav{flex:1;overflow-y:auto;padding:14px 12px}
+.nav-l{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5B6486;padding:14px 12px 7px}
+.nav-i{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--t-inv);font-weight:500;font-size:13.5px;width:100%;text-align:left;transition:.14s;position:relative}
+.nav-i svg{width:18px;height:18px;opacity:.85;flex-shrink:0}
+.nav-i:hover{background:var(--ink-h);color:#fff}
+.nav-i.on{background:linear-gradient(90deg,rgba(22,163,74,.22),rgba(22,163,74,.06));color:#fff}
+.nav-i.on::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:3px;height:20px;background:#818CF8;border-radius:0 3px 3px 0}
+.nav-i.on svg{opacity:1;color:#86EFAC}
+.nav-b{margin-left:auto;font-size:10.5px;font-weight:700;background:var(--indigo);color:#fff;border-radius:20px;padding:1px 7px;min-width:20px;text-align:center}
+.nav-b.am{background:#D97706}
+/* hierarchical accordion nav */
+.nav-group{margin-bottom:2px}
+.nav-gh{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;border-radius:9px;color:var(--t-inv);font-weight:650;font-size:13.5px;text-align:left}
+.nav-gh:hover{background:var(--ink-h);color:#fff}
+.nav-gh .gi{display:grid;place-items:center}.nav-gh .gi svg{width:18px;height:18px;opacity:.9}
+.nav-gh .gl{flex:1}
+.chev{width:15px;height:15px;opacity:.55;transition:transform .2s;flex-shrink:0}
+.nav-group.open>.nav-gh .chev,.nav-sub.open>.nav-sh .chev{transform:rotate(90deg)}
+.nav-gb{display:none;padding:2px 0 6px 8px;margin:2px 0 2px 12px;border-left:1px solid rgba(255,255,255,.08)}
+.nav-group.open>.nav-gb{display:block}
+.nav-sub{margin:1px 0}
+.nav-sh{display:flex;align-items:center;gap:8px;width:100%;padding:7px 12px;border-radius:8px;color:#8C95B8;font-weight:700;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;text-align:left}
+.nav-sh:hover{color:#fff}.nav-sh span{flex:1}
+.nav-sb{display:none;padding-left:2px}
+.nav-sub.open>.nav-sb{display:block}
+.nav-gb .nav-i{font-size:13px;padding:8px 12px}
+/* desktop: collapsible sidebar */
+.main{transition:margin-left .25s}
+body.nav-hidden .sidebar{transform:translateX(-100%)}
+body.nav-hidden .main{margin-left:0}
+/* app-like: never scroll the page sideways */
+html{max-width:100%;overflow-x:hidden}
+body{max-width:100%}
+.sb-foot{padding:12px;border-top:1px solid rgba(255,255,255,.06)}
+.uchip{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px}
+.uav{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#F59E0B,#D97706);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+.uchip .nm{font-size:13px;font-weight:600;color:#fff}.uchip .rl{font-size:11px;color:#9AA2C4}
+
+.main{flex:1;margin-left:var(--sb);min-width:0;display:flex;flex-direction:column}
+.hdr{height:62px;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:0 22px}
+.ham{display:flex;width:38px;height:38px;border-radius:9px;align-items:center;justify-content:center;color:var(--t2)}
+.ham:hover{background:var(--canvas)}
+.hsearch{flex:1;max-width:420px;position:relative}
+.hsearch svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--t3)}
+.hsearch input{width:100%;height:40px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:0 13px 0 38px;outline:none;font-size:14px}
+.hsearch input:focus{border-color:var(--indigo);background:var(--surface)}
+.hacts{display:flex;align-items:center;gap:6px;margin-left:auto}
+.ic-btn{width:40px;height:40px;border-radius:10px;color:var(--t2);display:grid;place-items:center;position:relative}
+.ic-btn:hover{background:var(--canvas)}.ic-btn svg{width:19px;height:19px}
+.ic-btn .dt{position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--err);border:2px solid #fff}
+
+.content{padding:24px;max-width:1280px;width:100%}
+.phead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.crumbs{font-size:12.5px;color:var(--t3);margin-bottom:8px}
+.crumbs a{cursor:pointer}.crumbs a:hover{color:var(--indigo)}
+.ptitle{font-size:22px;font-weight:750;letter-spacing:-.025em}
+.psub{color:var(--t2);font-size:13.5px;margin-top:3px}
+
+/* ---------------- COMPONENTS (shared w/ approved design) ---------------- */
+.hero{background:linear-gradient(135deg,var(--indigo),#22C55E);border-radius:var(--r-lg);padding:20px;color:#fff;position:relative;overflow:hidden;box-shadow:0 12px 26px rgba(22,163,74,.3);margin-bottom:16px}
+.hero::after{content:"";position:absolute;right:-30px;top:-30px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.1)}
+.hero .lbl{font-size:13px;opacity:.85}.hero .big{font-size:32px;font-weight:800;letter-spacing:-.03em;margin:5px 0 2px}.hero .meta{font-size:12.5px;opacity:.9}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;cursor:pointer;transition:.15s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(19,24,41,.07)}
+.kpi .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;margin-bottom:9px}
+.kpi .ic svg{width:18px;height:18px}
+.kpi .v{font-size:23px;font-weight:750;letter-spacing:-.02em;line-height:1}.kpi .l{font-size:12px;color:var(--t2);margin-top:4px}
+.ic-indigo{background:var(--indigo-50);color:var(--indigo)}.ic-amber{background:var(--warn-bg);color:var(--warn)}
+.ic-green{background:var(--ok-bg);color:var(--ok)}.ic-red{background:var(--err-bg);color:var(--err)}
+.ic-blue{background:var(--info-bg);color:var(--info)}.ic-violet{background:var(--violet-bg);color:var(--violet)}.ic-teal{background:var(--teal-bg);color:var(--teal)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:16px}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.card-h h3{font-size:14.5px;font-weight:650}.card-h .s{font-size:12px;color:var(--t3)}
+.card-p{padding:18px}
+
+.sec{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 11px}
+.sec h3{font-size:15px;font-weight:700}.sec a{font-size:13px;color:var(--indigo);font-weight:600;cursor:pointer}
+
+.ocard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px;margin-bottom:11px;cursor:pointer;transition:.12s}
+.ocard:active{transform:scale(.99)}.ocard:hover{border-color:#D9DCEC}
+.ocard .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ocard .oid{font-size:15px;font-weight:700}.ocard .vend{font-size:13px;color:var(--t2)}
+.ocard .bot{display:flex;align-items:center;justify-content:space-between;margin-top:11px}.ocard .amt{font-size:16px;font-weight:750}
+.ocard .arrow{color:var(--t3)}.ocard .arrow svg{width:18px;height:18px}
+.olist-grid{display:grid;grid-template-columns:1fr;gap:0}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:4px 10px;border-radius:20px;white-space:nowrap}
+.badge .bd{width:6px;height:6px;border-radius:50%;background:currentColor}
+.b-ok{color:var(--ok);background:var(--ok-bg)}.b-info{color:var(--info);background:var(--info-bg)}
+.b-warn{color:var(--warn);background:var(--warn-bg)}.b-violet{color:var(--violet);background:var(--violet-bg)}
+.b-teal{color:var(--teal);background:var(--teal-bg)}.b-gray{color:var(--t2);background:#F0F1F6}.b-err{color:var(--err);background:var(--err-bg)}
+
+.mini-bar{height:6px;border-radius:20px;background:#EEF0F6;overflow:hidden;margin-top:11px}
+.mini-fill{height:100%;border-radius:20px;background:var(--indigo)}.mini-fill.warn{background:var(--warn)}.mini-fill.ok{background:var(--ok)}
+
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px}
+.chip{padding:7px 14px;border-radius:20px;font-size:12.5px;font-weight:650;background:var(--surface-2);color:var(--t2);white-space:nowrap;border:1px solid var(--line)}.chip.on{background:var(--indigo);color:#fff;border-color:var(--indigo)}
+
+/* tracker */
+.track{margin:6px 2px}
+.tstep{display:flex;gap:14px}
+.tline{display:flex;flex-direction:column;align-items:center}
+.tnode{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:2px solid var(--line);color:var(--t3);font-size:12px;font-weight:700;flex-shrink:0;z-index:1}
+.tnode svg{width:15px;height:15px}.tbar{width:2.5px;flex:1;background:var(--line);min-height:26px}
+.tstep.done .tnode{background:var(--ok);border-color:var(--ok);color:#fff}.tstep.done .tbar{background:var(--ok)}
+.tstep.now .tnode{background:var(--indigo);border-color:var(--indigo);color:#fff;box-shadow:0 0 0 5px var(--indigo-50)}
+.tcontent{padding-bottom:18px;flex:1}.tcontent .nm{font-size:14px;font-weight:650}.tstep.now .nm{color:var(--indigo)}.tcontent .tm{font-size:12px;color:var(--t3);margin-top:1px}
+.tstep:last-child .tbar{display:none}
+
+/* vehicles */
+.veh{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:11px;overflow:hidden}
+.vhead{display:flex;align-items:center;gap:12px;padding:14px 15px;cursor:pointer}
+.vic{width:42px;height:42px;border-radius:12px;background:var(--indigo-50);color:var(--indigo);display:grid;place-items:center;flex-shrink:0}.vic svg{width:21px;height:21px}
+.vmeta{flex:1;min-width:0}.vno{font-size:14px;font-weight:700}.vsub{font-size:12px;color:var(--t2)}
+.vchev{color:var(--t3);transition:.25s}.vchev svg{width:18px;height:18px}.veh.open .vchev{transform:rotate(180deg)}
+.vbody{max-height:0;overflow:hidden;transition:max-height .3s}.veh.open .vbody{max-height:300px}
+.vbody-in{padding:12px 15px;border-top:1px solid var(--line);font-size:13px;color:var(--t2)}
+
+/* forms */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px}
+.field{margin-bottom:15px}
+.field label{font-size:13px;font-weight:600;color:var(--t2);display:block;margin-bottom:7px}
+.field label .rq{color:var(--err)}
+.inp,.sel{width:100%;height:48px;border:1.5px solid var(--line);border-radius:12px;padding:0 14px;font-size:14.5px;background:var(--surface);color:var(--t1);outline:none;transition:border .15s}
+.inp:focus,.sel:focus{border-color:var(--indigo)}.inp::placeholder{color:var(--t3)}
+textarea.inp{height:auto;min-height:80px;padding:12px 14px;resize:vertical}
+.vendcard{background:var(--indigo-50);border:1px solid var(--indigo-100);border-radius:12px;padding:13px;display:flex;gap:12px;align-items:center;margin-bottom:15px}
+.vendcard .av{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,var(--indigo),#22C55E);color:#fff;display:grid;place-items:center;font-weight:700;flex-shrink:0}
+.vendcard .nm{font-size:14px;font-weight:700}.vendcard .sub{font-size:12px;color:var(--t2);margin-top:2px}
+
+/* SKU rows */
+.li{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:11px}
+.li-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:11px}
+.li-top .nm{font-size:14px;font-weight:650}.li-top .cd{font-size:12px;color:var(--t3)}
+.li-del{color:var(--t3);width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex-shrink:0}.li-del svg{width:17px;height:17px}
+.li-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.li-grid .f label{font-size:11px;color:var(--t3);font-weight:600;display:block;margin-bottom:4px}
+.li-grid .f input{width:100%;height:38px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font-size:13.5px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
+.li-grid .f input:focus{border-color:var(--indigo)}
+.li-tot{display:flex;justify-content:space-between;margin-top:11px;padding-top:11px;border-top:1px dashed var(--line);font-size:13px}.li-tot b{font-weight:700;font-variant-numeric:tabular-nums}
+
+.summary{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px}
+.srow{display:flex;justify-content:space-between;padding:7px 0;font-size:14px;color:var(--t2)}.srow b{color:var(--t1);font-weight:650;font-variant-numeric:tabular-nums}
+.srow.grand{border-top:1.5px solid var(--line);margin-top:6px;padding-top:12px;font-size:16px;color:var(--t1);font-weight:700}.srow.grand b{font-size:20px;color:var(--indigo);font-weight:800}
+
+.btn{width:100%;height:50px;border-radius:13px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:.12s;border:none}
+.btn:active{transform:scale(.99)}.btn:disabled{opacity:.5}
+.btn svg{width:18px;height:18px}
+.btn-primary{background:var(--indigo);color:#fff;box-shadow:0 8px 18px rgba(22,163,74,.28)}
+.btn-ghost{background:var(--surface);border:1.5px solid var(--line);color:var(--t1)}
+.btn-add{background:var(--indigo-50);color:var(--indigo);height:44px}
+.btn-row{display:flex;gap:10px}.btn-row .btn{flex:1}
+.btn-sm{height:40px;font-size:13.5px;border-radius:10px;width:auto;padding:0 14px}
+
+.collbar{height:13px;border-radius:20px;background:#EEF0F6;overflow:hidden;margin:13px 0}
+.collbar-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#D97706,#F59E0B);transition:width .4s}
+.coll-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:13px}
+.coll-stat{border-radius:12px;padding:12px}.coll-stat .l{font-size:11px;color:var(--t2)}.coll-stat .v{font-size:15px;font-weight:750;margin-top:3px;font-variant-numeric:tabular-nums}
+
+.hrow{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+.hrow .hic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;font-size:10px;font-weight:800}
+.hrow .hm{flex:1}.hrow .hm .a{font-size:14px;font-weight:650}.hrow .hm .b{font-size:12px;color:var(--t3)}.hrow .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+
+.chk{display:flex;align-items:center;gap:13px;background:var(--surface);border:1.5px solid var(--line);border-radius:13px;padding:15px;margin-bottom:11px;cursor:pointer}
+.chk.on{border-color:var(--ok);background:var(--ok-bg)}
+.chkbox{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;flex-shrink:0}.chk.on .chkbox{background:var(--ok);border-color:var(--ok)}
+.chkbox svg{width:15px;height:15px;color:#fff;opacity:0}.chk.on .chkbox svg{opacity:1}.chk span{font-size:15px;font-weight:600}.chk.on span{color:var(--ok)}
+
+.upl{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed var(--line);border-radius:14px;padding:24px;text-align:center;color:var(--t2);background:var(--surface);cursor:pointer}
+.upl svg{width:32px;height:32px;color:var(--indigo);margin-bottom:8px}.upl .t{font-weight:650;font-size:14px;color:var(--t1)}.upl .s{font-size:12px;margin-top:3px}
+.doc{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-top:10px}
+.doc .di{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:9px;font-weight:800;flex-shrink:0}.doc .dm .a{font-size:13.5px;font-weight:600}.doc .dm .b{font-size:11.5px;color:var(--t3)}
+
+.seg{display:flex;background:var(--surface-2);border-radius:12px;padding:4px;margin-bottom:16px;overflow-x:auto;border:1px solid var(--line)}
+.seg button{flex:1;min-width:90px;height:38px;border-radius:9px;font-size:13px;font-weight:650;color:var(--t2);white-space:nowrap}.seg button.on{background:var(--surface);color:var(--indigo);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--t3);padding:11px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);position:sticky;top:0;white-space:nowrap}
+.tbl td{padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl tr:last-child td{border-bottom:none}.tbl tr:hover td{background:var(--surface-2)}
+.tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl th.num{text-align:right}
+.tbl tfoot td{padding:11px 14px;background:var(--surface-2);border-top:2px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+.rep-count{font-size:12px;color:var(--t3);margin-bottom:8px;font-weight:600}
+
+.urow{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+.urow .ua{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;color:#fff;font-weight:700;flex-shrink:0;font-size:13px}
+.urow .um{flex:1}.urow .um .a{font-size:14px;font-weight:650}.urow .um .b{font-size:12px;color:var(--t3)}
+
+.menu-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.mtile{background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:15px 8px;display:flex;flex-direction:column;align-items:center;gap:9px;transition:.12s}
+.mtile:active{transform:scale(.96)}.mtile .mi{width:46px;height:46px;border-radius:13px;display:grid;place-items:center}.mtile .mi svg{width:22px;height:22px}.mtile span{font-size:11.5px;font-weight:600;text-align:center}
+
+.empty{text-align:center;color:var(--t3);padding:40px 20px;font-size:14px}
+.loading{text-align:center;color:var(--t3);padding:50px 0;font-size:14px}
+.spin{width:30px;height:30px;border:3px solid var(--indigo-100);border-top-color:var(--indigo);border-radius:50%;animation:sp .7s linear infinite;margin:0 auto 12px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#11131c;color:#fff;padding:12px 18px;border-radius:12px;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:9px;opacity:0;pointer-events:none;transition:.3s;z-index:200;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:90%}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.toast svg{width:18px;height:18px;color:#4ADE80;flex-shrink:0}
+.toast.err svg{color:#F87171}
+
+/* mobile bottom nav */
+.botnav{display:none;position:fixed;left:0;right:0;bottom:0;height:72px;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-top:1px solid var(--line);align-items:center;justify-content:space-around;padding:0 6px 8px;z-index:50}
+.botnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--t3);padding-top:10px}
+.botnav button svg{width:22px;height:22px;flex-shrink:0}.botnav button span{font-size:10px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.botnav button.on{color:var(--indigo)}
+.botnav .fab{flex:0 0 auto;width:52px;height:52px;border-radius:17px;background:var(--indigo);color:#fff;display:grid;place-items:center;margin-top:-24px;box-shadow:0 8px 20px rgba(22,163,74,.4)}.botnav .fab svg{width:25px;height:25px}
+.overlay{display:none;position:fixed;inset:0;background:rgba(19,24,41,.5);z-index:55}.overlay.show{display:block}
+
+.two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start}
+
+/* ---- responsive ---- */
+@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0);box-shadow:0 0 60px rgba(0,0,0,.3)}
+  .main{margin-left:0}.ham{display:flex}
+  .content{padding:16px 16px 90px}.botnav{display:flex}
+  .two-col{grid-template-columns:1fr}
+  .ptitle{font-size:19px}
+}
+@media(max-width:560px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+  .li-grid{grid-template-columns:1fr 1fr}
+  .coll-stats{grid-template-columns:1fr 1fr 1fr}
+  .hsearch{max-width:none}
+  .desk-only{display:none}
+}
+/* searchable dropdown (vendor / SKU) — mobile-friendly replacement for native datalist */
+.cmb{position:relative}
+.cmb-list{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(20,24,41,.16);max-height:240px;overflow:auto;z-index:60;display:none;padding:4px}
+.cmb-list.show{display:block}
+.cmb-opt{padding:11px 12px;border-radius:9px;font-size:14px;cursor:pointer;line-height:1.25}
+.cmb-opt:active,.cmb-opt.active{background:var(--indigo-50)}
+@media(hover:hover){.cmb-opt:hover{background:var(--indigo-50)}}
+.cmb-empty{padding:11px 12px;color:var(--t3);font-size:13px}
+/* compact mobile view — fit more on screen */
+@media(max-width:480px){
+  .content{padding:12px 12px 86px}
+  .phead{margin-bottom:12px}
+  .ptitle{font-size:17px}.psub{font-size:12px}
+  .crumbs{font-size:11px}
+  .card-p{padding:13px}
+  .sec{margin:16px 0 8px}.sec h3{font-size:13px}
+  .kpi{padding:12px}.kpi .v{font-size:20px}.kpi .l{font-size:11px}
+  .kpi .ic{width:30px;height:30px}
+  .hero{padding:16px}.hero .big{font-size:26px}.hero .lbl{font-size:11px}
+  .ocard{padding:12px}.oid{font-size:13.5px}.vend{font-size:12px}
+  .badge{font-size:10.5px;padding:3px 7px}
+  .field{margin-bottom:11px}.field label{font-size:12px}
+  .inp,.sel{height:42px;font-size:14px;padding:0 12px}
+  textarea.inp{height:auto}
+  .li{padding:11px}.li-grid{gap:7px}
+  .li-grid .f label{font-size:10.5px}.li-grid input{height:38px;font-size:13px}
+  .btn{height:46px;font-size:14px}.btn-sm{height:38px;font-size:13px}
+  .srow{font-size:13px;padding:6px 0}
+  .veh{margin-bottom:8px}.vhead{padding:12px}.vno{font-size:13.5px}.vsub{font-size:11.5px}
+  .track .nm{font-size:13px}.track .tm{font-size:11px}
+  .summary{padding:14px}
+  .vendcard{padding:10px}.vendcard .nm{font-size:13.5px}.vendcard .sub{font-size:11.5px}
+  .cmb-opt{padding:12px;font-size:14px}
+}
+.btn-sm{height:40px;padding:0 14px;font-size:13.5px;width:auto;display:inline-flex}
+/* login gate */
+.login{position:fixed;inset:0;z-index:200;background:linear-gradient(160deg,var(--indigo-50),var(--canvas) 62%);display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 60px rgba(20,24,41,.16);padding:28px 24px}
+.login-brand{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.login-brand .bm{width:38px;height:38px;border-radius:11px;background:var(--indigo);display:grid;place-items:center}
+.login-brand .bm svg{width:21px;height:21px}
+.login-brand .bn{font-size:19px;font-weight:600;color:var(--ink)}
+.login-title{font-size:20px;font-weight:700;color:var(--ink)}
+.login-sub{font-size:13px;color:var(--t2);margin:4px 0 18px;line-height:1.4}
+.lg-field{margin-bottom:14px}
+.lg-field label{display:block;font-size:12.5px;font-weight:600;color:var(--t2);margin-bottom:6px}
+.lg-field input,.lg-field select{width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 13px;font-size:14.5px;font-family:inherit;background:var(--surface);color:var(--ink);-webkit-appearance:none;appearance:none}
+.lg-field input:focus,.lg-field select:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-50)}
+.lg-err{color:var(--err);font-size:12.5px;min-height:16px;margin-bottom:6px}
+.login-card .btn{width:100%}
+.lg-hint{text-align:center;font-size:12px;color:var(--t3);margin-top:12px}
+/* dark-mode surfaces that used translucent white */
+body.dark .hdr{background:rgba(21,32,27,.85)}
+body.dark .botnav{background:rgba(21,32,27,.95)}
+body.dark ::-webkit-scrollbar-thumb{background:#2C3A32}
+body.dark .upl,body.dark .doc,body.dark .veh{background:var(--surface)}
+body.dark .login{background:linear-gradient(160deg,#12211A,#0D1512 62%)}
+body.dark .btn-primary,body.dark .botnav .fab,body.dark .chip.on{background:#16A34A}
+body.dark .btn-primary:hover{background:#15803D}
+/* theme toggle */
+.theme-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--t2);border:1px solid var(--line);background:var(--surface)}
+.theme-btn:hover{color:var(--indigo);border-color:var(--indigo)}
+.theme-btn svg{width:19px;height:19px}
+/* selectable order-detail table (dispatch planning) */
+.seltbl input[type=checkbox]{width:17px;height:17px;accent-color:var(--indigo);cursor:pointer;vertical-align:middle}
+.seltbl .qin{width:96px;height:34px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-size:13px;text-align:right;font-variant-numeric:tabular-nums;background:var(--surface);color:var(--t1)}
+.seltbl .qin:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-50)}
+.seltbl tr.off{opacity:.4}
+.seltbl .nm{font-weight:600;font-size:13px;color:var(--t1)}
+.seltbl .cd{font-size:11px;color:var(--t3);margin-top:1px}
+.chk-col{width:44px;text-align:center}
+/* row delete + confirm modal */
+.row-del{margin-left:auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--t3);border:1px solid var(--line);background:var(--surface);flex-shrink:0}
+.row-del:hover{color:var(--err);border-color:var(--err);background:var(--err-bg)}
+.row-del svg{width:16px;height:16px}
+.btn-danger{background:var(--err);color:#fff}
+.btn-danger:hover{filter:brightness(.94)}
+.cfm{position:fixed;inset:0;z-index:300;background:rgba(15,40,28,.5);display:none;align-items:center;justify-content:center;padding:20px}
+.cfm-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 24px 60px var(--shadow)}
+.cfm-msg{font-size:14.5px;color:var(--t1);margin-bottom:16px;line-height:1.45}
+.cfm-row{display:flex;gap:8px;justify-content:flex-end}
+/* QC result options */
+.qc-opts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.qc-opt{flex:1;min-width:120px;height:46px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--t1);font-weight:600;font-size:13.5px;cursor:pointer}
+.qc-opt:hover{border-color:var(--indigo)}
+.qc-opt.on{border-color:var(--indigo);background:var(--indigo-50);color:var(--indigo)}
+.upcase{text-transform:uppercase}
+
+/* ---- Dashboard V2: pipeline flow + charts ---- */
+.flow{display:flex;flex-wrap:wrap;gap:10px 4px;align-items:stretch;margin:6px 0 18px}
+.fnode{position:relative;background:var(--surface);border:2px solid var(--bcol,#16A34A);border-radius:10px;
+  padding:8px 12px;min-width:108px;cursor:pointer;flex:0 0 auto;overflow:hidden;
+  animation:fpulse var(--cyc,10s) linear infinite;animation-delay:var(--dly,0s)}
+.fnode:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.10);transition:.15s}
+.fnode .fl{font-size:11.5px;font-weight:600;color:var(--bcol,#16A34A);line-height:1.25;position:relative;z-index:2}
+.fnode .fv{font-size:21px;font-weight:800;color:var(--t1);margin-top:2px;position:relative;z-index:2}
+/* travelling highlight sweep inside each node */
+.fnode::before{content:'';position:absolute;inset:0;z-index:1;border-radius:8px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--bcol,#16A34A) 22%,transparent),transparent);
+  transform:translateX(-110%);animation:fsweep var(--cyc,10s) linear infinite;animation-delay:var(--dly,0s)}
+@keyframes fpulse{0%,6%,100%{box-shadow:0 0 0 0 transparent}2%{box-shadow:0 0 0 6px color-mix(in srgb,var(--bcol,#16A34A) 28%,transparent)}4%{box-shadow:0 0 0 0 transparent}}
+@keyframes fsweep{0%{transform:translateX(-110%)}5%{transform:translateX(110%)}100%{transform:translateX(110%)}}
+.farrow{align-self:center;color:var(--t3);font-size:16px;font-weight:700;padding:0 2px;user-select:none;
+  animation:fglow var(--cyc,10s) linear infinite;animation-delay:var(--adly,0s)}
+@keyframes fglow{0%,8%,100%{color:var(--t3);transform:scale(1)}3%{color:var(--indigo);transform:scale(1.5)}}
+@media (prefers-reduced-motion:reduce){.fnode,.fnode::before,.farrow{animation:none}}
+.dv2-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+@media(max-width:820px){.dv2-grid{grid-template-columns:1fr}}
+.dv2-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.dv2-card h4{margin:0 0 10px;font-size:14px;color:var(--t1)}
+.dv2-bar{cursor:pointer}
+.dv2-bar rect{transition:.15s}
+.dv2-bar:hover rect{opacity:.75}
+.dv2-bar.sel rect{stroke:var(--t1);stroke-width:2}
+.dv2-lbl{font-size:10px;fill:var(--t2);text-anchor:middle}
+.dv2-val{font-size:10px;fill:var(--t1);text-anchor:middle;font-weight:700}
+.dv2-axis{stroke:var(--line)}
+.dv2-line{fill:none;stroke:var(--indigo);stroke-width:2.5}
+.dv2-dot{fill:var(--indigo)}
+.dv2-donut-lbl{font-size:12px;font-weight:700}
+
+</style>
+</head>
+<body>
+<!-- LOGIN GATE -->
+<div class="login" id="login">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="bm"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M3 9l2-5h14l2 5"/></svg></div>
+      <div class="bn">Order<b>Flow</b></div>
+    </div>
+    <div class="login-title">Sign in</div>
+    <div class="login-sub">Enter your email and choose your role to continue.</div>
+    <div class="lg-field"><label>Email</label><input id="loginEmail" type="email" placeholder="you@company.com" autocomplete="email"></div>
+    <div class="lg-field"><label>Role</label>
+      <select id="loginRole">
+        <option value="">Select role…</option>
+        <option>Sales</option>
+        <option>Dispatch Executive</option>
+        <option>Security</option>
+        <option>Billing Executive</option>
+        <option>Accounts</option>
+        <option>Admin</option>
+      </select>
+    </div>
+    <div class="lg-err" id="lgErr"></div>
+    <button class="btn btn-primary" id="loginBtn">Sign in →</button>
+    <div class="lg-hint">You'll only see the pages mapped to your role.</div>
+  </div>
+</div>
+<div class="shell">
+  <!-- SIDEBAR (desktop) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="bm"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M3 9l2-5h14l2 5"/></svg></div>
+      <div class="bn">Order<b>Flow</b></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sb-foot"><div class="uchip"><div class="uav" id="uav">—</div><div><div class="nm" id="uname">—</div><div class="rl" id="urole">—</div></div></div></div>
+  </aside>
+  <div class="overlay" id="overlay"></div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="hdr">
+      <button class="ham" id="ham"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <div class="hsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search orders, vendors, vehicles…"></div>
+      <div class="hacts">
+        <button class="theme-btn" id="themeBtn" title="Toggle dark / light"></button>
+        <button class="ic-btn desk-only"><span class="dt"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></button>
+        <div class="uav" id="uav2" style="border-radius:10px">—</div>
+      </div>
+    </header>
+    <main class="content" id="view"><div class="loading"><div class="spin"></div>Loading…</div></main>
+  </div>
+</div>
+
+<!-- mobile bottom nav -->
+<nav class="botnav" id="botnav"></nav>
+<div class="toast" id="toast"><svg id="toastIc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span id="toastMsg"></span></div>
+
+<script src="config.js"></script>
+<script src="api-supabase.js"></script>
+<script>
+/*****************************************************************
+ * SERVER BRIDGE — uses google.script.run inside Apps Script,
+ * falls back to an in-browser MOCK so the UI previews anywhere.
+ *****************************************************************/
+const IS_GAS = (typeof google!=='undefined' && google.script && google.script.run);
+const IS_SB  = (typeof window!=='undefined' && window.SUPABASE_URL && window.SBAPI);
+function api(fn, payload){
+  if (IS_SB) return SBAPI.call(fn, payload);
+  return new Promise((resolve,reject)=>{
+    if(IS_GAS){
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](payload);
+    } else {
+      setTimeout(()=>{ try{ resolve(MOCK[fn] ? MOCK[fn](payload) : null);}catch(e){ reject(e);} }, 120);
+    }
+  });
+}
+
+/* ---------------- ICONS ---------------- */
+/* ---------- THEME (dark / light) ---------- */
+const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 1.5v2.5M12 20v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M1.5 12h2.5M20 12h2.5M4.2 19.8L6 18M18 6l1.8-1.8"/></svg>';
+const MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>';
+function applyTheme(dark){
+  document.body.classList.toggle('dark',dark);
+  const b=document.getElementById('themeBtn'); if(b) b.innerHTML=dark?SUN:MOON;
+  try{ localStorage.setItem('o2c-theme',dark?'dark':'light'); }catch(e){}
+}
+function toggleTheme(){ applyTheme(!document.body.classList.contains('dark')); }
+(function initTheme(){
+  let dark=false;
+  try{ dark=localStorage.getItem('o2c-theme')==='dark'; }catch(e){}
+  applyTheme(dark);
+  const b=document.getElementById('themeBtn'); if(b) b.addEventListener('click',toggleTheme);
+})();
+
+const I={
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h13v9H1zM14 10h4l3 3v3h-7z"/><circle cx="5.5" cy="18.5" r="1.8"/><circle cx="17.5" cy="18.5" r="1.8"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>'
+};
+const inr=n=>'₹'+Math.round(Number(n)||0).toLocaleString('en-IN');
+const inrS=n=>{n=Number(n)||0;return n>=1e7?'₹'+(n/1e7).toFixed(1)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(1)+'L':n>=1e3?'₹'+(n/1e3).toFixed(1)+'K':'₹'+n;};
+const STAGES=['Created','Delivery Schedule','Dispatch Planned','Vehicle Arrived','Loading Completed','Invoice Generated','Gate Out','Delivered','Collection'];
+const badgeCls=s=>({'Pending Dispatch Planning':'b-gray','Partial Planning':'b-teal','Fully Planned':'b-teal','Vehicle Arrived':'b-teal','Partial Loading':'b-info','Loading Completed':'b-info','Invoice Generated':'b-info','Vehicle Dispatched':'b-violet','Delivered':'b-violet','Partially Dispatched':'b-warn','Partially Collected':'b-warn','Fully Collected':'b-ok'}[s]||'b-gray');
+
+/*****************************************************************
+ * NAVIGATION + ROLES
+ *****************************************************************/
+const MODULES=[
+  {id:'dashboard',label:'Dashboard',group:'',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>'},
+  {id:'orders',label:'Orders',group:'Operations',roles:['Admin','Sales'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>'},
+  {id:'create',label:'New Order',group:'Operations',roles:['Admin','Sales'],ic:I.plus},
+  {id:'schedule',label:'Delivery Schedule',group:'Operations',roles:['Admin','Sales','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M9 15l2 2 4-4"/></svg>'},
+  {id:'dispatch',label:'Dispatch Planning',group:'Operations',roles:['Admin','Dispatch Executive'],ic:I.truck},
+  {id:'gate',label:'Gate Entry',group:'Operations',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l9-4 9 4v14M3 21h18M9 21v-6h6v6"/></svg>'},
+  {id:'loading',label:'Vehicle Loading',group:'Operations',roles:['Admin','Dispatch Executive'],ic:I.box},
+  {id:'invoice',label:'Invoice Entry',group:'Operations',roles:['Admin','Billing Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>'},
+  {id:'gateout',label:'Gate Out',group:'Operations',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'},
+  {id:'pod',label:'POD',group:'Operations',roles:['Admin','Billing Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
+  {id:'collection',label:'Collection',group:'Finance',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>'},
+  {id:'reports',label:'Reports',group:'Finance',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>'},
+  {id:'returnentry',label:'Return Gate Entry',group:'Returns',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 015 5v6"/></svg>'},
+  {id:'returnreceived',label:'Return Received',group:'Returns',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M9 12l2 2 4-4"/></svg>'},
+  {id:'masters',label:'Master Data',group:'Admin',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>'},
+  {id:'p2p_dashboard',label:'P2P Dashboard',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>'},
+  {id:'p2p_po',label:'Purchase Order',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>'},
+  {id:'p2p_polist',label:'PO List / Send',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>'},
+  {id:'p2p_gate',label:'Gate Entry (SEN)',group:'Purchases',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l9-4 9 4v14M3 21h18M9 21v-6h6v6"/></svg>'},
+  {id:'p2p_qc',label:'QC Check',group:'Purchases',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
+  {id:'p2p_receiving',label:'Material Received',group:'Purchases',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>'},
+  {id:'p2p_return',label:'Material Return',group:'Purchases',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 015 5v6"/></svg>'},
+  {id:'p2p_payment',label:'Payment',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>'},
+  {id:'users',label:'User Management',group:'Admin',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg>'}
+];
+
+let STATE={user:null,masters:null,dashboard:null};
+let current='dashboard';
+
+function allowed(m){
+  if(!STATE.user) return true;
+  if(m.group==='Returns' && !STATE.showReturns) return false;   // conditional: only when a POD rejection exists
+  return m.roles.indexOf(STATE.user.role)>-1;
+}
+function refreshReturns(){
+  return api('getReturnFlags').then(f=>{ STATE.showReturns=!!(f&&f.showReturns); buildNav(); }).catch(()=>{});
+}
+
+const NAV_ICONS={
+  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+  ops:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h13v9H1zM14 10h4l3 3v3h-7z"/><circle cx="5.5" cy="18.5" r="1.8"/><circle cx="17.5" cy="18.5" r="1.8"/></svg>',
+  fin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
+  rep:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>',
+  admin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 00-2.3-1.3L13.8 2h-3.6l-.4 2.4A7 7 0 007.5 5.7l-2.4-1-2 3.4 2 1.6a7 7 0 000 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 002.3 1.3l.4 2.4h3.6l.4-2.4a7 7 0 002.3-1.3l2.4 1 2-3.4-2-1.6c.06-.42.1-.85.1-1.3z"/></svg>'
+};
+const NAV_TREE=[
+  {label:'Dashboard',ic:NAV_ICONS.dash,children:[
+    {route:'dashboard',label:'O2C Dashboard'},
+    {route:'p2p_dashboard',label:'P2P Dashboard'}
+  ]},
+  {label:'Operations',ic:NAV_ICONS.ops,children:[
+    {label:'O2C',children:[
+      {route:'orders',label:'Orders'},{route:'create',label:'New Order'},{route:'schedule',label:'Delivery Schedule'},{route:'dispatch',label:'Dispatch Planning'},
+      {route:'gate',label:'Gate Entry'},{route:'loading',label:'Vehicle Loading'},{route:'invoice',label:'Invoice Entry'},
+      {route:'gateout',label:'Gate Out'},{route:'pod',label:'POD'},
+      {route:'returnentry',label:'Return Gate Entry'},{route:'returnreceived',label:'Return Received'}
+    ]},
+    {label:'P2P',children:[
+      {route:'p2p_po',label:'Purchase Order'},{route:'p2p_polist',label:'PO List / Send'},{route:'p2p_gate',label:'Gate Entry (SEN)'},
+      {route:'p2p_qc',label:'QC Check'},{route:'p2p_receiving',label:'Material Received'},{route:'p2p_return',label:'Material Return'}
+    ]}
+  ]},
+  {label:'Finance',ic:NAV_ICONS.fin,children:[
+    {route:'collection',label:'Collection (O2C)'},
+    {route:'p2p_payment',label:'Payment (P2P)'}
+  ]},
+  {label:'Reports',ic:NAV_ICONS.rep,children:[
+    {route:'reports',label:'Reports'}
+  ]},
+  {label:'Administration',ic:NAV_ICONS.admin,children:[
+    {route:'masters',label:'Master Data'},{route:'users',label:'User Management'}
+  ]}
+];
+function leafAllowed(route){ const m=MODULES.find(x=>x.id===route); return m?allowed(m):false; }
+function nodeVisible(n){ return n.route ? leafAllowed(n.route) : (n.children||[]).some(nodeVisible); }
+function navPathTo(route,nodes,acc){ acc=acc||[]; for(const n of (nodes||NAV_TREE)){ if(n.route===route) return acc.concat(n.label); if(n.children){ const r=navPathTo(route,n.children,acc.concat(n.label)); if(r) return r; } } return null; }
+function toggleNav(label){ if(STATE.navOpen.has(label)) STATE.navOpen.delete(label); else STATE.navOpen.add(label); buildNav(); }
+
+function buildNav(){
+  if(!STATE.navOpen) STATE.navOpen=new Set(['Dashboard','Operations']);
+  const path=navPathTo(current); if(path) path.forEach(l=>STATE.navOpen.add(l));   // auto-open ancestors of current page
+  const leaf=n=>`<button class="nav-i ${n.route===current?'on':''}" data-go="${n.route}">${n.label}</button>`;
+  const sub=n=>{ const open=STATE.navOpen.has(n.label); return `<div class="nav-sub ${open?'open':''}"><button class="nav-sh" data-navtoggle="${n.label}"><span>${n.label}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button><div class="nav-sb">${n.children.filter(nodeVisible).map(c=>c.route?leaf(c):sub(c)).join('')}</div></div>`; };
+  const group=n=>{ const open=STATE.navOpen.has(n.label); return `<div class="nav-group ${open?'open':''}"><button class="nav-gh" data-navtoggle="${n.label}"><span class="gi">${n.ic}</span><span class="gl">${n.label}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button><div class="nav-gb">${n.children.filter(nodeVisible).map(c=>c.route?leaf(c):sub(c)).join('')}</div></div>`; };
+  document.getElementById('nav').innerHTML=NAV_TREE.filter(nodeVisible).map(group).join('');
+
+  // bottom nav (mobile): role's own pages (up to 4) + More
+  const SHORT={dashboard:'Home',orders:'Orders',create:'New',schedule:'Schedule',dispatch:'Dispatch',loading:'Loading',gate:'Gate In',gateout:'Gate Out',invoice:'Invoice',pod:'POD',collection:'Collect',p2p_dashboard:'P2P',p2p_po:'PO',p2p_gate:'Gate In',p2p_qc:'QC',p2p_receiving:'Receive',p2p_payment:'Pay'};
+  const prim=MODULES.filter(m=>allowed(m) && ['dashboard','orders','create','dispatch','loading','gate','gateout','invoice','pod','collection','p2p_dashboard','p2p_polist','p2p_gate','p2p_qc','p2p_receiving','p2p_payment'].indexOf(m.id)>-1).slice(0,4);
+  document.getElementById('botnav').innerHTML = prim.map(m=>`<button data-go="${m.id}" class="${current===m.id?'on':''}">${m.ic}<span>${SHORT[m.id]||m.label}</span></button>`).join('')
+    + `<button data-go="more" class="${current==='more'?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></button>`;
+}
+
+function setUser(u){
+  STATE.user=u;
+  const init=(u.name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('uav').textContent=init;
+  document.getElementById('uav2').textContent=init;
+  document.getElementById('uname').textContent=u.name;
+  document.getElementById('urole').textContent=u.role;
+}
+
+/*****************************************************************
+ * ROUTER
+ *****************************************************************/
+const view=document.getElementById('view');
+const ROUTES={
+  dashboard:renderDashboard, orders:renderOrders, detail:renderDetail, create:renderCreate,
+  dispatch:renderDispatch, gate:renderGate, loading:renderLoading, invoice:renderInvoice,
+  gateout:renderGateOut, pod:renderPOD, collection:renderCollection, reports:renderReports, schedule:renderSchedule,
+  returnentry:renderReturnEntry, returnreceived:renderReturnReceived,
+  p2p_po:renderPOCreate, p2p_polist:renderPOList, p2p_gate:renderGateIn, p2p_qc:renderQC,
+  p2p_receiving:renderReceiving, p2p_return:renderMatReturn, p2p_payment:renderPayment, p2p_dashboard:renderP2PDashboard,
+  masters:renderMasters, users:renderUsers, more:renderMore
+};
+const DEFAULT_ROUTE={'Admin':'dashboard','Sales':'orders','Dispatch Executive':'dispatch','Security':'gate','Billing Executive':'invoice','Accounts':'collection'};
+function defaultRoute(){
+  if(STATE.user && DEFAULT_ROUTE[STATE.user.role] && roleCan(DEFAULT_ROUTE[STATE.user.role])) return DEFAULT_ROUTE[STATE.user.role];
+  const first=MODULES.find(allowed); return first?first.id:'orders';
+}
+function go(id,arg){
+  const m=MODULES.find(x=>x.id===id);
+  if(m && STATE.user && m.roles.indexOf(STATE.user.role)<0){ id=defaultRoute(); arg=undefined; }   // block pages not mapped to this role
+  if(!ROUTES[id]) return;
+  current=id;
+  // fast path: just flip active classes; rebuild only if the target isn't in the tree yet
+  const navEl=document.getElementById('nav');
+  if(navEl){
+    const hit=navEl.querySelector(`.nav-i[data-go="${id}"]`);
+    if(hit){ navEl.querySelectorAll('.nav-i.on').forEach(n=>n.classList.remove('on')); hit.classList.add('on');
+             document.querySelectorAll('.botnav button').forEach(b=>b.classList.toggle('on',b.dataset.go===id)); }
+    else buildNav();
+  }
+  closeSidebar();
+  view.innerHTML='<div class="loading"><div class="spin"></div>Loading…</div>';
+  window.scrollTo(0,0);
+  ROUTES[id](arg);
+}
+function head(title,sub,crumb){
+  return `<div class="phead"><div>${crumb?`<div class="crumbs"><a data-go="dashboard">Home</a> › ${crumb}</div>`:''}<div class="ptitle">${title}</div>${sub?`<div class="psub">${sub}</div>`:''}</div></div>`;
+}
+/* role check for a module id (used by lifecycle "Continue" buttons) */
+function roleCan(id){ const m=MODULES.find(x=>x.id===id); return !STATE.user || (m && m.roles.indexOf(STATE.user.role)>-1); }
+/* preselect a dropdown value and trigger its change handler (used for stage deep-links) */
+function presel(id,val){ const s=document.getElementById(id); if(s&&val){ s.value=val; if(s.value===String(val)) s.dispatchEvent(new Event('change')); } }
+/* searchable tappable dropdown bound to an <input> inside a .cmb wrapper */
+function makeCombo(input, items, labelOf, onSelect){
+  const list=input.parentElement.querySelector('.cmb-list'); if(!list) return;
+  const render=q=>{
+    const ql=(q||'').toLowerCase();
+    const f=items.filter(it=>labelOf(it).toLowerCase().indexOf(ql)>-1).slice(0,40);
+    list._f=f;
+    list.innerHTML=f.length?f.map((it,i)=>`<div class="cmb-opt" data-idx="${i}">${labelOf(it)}</div>`).join(''):'<div class="cmb-empty">No match</div>';
+    list.classList.add('show');
+  };
+  input.addEventListener('focus',()=>render(input.value));
+  input.addEventListener('input',()=>render(input.value));
+  input.addEventListener('blur',()=>setTimeout(()=>list.classList.remove('show'),160));
+  list.addEventListener('mousedown',e=>{                       // mousedown beats input blur
+    const opt=e.target.closest('.cmb-opt'); if(!opt) return;
+    e.preventDefault();
+    const it=list._f[+opt.dataset.idx]; if(!it) return;
+    input.value=labelOf(it); list.classList.remove('show'); onSelect(it);
+  });
+}
+
+/*****************************************************************
+ * SCREENS
+ *****************************************************************/
+
+/* ================= DASHBOARD V2 (pipeline + charts) ================= */
+const DV2_M=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function dv2K(v){ v=Number(v)||0; if(v>=1e7)return (v/1e7).toFixed(1)+'Cr'; if(v>=1e5)return (v/1e5).toFixed(1)+'L'; if(v>=1000)return (v/1000).toFixed(0)+'K'; return String(Math.round(v)); }
+function dv2Flow(nodes){
+  const step=0.55, cyc=(nodes.length*step+2).toFixed(1)+'s';
+  return `<div class="flow">${nodes.map((n,i)=>{
+    const d=(i*step).toFixed(2)+'s', ad=((i*step)+step/2).toFixed(2)+'s';
+    return `<div class="fnode" style="--bcol:${n[2]};--cyc:${cyc};--dly:${d}" ${n[3]?`data-go="${n[3]}"`:''}>
+       <div class="fl">${n[0]}</div><div class="fv tnum">${n[1]}</div></div>`+
+       (i<nodes.length-1?`<div class="farrow" style="--cyc:${cyc};--adly:${ad}">→</div>`:'');
+  }).join('')}</div>`;
+}
+function dv2Bars(series, selM){
+  const mx=Math.max(1,...series.monthly.map(x=>x.count));
+  const W=560,H=190,bw=28,gap=(W-40-12*bw)/11;
+  let bars='';
+  series.monthly.forEach((m,i)=>{
+    const h=Math.round((m.count/mx)*120), x=30+i*(bw+gap), y=150-h;
+    bars+=`<g class="dv2-bar ${i===selM?'sel':''}" data-m="${i}">
+      <rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="4" fill="${['#3B82F6','#F59E0B','#22C55E','#8B5CF6','#EF4444','#3B82F6','#F97316','#14B8A6','#E11D48','#6366F1','#84CC16','#0EA5E9'][i]}"></rect>
+      ${m.count?`<text class="dv2-val" x="${x+bw/2}" y="${y-4}">${m.count}</text>`:''}
+      <text class="dv2-lbl" x="${x+bw/2}" y="168">${DV2_M[i]}</text></g>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%"><line class="dv2-axis" x1="26" y1="150" x2="${W-8}" y2="150"/>${bars}</svg>`;
+}
+function dv2Weekly(series, m){
+  const wk=series.weekly[m]||[0,0,0,0,0];
+  const mx=Math.max(1,...wk);
+  const W=560,H=170,x0=50,x1=W-20,y0=130,step=(x1-x0)/4;
+  const pts=wk.map((v,i)=>[x0+i*step, y0-Math.round((v/mx)*95)]);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
+    <line class="dv2-axis" x1="${x0-10}" y1="${y0}" x2="${x1}" y2="${y0}"/>
+    <polyline class="dv2-line" points="${pts.map(p=>p.join(',')).join(' ')}"/>
+    ${pts.map((p,i)=>`<circle class="dv2-dot" cx="${p[0]}" cy="${p[1]}" r="4"></circle>
+      <text class="dv2-val" x="${p[0]}" y="${p[1]-9}">${wk[i]?('₹'+dv2K(wk[i])):''}</text>
+      <text class="dv2-lbl" x="${p[0]}" y="${y0+16}">${i+1} week</text>`).join('')}
+  </svg>`;
+}
+function dv2Donut(d){
+  const total=Math.max(1,(d.pending||0)+(d.closed||0));
+  const C=2*Math.PI*54, closedFrac=(d.closed||0)/total;
+  return `<svg viewBox="0 0 160 160" style="width:100%;max-width:190px;margin:auto;display:block">
+    <circle cx="80" cy="80" r="54" fill="none" stroke="#F97316" stroke-width="26"/>
+    <circle cx="80" cy="80" r="54" fill="none" stroke="#22C55E" stroke-width="26"
+      stroke-dasharray="${(closedFrac*C).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 80 80)"/>
+    <text x="80" y="76" text-anchor="middle" class="dv2-donut-lbl" fill="#22C55E">Closed ${d.closed||0}</text>
+    <text x="80" y="94" text-anchor="middle" class="dv2-donut-lbl" fill="#F97316">Pending ${d.pending||0}</text>
+  </svg>`;
+}
+function dv2Render(elId, d, nodes, chartTitle){
+  const el=document.getElementById(elId); if(!el) return;
+  let selM=new Date().getMonth();
+  function paint(){
+    el.innerHTML = dv2Flow(nodes(d.pipeline)) + `
+      <div class="dv2-grid">
+        <div class="dv2-card"><h4>${chartTitle} — ${d.series.year}</h4><div id="${elId}_bars">${dv2Bars(d.series,selM)}</div></div>
+        <div class="dv2-card"><h4>Status</h4>${dv2Donut(d.donut)}</div>
+      </div>
+      <div class="dv2-card" style="margin-top:16px"><h4 id="${elId}_wt">${DV2_M[selM]} — weekly value</h4><div id="${elId}_week">${dv2Weekly(d.series,selM)}</div></div>`;
+    el.querySelectorAll('.dv2-bar').forEach(b=>b.addEventListener('click',()=>{ selM=+b.dataset.m; 
+      document.getElementById(elId+'_bars').innerHTML=dv2Bars(d.series,selM);
+      document.getElementById(elId+'_wt').textContent=DV2_M[selM]+' — weekly value';
+      document.getElementById(elId+'_week').innerHTML=dv2Weekly(d.series,selM);
+      el.querySelectorAll('.dv2-bar').forEach(x=>x.classList.toggle('sel',+x.dataset.m===selM));
+    }));
+  }
+  paint();
+}
+
+function renderDashboard(){
+  view.innerHTML=head('O2C Dashboard','Order → Delivery → Collection pipeline · build v2')+`<div id="dv2o2c"><div class="loading"><div class="spin"></div>Loading…</div></div>`;
+  api('getO2CDashV2').then(d=>{
+    if(current!=='dashboard') return;
+    dv2Render('dv2o2c', d, p=>[
+      ['Total Orders',p.total,'#2563EB','orders'],
+      ['Delivery Schedule',p.schedule,'#16A34A','dispatch'],
+      ['Dispatch Planned',p.planned,'#D946EF','gate'],
+      ['Vehicle Arrived',p.arrived,'#F59E0B','loading'],
+      ['Loading Pending',p.loading,'#2563EB','loading'],
+      ['Invoice Pending',p.invoice,'#14B8A6','invoice'],
+      ['Gate Out Pending',p.gateout,'#EAB308','gateout'],
+      ['POD Pending',p.pod,'#8B5CF6','pod'],
+      ['Rejected Orders',p.rejected,'#DC2626','returnentry'],
+      ['Return Gate Entry',p.returnGate,'#0EA5E9','returnentry'],
+      ['Returns Received',p.returnsRecv,'#F97316','returnreceived'],
+      ['Collection Pending',p.collection,'#EC4899','collection'],
+      ['Fully Closed',p.closed,'#64748B','orders']
+    ], 'Monthly Orders');
+  }).catch(()=>{ paintDashboard(); });   // old dashboard as fallback (mock/GAS mode)
+}
+function paintDashboard(){
+  const d=STATE.dashboard;
+  const cards=[
+    ['Total Orders',d.totalOrders,'ic-indigo',I.box,'orders'],
+    ['Partial Orders',d.partialOrders,'ic-violet',I.box,'orders'],
+    ['Pending Dispatch',d.pendingDispatch,'ic-amber',I.truck,'dispatch'],
+    ['Dispatch Planned',d.dispatchPlanned,'ic-teal',I.truck,'gate'],
+    ['Vehicle Arrived',d.vehicleArrived,'ic-blue',I.truck,'loading'],
+    ['Loading Pending',d.loadingPending,'ic-amber',I.box,'loading'],
+    ['Invoice Pending',d.invoicePending,'ic-blue',I.box,'invoice'],
+    ['POD Pending',d.podPending,'ic-violet',I.check,'pod'],
+    ['Collection Pending',d.collectionPending,'ic-amber',I.check,'collection'],
+    ['Fully Closed',d.fullyClosed,'ic-green',I.check,'reports']
+  ];
+  view.innerHTML=head('Dashboard','Live order-to-collection pipeline')+`
+    <div class="hero"><div class="lbl">Outstanding to collect</div><div class="big tnum">${inrS(d.outstanding)}</div><div class="meta">${d.collectionPending} orders pending collection</div></div>
+    <div class="kpi-grid">${cards.map(c=>`<div class="kpi" data-go="${c[4]}"><div class="ic ${c[2]}">${c[3]}</div><div class="v tnum">${c[1]}</div><div class="l">${c[0]}</div></div>`).join('')}</div>
+    <div class="sec"><h3>Recent Orders</h3><a data-go="orders">See all</a></div>
+    <div id="recent"></div>`;
+  const paintRecent=list=>{document.getElementById('recent').innerHTML = list.slice(0,5).map(orderCard).join('')||'<div class="empty">No orders yet.</div>';};
+  if(STATE.orders&&STATE.orders.length) paintRecent(STATE.orders);   // instant paint from bootstrap cache
+  api('getOrders','All').then(list=>{STATE.orders=list;paintRecent(list);});
+}
+
+function orderCard(o){
+  const idx=o.StageIndex||0, pct=Math.round(idx/STAGES.length*100);
+  const st=o.Status, fill=idx>=STAGES.length?'ok':(idx>=STAGES.length-2?'warn':'');
+  return `<div class="ocard" data-detail="${o.OrderNo}">
+    <div class="top"><div><div class="oid">${o.OrderNo}</div><div class="vend">${o.VendorName}</div></div><span class="badge ${badgeCls(st)}"><span class="bd"></span>${st}</span></div>
+    <div class="mini-bar"><div class="mini-fill ${fill}" style="width:${pct}%"></div></div>
+    <div class="bot"><div class="amt tnum">${inr(o.TotalValue)}</div><div class="arrow">${I.chev}</div></div></div>`;
+}
+
+let orderFilter='All';
+function renderOrders(){
+  view.innerHTML=head('Orders','All orders across every stage','Orders')+`
+    <div class="chips">${['All','Created','Dispatch','Loading','Delivery','Collection'].map(c=>`<button class="chip ${c===orderFilter?'on':''}" data-filter="${c}">${c}</button>`).join('')}</div>
+    <div id="olist"><div class="loading"><div class="spin"></div></div></div>`;
+  api('getOrders',orderFilter).then(list=>{
+    document.getElementById('olist').innerHTML=list.length?list.map(orderCard).join(''):'<div class="empty">No orders in this stage.</div>';
+  });
+}
+
+function renderDetail(orderNo){
+  api('getOrderDetail',orderNo).then(d=>{
+    if(!d){view.innerHTML=head('Order')+'<div class="empty">Order not found.</div>';return;}
+    const o=d.order, idx=o.StageIndex;
+    const steps=STAGES.map((label,i)=>{
+      const cls=i<idx?'done':(i===idx?'now':'');
+      const node=i<idx?I.check:(i+1);
+      return `<div class="tstep ${cls}"><div class="tline"><div class="tnode">${node}</div><div class="tbar"></div></div><div class="tcontent"><div class="nm" ${cls===''?'style="color:var(--t3)"':''}>${label}</div><div class="tm">${i<idx?'Completed':(i===idx?'In progress':'Pending')}</div></div></div>`;
+    }).join('');
+    const VNEXT={'Vehicle Arrived':['loading','Continue: Loading'],'Loading Completed':['invoice','Continue: Invoice Entry'],'Invoice Generated':['gateout','Continue: Gate Out'],'Vehicle Dispatched':['pod','Continue: POD'],'Return Pending':['returnentry','Continue: Return Gate Entry'],'Returned':['returnreceived','Continue: Return Received']};
+    const vBtn=v=>{ const n=VNEXT[v.status]; if(!n||!roleCan(n[0])) return ''; return `<button class="btn btn-primary btn-sm" data-act="${n[0]}" data-arg="${v.gateEntryNo}" style="margin-top:10px">${n[1]} →</button>`; };
+    const veh=d.vehicles.length?`<div class="sec"><h3>Vehicles (${d.vehicles.length})</h3></div>`+d.vehicles.map((v,i)=>`
+      <div class="veh ${i===0?'open':''}" data-veh>
+        <div class="vhead" data-vtog><div class="vic">${I.truck}</div><div class="vmeta"><div class="vno">${v.vehicleNo||v.gateEntryNo}</div><div class="vsub">${v.gateEntryNo} · ${v.driver||'—'}</div></div><span class="badge ${badgeCls(v.status)}"><span class="bd"></span>${v.status}</span><div class="vchev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+        <div class="vbody"><div class="vbody-in">${v.invoiceNo?`Invoice ${v.invoiceNo} · ${inr(v.invoiceAmount)}. `:''}${v.gatedOut?'Gated out. ':''}${v.delivered?'Delivered.':'Awaiting next stage.'}${vBtn(v)}</div></div>
+      </div>`).join(''):'';
+    // order-level next actions (plan / gate / collection)
+    const oActs=[];
+    if(o.Status==='Pending Dispatch Planning' && !o.Scheduled) oActs.push(['schedule',o.OrderNo,'Set Delivery Schedule']);
+    if(['Pending Dispatch Planning','Partial Planning','Partially Dispatched'].indexOf(o.Status)>-1) oActs.push(['dispatch',o.OrderNo,'Plan Dispatch']);
+    if(['Fully Planned','Partial Planning'].indexOf(o.Status)>-1) oActs.push(['gate',o.OrderNo,'Create Gate Entry']);
+    if(d.outstanding>0) oActs.push(['collection',o.OrderNo,'Record Collection']);
+    const oActsHtml=oActs.filter(a=>roleCan(a[0])).map(a=>`<button class="btn btn-primary btn-sm" data-act="${a[0]}" data-arg="${a[1]}" style="margin:0 8px 8px 0">${a[2]} →</button>`).join('');
+    const nextCard=oActsHtml?`<div class="card" style="margin-top:14px"><div class="card-h"><h3>Next Action</h3></div><div class="card-p" style="display:flex;flex-wrap:wrap">${oActsHtml}</div></div>`:'';
+    const fin=d.invoiced>0?`<div class="card" style="margin-top:14px"><div class="card-p"><div class="srow">Invoiced <b>${inr(d.invoiced)}</b></div><div class="srow">Collected <b style="color:var(--ok)">${inr(d.collected)}</b></div><div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:10px">Outstanding <b style="color:${d.outstanding>0?'var(--err)':'var(--ok)'}">${inr(d.outstanding)}</b></div></div></div>`:'';
+    view.innerHTML=head(o.OrderNo,o.VendorName+' · '+o.Status,'<a data-go="orders">Orders</a> › '+o.OrderNo)+`
+      <div class="two-col">
+        <div>
+          <div class="card"><div class="card-h"><h3>Order Lifecycle</h3><span class="s">Stage ${Math.min(idx+1,STAGES.length)} of ${STAGES.length}</span></div><div class="card-p"><div class="track">${steps}</div></div></div>
+          ${nextCard}
+          ${veh}
+        </div>
+        <div>
+          <div class="card"><div class="card-h"><h3>Order Summary</h3></div><div class="card-p"><div class="srow">Order Date <b>${o.OrderDate}</b></div><div class="srow">Total Qty <b>${o.TotalQty}</b></div><div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:10px">Order Value <b style="color:var(--indigo)">${inr(o.TotalValue)}</b></div></div></div>
+          ${fin}
+        </div>
+      </div>`;
+  });
+}
+
+/* ---------- NEW ORDER ---------- */
+let nItems=[];
+function renderCreate(){
+  const v=STATE.masters.vendors, sk=STATE.masters.skus;
+  if(!nItems.length) nItems=[{skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9}];
+  view.innerHTML=head('New Order','Order number auto-generates on save','New Order')+`
+    <div class="two-col"><div>
+      <div class="card"><div class="card-p">
+        <div class="grid2">
+          <div class="field"><label>Order Number</label><input class="inp" value="Auto (ORD-${ym()}-###)" readonly style="background:#F6F7FB;color:var(--t2)"></div>
+          <div class="field"><label>Order Date</label><input class="inp" type="date" id="oDate" value="${today()}"></div>
+        </div>
+        <div class="field"><label>Vendor <span class="rq">*</span></label>
+          <div class="cmb"><input class="inp" id="vendIn" placeholder="Search vendor…" autocomplete="off"><div class="cmb-list"></div></div>
+        </div>
+        <div id="vendCard"></div>
+      </div></div>
+      <div class="sec"><h3>SKU Details</h3></div>
+      <div id="liWrap"></div>
+      <button class="btn btn-add" id="addLi">${I.plus}Add Row</button>
+    </div>
+    <div>
+      <div class="summary" style="position:sticky;top:78px">
+        <h3 style="font-size:14.5px;font-weight:650;margin-bottom:12px">Summary</h3>
+        <div class="srow">Total Quantity <b id="sQty">0</b></div>
+        <div class="srow">Taxable Value <b id="sTaxable">₹0</b></div>
+        <div class="srow">Tax Amount <b id="sTax">₹0</b></div>
+        <div class="srow grand">Grand Total <b id="sGrand">₹0</b></div>
+        <button class="btn btn-primary" id="saveOrder" style="margin-top:14px">${I.check}Save Order</button>
+      </div>
+    </div></div>`;
+  renderLi();
+  makeCombo(document.getElementById('vendIn'), v, x=>x.VendorName, vd=>{
+    document.getElementById('vendCard').innerHTML=`<div class="vendcard"><div class="av">${vd.VendorName.slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.VendorName}</div><div class="sub">${vd.VendorCode} · ${vd.GST}</div></div></div>`;
+  });
+}
+function renderLi(){
+  const wrap=document.getElementById('liWrap'); if(!wrap)return;
+  wrap.innerHTML=nItems.map((it,i)=>`
+    <div class="li">
+      <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp skuIn" data-sku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}</div></div><button class="li-del" data-del="${i}">${I.trash}</button></div>
+      <div class="li-grid">
+        <div class="f"><label>Qty</label><input type="number" value="${it.qty}" data-f="qty" data-i="${i}"></div>
+        <div class="f"><label>Rate</label><input type="number" value="${it.rate}" data-f="rate" data-i="${i}"></div>
+        <div class="f"><label>SGST %</label><input type="number" value="${it.sgst}" data-f="sgst" data-i="${i}"></div>
+        <div class="f"><label>CGST %</label><input type="number" value="${it.cgst}" data-f="cgst" data-i="${i}"></div>
+      </div>
+      <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)} · Tax ${inr(it.qty*it.rate*(it.sgst+it.cgst)/100)}</span><b>${inr(it.qty*it.rate*(1+(it.sgst+it.cgst)/100))}</b></div>
+    </div>`).join('');
+  recalc();
+  wrap.querySelectorAll('.skuIn').forEach(inp=>{
+    const i=inp.dataset.sku;
+    makeCombo(inp, STATE.masters.skus, x=>x.SKUName, m=>{
+      nItems[i].skuName=m.SKUName; nItems[i].skuCode=m.SKUCode; nItems[i].rate=m.Rate;
+      nItems[i].sgst=m.GSTPercent/2; nItems[i].cgst=m.GSTPercent/2; renderLi();
+    });
+  });
+}
+function recalc(){
+  let q=0,tx=0,tax=0;
+  nItems.forEach(it=>{const t=it.qty*it.rate;q+=Number(it.qty)||0;tx+=t;tax+=t*((it.sgst+it.cgst)/100);});
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  set('sQty',q);set('sTaxable',inr(tx));set('sTax',inr(tax));set('sGrand',inr(tx+tax));
+}
+
+/* ---------- DISPATCH PLANNING ---------- */
+/* ---------- DELIVERY SCHEDULE (promise date, before dispatch) ---------- */
+function renderSchedule(arg){
+  view.innerHTML=head('Delivery Schedule','Set a promised delivery date and scheduled quantity before dispatch','Delivery Schedule')+`
+    <div class="field"><label>Order Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="schOrd" placeholder="Search order / vendor…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="schForm"></div>`;
+  api('getSchedulableOrders').then(list=>{
+    if(!list.length) document.getElementById('schForm').innerHTML='<div class="empty">No open orders to schedule.</div>';
+    makeCombo(document.getElementById('schOrd'),list,x=>x.OrderNo+' — '+x.VendorName,o=>loadSchedule(o.OrderNo));
+    if(arg&&list.some(o=>o.OrderNo===arg)){document.getElementById('schOrd').value=arg;loadSchedule(arg);}
+  });
+}
+function loadSchedule(orderNo){
+  api('getScheduleSheet',orderNo).then(d=>{
+    if(!d)return; window._schData=d;
+    document.getElementById('schForm').innerHTML=`
+      <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">Vendor <b>${d.vendorName}</b></div>${d.promisedDate?`<div class="srow">Current promised date <b>${d.promisedDate}</b></div>`:''}</div></div>
+      <div class="grid2">
+        <div class="field"><label>Promised / Scheduled Delivery Date <span class="rq">*</span></label><input class="inp" type="date" id="schDate" value="${today()}"></div>
+        <div class="field"><label>Promised Time <span class="rq">*</span></label><input class="inp" type="time" id="schTime" value="${d.promisedTime||'09:00'}"></div>
+      </div>
+      <div class="sec"><h3>Order Items — set scheduled quantity</h3></div>
+      <div class="tbl-wrap"><table class="tbl seltbl">
+        <thead><tr><th>SKU</th><th class="num">Ordered</th><th class="num">Pending</th><th class="num">Scheduled Qty</th></tr></thead>
+        <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td class="num">${it.OrderedQty}</td><td class="num">${it.PendingQty}</td><td class="num"><input class="qin" type="number" value="${it.ScheduledQty}" min="0" max="${it.PendingQty}" data-sch="${i}"></td></tr>`).join('')}</tbody>
+      </table></div>
+      <div class="field" style="margin-top:12px"><label>Remarks</label><textarea class="inp" id="schRem" placeholder="Commitment notes, customer request…"></textarea></div>
+      <button class="btn btn-primary" id="saveSch" style="margin-top:6px">${I.check}Save Schedule</button>`;
+    document.getElementById('saveSch').onclick=doSaveSchedule;
+  });
+}
+function doSaveSchedule(){
+  const d=window._schData; if(!d)return;
+  const date=pval('schDate'); if(!date)return toast('Choose a promised delivery date',true);
+  const items=d.items.map((it,i)=>{const inp=document.querySelector(`[data-sch="${i}"]`);return {skuCode:it.SKUCode,skuName:it.SKUName,orderedQty:it.OrderedQty,scheduledQty:inp?Math.min(+inp.value||0,it.PendingQty):0};}).filter(x=>x.scheduledQty>0);
+  if(!items.length)return toast('Enter a scheduled quantity for at least one SKU',true);
+  busy('saveSch');
+  api('saveSchedule',{orderNo:d.orderNo,vendorName:d.vendorName,promisedDate:date,promisedTime:pval('schTime')||'09:00',remarks:pval('schRem'),items:items})
+    .then(r=>{toast('Schedule saved — '+r.scheduleNo);go('dispatch',d.orderNo);}).catch(err=>toast(err.message||'Failed',true));
+}
+
+function renderDispatch(arg){
+  view.innerHTML=head('Dispatch Planning','Plan dispatch for orders pending planning','Dispatch')+`
+    <div class="field"><label>Pending Order <span class="rq">*</span></label><select class="sel" id="planOrder"><option value="">Select order…</option></select></div>
+    <div id="planForm"></div>`;
+  api('getPendingDispatch').then(list=>{
+    const sel=document.getElementById('planOrder');
+    sel.innerHTML='<option value="">Select order…</option>'+list.map(o=>`<option value="${o.OrderNo}">${o.OrderNo} — ${o.VendorName}</option>`).join('');
+    if(!list.length) document.getElementById('planForm').innerHTML='<div class="empty">No orders pending dispatch planning.</div>';
+    if(arg) presel('planOrder',arg);
+  });
+  document.getElementById('planOrder').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('planForm').innerHTML='';return;}
+    api('getOrderItemsFor',e.target.value).then(items=>{
+      if(!items.length){
+        document.getElementById('planForm').innerHTML='<div class="empty">All items for this order are already fully planned. Nothing left to dispatch-plan.</div>';
+        return;
+      }
+      document.getElementById('planForm').innerHTML=`
+        <div class="grid2">
+          <div class="field"><label>Planned Date <span class="rq">*</span></label><input class="inp" type="date" id="pDate" value="${today()}"></div>
+          <div class="field"><label>Planned Time</label><input class="inp" type="time" id="pTime" value="09:00"></div>
+        </div>
+        <div class="field"><label>Transporter <span class="rq">*</span></label><select class="sel" id="pTrans">${STATE.masters.transporters.map(t=>`<option>${t.TransporterName}</option>`).join('')}</select></div>
+        <div class="field"><label>Remarks</label><textarea class="inp" id="pRemarks" placeholder="Route notes, handling…"></textarea></div>
+        <div class="sec"><h3>Order Details — tick the SKUs to dispatch</h3></div>
+        <div class="tbl-wrap"><table class="tbl seltbl">
+          <thead><tr><th class="chk-col"><input type="checkbox" id="planAll" checked></th><th>SKU</th><th class="num">Ordered</th><th class="num">Loaded</th><th class="num">Remaining</th><th class="num">Plan Qty</th></tr></thead>
+          <tbody>${items.map((it,i)=>`<tr data-row="${i}">
+            <td class="chk-col"><input type="checkbox" class="rowchk" data-plan-chk="${i}" checked></td>
+            <td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td>
+            <td class="num">${it.OrderedQty}</td>
+            <td class="num">${it.LoadedQty||0}</td>
+            <td class="num">${it.RemainingQty}</td>
+            <td class="num"><input class="qin" type="number" value="${it.RemainingQty}" min="0" max="${it.RemainingQty}" data-plan="${i}"></td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+        <button class="btn btn-primary" id="savePlan" style="margin-top:14px" data-order="${e.target.value}" data-items='${JSON.stringify(items)}'>${I.check}Confirm Dispatch Plan</button>`;
+      const pf=document.getElementById('planForm'), all=document.getElementById('planAll');
+      const sync=()=>{ const boxes=[...pf.querySelectorAll('.rowchk')]; boxes.forEach(c=>{ const tr=c.closest('tr'), on=c.checked; tr.classList.toggle('off',!on); const q=tr.querySelector('.qin'); if(q) q.disabled=!on; }); all.checked=boxes.every(c=>c.checked); all.indeterminate=!all.checked&&boxes.some(c=>c.checked); };
+      all.addEventListener('change',()=>{ pf.querySelectorAll('.rowchk').forEach(c=>c.checked=all.checked); sync(); });
+      pf.querySelectorAll('.rowchk').forEach(c=>c.addEventListener('change',sync));
+      sync();
+    });
+  });
+}
+
+/* ---------- GATE ENTRY ---------- */
+function renderGate(arg){
+  view.innerHTML=head('Gate Entry','Capture vehicle arrival against a dispatch plan · GE-'+ym()+'-### auto-generates','Gate Entry')+`
+    <div class="field"><label>Dispatch Plan (one vehicle per plan) <span class="rq">*</span></label><select class="sel" id="gePlan"><option value="">Select plan…</option></select></div>
+    <div id="gePlanInfo"></div>
+    <div class="grid2">
+      <div class="field"><label>Vehicle Number <span class="rq">*</span></label><input class="inp upcase" id="geVeh" placeholder="MH-00-XX-0000"></div>
+      <div class="field"><label>Driver Name <span class="rq">*</span></label><input class="inp upcase" id="geDrv" placeholder="FULL NAME"></div>
+      <div class="field"><label>Mobile No.</label><input class="inp" id="geMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit number"></div>
+      <div class="field"><label>Driving License</label><input class="inp upcase" id="geDL" placeholder="DL-0000000000"></div>
+      <div class="field"><label>RC Number</label><input class="inp upcase" id="geRC" placeholder="RC-000000"></div>
+    </div>
+    <button class="btn btn-primary" id="saveGate">${I.check}Record Gate Entry</button>`;
+  api('getDispatchPlanned').then(list=>{
+    window._gePlans=list;
+    document.getElementById('gePlan').innerHTML='<option value="">Select plan…</option>'+list.map(p=>`<option value="${p.PlanNo}">${p.PlanNo} — ${p.OrderNo} · ${p.VendorName}</option>`).join('');
+    if(!list.length) document.getElementById('gePlanInfo').innerHTML='<div class="empty">No open dispatch plans waiting for a vehicle.</div>';
+    if(arg){ const pl=list.find(p=>p.OrderNo===arg); if(pl) presel('gePlan',pl.PlanNo); }
+  });
+  document.getElementById('gePlan').addEventListener('change',e=>{
+    const p=(window._gePlans||[]).find(x=>x.PlanNo===e.target.value);
+    document.getElementById('gePlanInfo').innerHTML = p?`<div class="vendcard"><div class="av">${I.truck}</div><div><div class="nm">${p.OrderNo}</div><div class="sub">${p.Summary||''}</div></div></div>`:'';
+  });
+}
+
+/* ---------- LOADING ---------- */
+function renderLoading(arg){
+  view.innerHTML=head('Vehicle Loading','Record dispatch qty per SKU · balance tracked','Loading')+`
+    <div class="field"><label>Gate Entry (Vehicle Arrived) <span class="rq">*</span></label><select class="sel" id="ldGate"><option value="">Select gate entry…</option></select></div>
+    <div id="ldForm"></div>`;
+  api('getGateEntries','Vehicle Arrived').then(list=>{
+    document.getElementById('ldGate').innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) document.getElementById('ldForm').innerHTML='<div class="empty">No vehicles awaiting loading.</div>';
+    if(arg) presel('ldGate',arg);
+  });
+  document.getElementById('ldGate').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('ldForm').innerHTML='';return;}
+    api('getLoadingSheet',e.target.value).then(d=>{
+      document.getElementById('ldForm').innerHTML=`
+        <div class="card"><div class="card-p"><div class="srow">Vendor <b>${d.vendorName||'—'}</b></div>${d.vendorCode?`<div class="srow">Vendor Code <b>${d.vendorCode}</b></div>`:''}${d.vendorGST?`<div class="srow">GST <b>${d.vendorGST}</b></div>`:''}<div class="srow">Plan <b>${d.planNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">Vehicle <b>${d.vehicleNo}</b></div></div></div>
+        <div class="sec"><h3>Loading Sheet — planned items</h3><span id="ldPct" style="font-weight:700;color:var(--indigo)">0%</span></div>
+        <div class="psub" style="margin:-6px 2px 10px">Partial loading is allowed. Any unloaded balance returns to dispatch planning automatically.</div>
+        <div class="collbar" style="margin-top:0"><div class="collbar-fill" id="ldBar" style="width:0%;background:linear-gradient(90deg,#4F46E5,#6366F1)"></div></div>
+        ${d.skus.map((s,i)=>`<div class="li" style="margin-top:12px"><div class="li-top"><div><div class="nm">${s.SKUName}</div><div class="cd">${s.SKUCode} · Planned ${s.PlannedQty} · Balance ${s.BalanceQty}</div></div><label style="display:grid;place-items:center"><input type="checkbox" data-ldchk="${i}" style="width:24px;height:24px;accent-color:var(--indigo)"></label></div><div class="li-grid" style="grid-template-columns:1fr"><div class="f"><label>Load Qty (max ${s.BalanceQty})</label><input type="number" value="${s.BalanceQty}" min="0" max="${s.BalanceQty}" data-ldqty="${i}"></div></div></div>`).join('')}
+        <button class="btn btn-primary" id="saveLoad" data-gate="${d.gateEntryNo}" data-plan="${d.planNo}" data-order="${d.orderNo}" data-skus='${JSON.stringify(d.skus)}'>${I.check}Complete Loading</button>`;
+    });
+  });
+}
+
+/* ---------- INVOICE ---------- */
+let invFile=null;
+function renderInvoice(arg){
+  invFile=null;
+  view.innerHTML=head('Invoice Entry','Capture invoice for a loaded vehicle','Invoice')+`
+    <div class="field"><label>Gate Entry (Loaded) <span class="rq">*</span></label><select class="sel" id="invGate"><option value="">Select gate entry…</option></select></div>
+    <div id="invInfo"></div>
+    <div class="grid2">
+      <div class="field"><label>Invoice Number <span class="rq">*</span></label><input class="inp" id="invNo" placeholder="INV-000000"></div>
+      <div class="field"><label>Invoice Date</label><input class="inp" type="date" id="invDate" value="${today()}"></div>
+    </div>
+    <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="invAmt" type="number" placeholder="0"></div>
+    <div class="sec"><h3>Upload Invoice (PDF / JPG / PNG)</h3></div>
+    <label class="upl" for="invUp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg><div class="t">Tap to upload</div><div class="s">PDF, JPG, PNG · max 10 MB</div></label>
+    <input type="file" id="invUp" accept=".pdf,.jpg,.jpeg,.png" hidden>
+    <div id="invDoc"></div>
+    <button class="btn btn-primary" id="saveInv" style="margin-top:14px">${I.check}Save Invoice</button>`;
+  const info=document.getElementById('invInfo');
+  const fill=ge=>{ if(!ge){info.innerHTML='';return;} api('getInvoiceSheet',ge).then(d=>{
+    if(!d){info.innerHTML='';return;}
+    const rows=d.items.map(it=>`<div class="srow">${it.SKUName} <b class="tnum">${it.Qty} × ${inr(it.Rate)} = ${inr(it.Amount)}</b></div>`).join('');
+    info.innerHTML=`<div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Vendor <b>${d.vendorName}</b></div><div class="srow">Vehicle <b>${d.vehicleNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div style="border-top:1px solid var(--line);margin:9px 0 5px"></div>${rows||'<div class="srow">No loaded items.</div>'}<div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:9px">Suggested (incl. GST) <b style="color:var(--indigo)" class="tnum">${inr(d.suggestedAmount)}</b></div></div></div>`;
+    const amt=document.getElementById('invAmt'); if(!amt.value||Number(amt.value)===0) amt.value=d.suggestedAmount;
+  }); };
+  api('getGateEntries','Loading Completed').then(list=>{
+    const sel=document.getElementById('invGate');
+    sel.innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) info.innerHTML='<div class="empty">No loaded vehicles waiting for invoicing.</div>';
+    if(arg && list.some(g=>g.GateEntryNo===arg)){ sel.value=arg; fill(arg); }
+  });
+  document.getElementById('invGate').addEventListener('change',e=>fill(e.target.value));
+  document.getElementById('invUp').addEventListener('change',e=>handleFile(e,'invDoc',f=>invFile=f));
+}
+
+/* ---------- GATE OUT ---------- */
+function renderGateOut(arg){
+  view.innerHTML=head('Gate Out','Verify and dispatch the vehicle','Gate Out')+`
+    <div class="field"><label>Gate Entry (Invoiced) <span class="rq">*</span></label><select class="sel" id="goGate"><option value="">Select gate entry…</option></select></div>
+    <div class="sec"><h3>Verification Checklist</h3></div>
+    ${['Invoice Verified','LR Verified','Vehicle Verified','Documents Verified','Weighment Done'].map(c=>`<div class="chk" data-chk><div class="chkbox">${I.check}</div><span>${c}</span></div>`).join('')}
+    <button class="btn btn-primary" id="saveGO" disabled>Confirm Gate Out (0/5)</button>`;
+  api('getGateEntries','Invoice Generated').then(list=>{
+    document.getElementById('goGate').innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}" data-veh="${g.VehicleNo}" data-drv="${g.DriverName}">${g.GateEntryNo} — ${g.VehicleNo}</option>`).join('');
+    if(!list.length) document.getElementById('goGate').insertAdjacentHTML('afterend','<div class="empty">No invoiced vehicles waiting for gate out.</div>');
+    if(arg) presel('goGate',arg);
+  });
+}
+
+/* ---------- POD ---------- */
+let podFile=null;
+function renderPOD(arg){
+  podFile=null;
+  view.innerHTML=head('Proof of Delivery','Confirm delivery · mark rejected qty to trigger a return','POD')+`
+    <div class="field"><label>Gate Entry (Dispatched) <span class="rq">*</span></label><select class="sel" id="podGate"><option value="">Select gate entry…</option></select></div>
+    <div id="podItems"></div>
+    <div class="grid2">
+      <div class="field"><label>Delivery Date</label><input class="inp" type="date" id="podDate" value="${today()}"></div>
+      <div class="field"><label>Receiver Mobile</label><input class="inp" id="podMob" placeholder="Mobile number"></div>
+    </div>
+    <div class="field"><label>Receiver Name <span class="rq">*</span></label><input class="inp" id="podRcv" placeholder="Who received the goods"></div>
+    <div class="field"><label>Remarks</label><textarea class="inp" id="podRem" placeholder="Delivery notes…"></textarea></div>
+    <div class="sec"><h3>Upload POD (PDF / JPG / PNG)</h3></div>
+    <label class="upl" for="podUp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><div class="t">Signed POD or delivery photo</div><div class="s">PDF, JPG, PNG</div></label>
+    <input type="file" id="podUp" accept=".pdf,.jpg,.jpeg,.png" hidden>
+    <div id="podDoc"></div>
+    <button class="btn btn-primary" id="savePOD" style="margin-top:14px">${I.check}Confirm Delivery</button>`;
+  api('getGateEntries','Vehicle Dispatched').then(list=>{
+    document.getElementById('podGate').innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) document.getElementById('podItems').innerHTML='<div class="empty">No dispatched vehicles awaiting POD.</div>';
+    if(arg) presel('podGate',arg);
+  });
+  document.getElementById('podGate').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('podItems').innerHTML='';return;}
+    api('getPODSheet',e.target.value).then(d=>{
+      window._podItems=d.items;
+      const totLoaded=d.items.reduce((s,it)=>s+(it.LoadedQty||0),0);
+      document.getElementById('podItems').innerHTML=`
+        <div class="card"><div class="card-p"><div class="srow">Vehicle <b>${d.vehicleNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">On this vehicle <b>${d.items.length} SKU · ${totLoaded} qty loaded</b></div></div></div>
+        <div class="sec"><h3>Delivered vs Rejected</h3></div>
+        <div class="psub" style="margin:-6px 2px 10px">Showing only what <b>this vehicle</b> loaded — not the full order. Rejected qty is returned to the factory and starts the return flow.</div>
+        ${d.items.map((it,i)=>`<div class="li"><div class="li-top"><div><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode} · Loaded ${it.LoadedQty}</div></div></div><div class="li-grid" style="grid-template-columns:1fr 1fr"><div class="f"><label>Rejected (returned)</label><input type="number" value="0" min="0" max="${it.LoadedQty}" data-podr="${i}"></div><div class="f"><label>Delivered = Loaded − Rejected</label><input type="number" value="${it.LoadedQty}" data-podd="${i}" readonly tabindex="-1" style="background:var(--surface-2);color:var(--t2)"></div></div></div>`).join('')}`;
+      document.querySelectorAll('[data-podr]').forEach(r=>r.addEventListener('input',()=>{
+        const i=r.dataset.podr, loaded=(window._podItems[i]||{}).LoadedQty||0;
+        let rej=Math.max(0,Math.min(+r.value||0,loaded)); if(String(rej)!==r.value) r.value=rej;
+        const d2=document.querySelector(`[data-podd="${i}"]`); if(d2) d2.value=loaded-rej;
+      }));
+    });
+  });
+  document.getElementById('podUp').addEventListener('change',e=>handleFile(e,'podDoc',f=>podFile=f));
+}
+
+/* ---------- RETURN GATE ENTRY (conditional) ---------- */
+function renderReturnEntry(arg){
+  window._reArg=arg;
+  view.innerHTML=head('Return Gate Entry','Log vehicles returning rejected goods to the factory','Returns')+`
+    <div class="field"><label>Gate Entry with rejected items <span class="rq">*</span></label><select class="sel" id="reGate"><option value="">Select…</option></select></div>
+    <div id="reInfo"></div>
+    <div class="grid2">
+      <div class="field"><label>Return Vehicle No.</label><input class="inp upcase" id="reVeh" placeholder="MH-00-XX-0000"></div>
+      <div class="field"><label>Driver Name</label><input class="inp upcase" id="reDrv" placeholder="FULL NAME"></div>
+    </div>
+    <button class="btn btn-primary" id="saveRE">${I.check}Record Return Gate Entry</button>`;
+  api('getReturnPending').then(list=>{
+    window._rePending=list;
+    document.getElementById('reGate').innerHTML='<option value="">Select…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}" data-veh="${g.VehicleNo}" data-drv="${g.DriverName}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) document.getElementById('reInfo').innerHTML='<div class="empty">No pending returns. This step activates only when POD marks items rejected.</div>';
+    if(window._reArg) presel('reGate',window._reArg);
+  });
+  document.getElementById('reGate').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('reInfo').innerHTML='';return;}
+    api('getRejectedItems',e.target.value).then(items=>{
+      document.getElementById('reInfo').innerHTML=`<div class="card"><div class="card-p"><div style="font-size:13px;font-weight:650;margin-bottom:8px">Rejected items coming back</div>${items.map(it=>`<div class="srow">${it.SKUName} <b style="color:var(--err)">${it.RejectedQty}</b></div>`).join('')}</div></div>`;
+    });
+  });
+}
+
+/* ---------- RETURN RECEIVED (conditional) ---------- */
+function renderReturnReceived(){
+  view.innerHTML=head('Return Received','Confirm rejected goods back in store — closes the returned lines','Returns')+`
+    <div class="field"><label>Return to receive <span class="rq">*</span></label><select class="sel" id="rrSel"><option value="">Select…</option></select></div>
+    <div class="field"><label>Receiver Name <span class="rq">*</span></label><input class="inp upcase" id="rrRecv" placeholder="WHO RECEIVED THE GOODS"></div>
+    <div id="rrInfo"></div>
+    <button class="btn btn-primary" id="saveRR">${I.check}Mark Received & Close Returned Lines</button>`;
+  api('getReturnsToReceive').then(list=>{
+    document.getElementById('rrSel').innerHTML='<option value="">Select…</option>'+list.map(r=>`<option value="${r.ReturnNo}" data-gate="${r.GateEntryNo}" data-order="${r.OrderNo}">${r.ReturnNo} — ${r.OrderNo} (${r.VehicleNo||r.GateEntryNo})</option>`).join('');
+    if(!list.length) document.getElementById('rrInfo').innerHTML='<div class="empty">No returns awaiting receipt.</div>';
+  });
+}
+
+/* ---------- COLLECTION ---------- */
+function renderCollection(arg){
+  view.innerHTML=head('Collection','Only orders with a pending collection balance','Collection')+`
+    <div class="field"><label>Order <span class="rq">*</span></label><select class="sel" id="colOrder"><option value="">Select order…</option></select></div>
+    <div id="colBody"></div>`;
+  api('getCollectionOrders').then(eligible=>{
+    document.getElementById('colOrder').innerHTML='<option value="">Select order…</option>'+eligible.map(o=>`<option value="${o.OrderNo}">${o.OrderNo} — ${o.VendorName} · ${inr(o.outstanding)} due</option>`).join('');
+    const pick=(arg&&eligible.some(o=>o.OrderNo===arg))?arg:(eligible[0]&&eligible[0].OrderNo);
+    if(pick){document.getElementById('colOrder').value=pick;loadCollection(pick);}
+    else document.getElementById('colBody').innerHTML='<div class="empty">No orders with pending collection.</div>';
+  });
+  document.getElementById('colOrder').addEventListener('change',e=>{ if(e.target.value) loadCollection(e.target.value); });
+}
+function loadCollection(orderNo){
+  document.getElementById('colBody').innerHTML='<div class="loading"><div class="spin"></div></div>';
+  api('getCollection',orderNo).then(c=>{
+    const pct=c.invoiced?Math.round(c.collected/c.invoiced*100):0;
+    document.getElementById('colBody').innerHTML=`
+      <div class="card"><div class="card-p">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><div style="font-size:13px;color:var(--t2)">${c.vendorName}</div><div style="font-size:12px;color:var(--t3)">${c.invoiceNo||'No invoice yet'}</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:800" class="tnum">${pct}%</div><div style="font-size:11px;color:var(--t2)">collected</div></div></div>
+        <div class="collbar"><div class="collbar-fill" style="width:${pct}%"></div></div>
+        <div class="coll-stats"><div class="coll-stat" style="background:var(--info-bg)"><div class="l">Invoiced</div><div class="v">${inrS(c.invoiced)}</div></div><div class="coll-stat" style="background:var(--ok-bg)"><div class="l" style="color:var(--ok)">Collected</div><div class="v" style="color:var(--ok)">${inrS(c.collected)}</div></div><div class="coll-stat" style="background:var(--err-bg)"><div class="l" style="color:var(--err)">Outstanding</div><div class="v" style="color:var(--err)">${inrS(c.outstanding)}</div></div></div>
+      </div></div>
+      <div class="sec"><h3>Collection History</h3></div>
+      ${c.history.length?c.history.map(h=>`<div class="hrow"><div class="hic" style="background:var(--indigo-50);color:var(--indigo)">${(h.mode||'').slice(0,3).toUpperCase()}</div><div class="hm"><div class="a">${h.mode}${h.deduction?` · <span style="color:var(--err)">less ${inr(h.deduction)}</span>`:''}</div><div class="b">${h.date}${h.ref?' · '+h.ref:''}${h.net?` · net ${h.net}`:''}</div></div><div class="amt">${inr(h.actual||h.amount)}</div></div>`).join(''):'<div class="empty">No collections recorded yet.</div>'}
+      <div class="sec"><h3>Record Payment</h3></div>
+      <div class="grid2">
+        <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="payAmt" type="number" value="${c.outstanding}"></div>
+        <div class="field"><label>Date</label><input class="inp" type="date" id="payDate" value="${today()}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Deduction Amount</label><input class="inp tnum" id="payDed" type="number" value="0"></div>
+        <div class="field"><label>Actual Received Amount</label><input class="inp tnum" id="payAct" type="number" value="${c.outstanding}" readonly></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Gross Weight</label><input class="inp tnum" id="payGW" type="number" step="0.001" placeholder="0.000"></div>
+        <div class="field"><label>Net Weight</label><input class="inp tnum" id="payNW" type="number" step="0.001" placeholder="0.000"></div>
+        <div class="field"><label>Party Net Weight</label><input class="inp tnum" id="payPNW" type="number" step="0.001" placeholder="0.000"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Payment Mode <span class="rq">*</span></label><select class="sel" id="payMode"><option>Cash</option><option>Cheque</option><option selected>Bank Transfer</option><option>UPI</option><option>Other</option></select></div>
+        <div class="field"><label>Reference No. <span class="rq">*</span></label><input class="inp" id="payRef" placeholder="Txn / cheque no."></div>
+      </div>
+      <button class="btn btn-primary" id="savePay" data-order="${orderNo}" data-inv="${c.invoiceNo}" data-vendor="${c.vendorName}" data-amount="${c.invoiced}">${I.check}Save Payment</button>`;
+  });
+}
+
+/* ---------- REPORTS ---------- */
+const REPORTS=[['SKULedger','SKU Ledger (all)'],['OrderRegister','Order Register'],['OpenOrders','Open Orders (SKU)'],['ClosedOrders','Closed Orders (SKU)'],['PartialOrders','Partial Orders (SKU)'],['InvoicePending','Invoice Pending (SKU)'],['POD','POD Report (SKU)'],['DispatchPlanning','Dispatch Planning'],['GateEntry','Gate Entry'],['GateOut','Gate Out'],['InvoiceRegister','Invoice Register'],['CollectionRegister','Collection Register'],['Outstanding','Outstanding'],['PartyCollection','Party-wise Collection']];
+let curReport='SKULedger', repFilter='';
+const MONEY=/^(Value|Amount|Invoiced|Collected|Outstanding|Rate|InvoiceAmount|CollectionAmount|TotalValue)$/;
+const QTY=/^(Ordered|Planned|Dispatched|Delivered|Rejected|Pending|Loaded|Qty|PlannedQty|DispatchQty)$/;
+function renderReports(){
+  view.innerHTML=head('Reports','SKU-level, filterable, exportable operational data','Reports')+`
+    <div class="grid2">
+      <div class="field"><label>Report</label><select class="sel" id="repSel">${REPORTS.map(r=>`<option value="${r[0]}" ${r[0]===curReport?'selected':''}>${r[1]}</option>`).join('')}</select></div>
+      <div class="field"><label>Filter (SKU, order, vendor, status…)</label><input class="inp" id="repFilter" placeholder="Type to filter rows…" value="${repFilter}"></div>
+    </div>
+    <div class="btn-row" style="margin-bottom:14px">
+      <button class="btn btn-ghost btn-sm" id="expCsv">Export CSV</button>
+      <button class="btn btn-ghost btn-sm" id="expXls">Export Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.print()">Export PDF</button>
+    </div>
+    <div id="repTable"><div class="loading"><div class="spin"></div></div></div>`;
+  loadReport(curReport);
+  document.getElementById('repSel').addEventListener('change',e=>{curReport=e.target.value;repFilter='';document.getElementById('repFilter').value='';loadReport(curReport);});
+  document.getElementById('repFilter').addEventListener('input',e=>{repFilter=e.target.value;paintReport();});
+}
+let reportData=[];
+function loadReport(type){
+  document.getElementById('repTable').innerHTML='<div class="loading"><div class="spin"></div></div>';
+  api('getReport',type).then(rows=>{ reportData=rows||[]; paintReport(); });
+}
+function paintReport(){
+  const host=document.getElementById('repTable'); if(!host) return;
+  if(!reportData.length){host.innerHTML='<div class="empty">No data for this report.</div>';return;}
+  const q=(repFilter||'').toLowerCase().trim();
+  const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
+  if(!rows.length){host.innerHTML='<div class="empty">No rows match “'+repFilter+'”.</div>';return;}
+  const cols=Object.keys(rows[0]);
+  const fmt=(c,v)=>typeof v==='number'?(MONEY.test(c)?inr(v):v.toLocaleString('en-IN')):v;
+  const isNum=c=>MONEY.test(c)||QTY.test(c);
+  // totals for numeric columns
+  const totals={}; cols.forEach(c=>{ if(isNum(c)) totals[c]=rows.reduce((s,r)=>s+(Number(r[c])||0),0); });
+  const hasTotals=Object.keys(totals).length>0;
+  const foot=hasTotals?`<tfoot><tr>${cols.map((c,i)=>{ if(i===0) return `<td><b>Total · ${rows.length} rows</b></td>`; return `<td class="num">${totals[c]!==undefined?`<b>${MONEY.test(c)?inr(totals[c]):totals[c].toLocaleString('en-IN')}</b>`:''}</td>`; }).join('')}</tr></tfoot>`:'';
+  host.innerHTML=`<div class="rep-count">${rows.length} row${rows.length>1?'s':''}${q?` (filtered from ${reportData.length})`:''}</div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(c=>`<th class="${isNum(c)?'num':''}">${c}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${isNum(c)?'num':''}">${fmt(c,r[c])}</td>`).join('')}</tr>`).join('')}</tbody>${foot}</table></div>`;
+}
+
+/* ================= PURCHASE-TO-PAYMENT (P2P) ================= */
+function pval(id){const e=document.getElementById(id);return e?e.value:'';}
+const poBadge=s=>({'Draft':'b-gray','Sent to Supplier':'b-info','Partially Received':'b-warn','Fully Received':'b-ok','Closed':'b-ok'}[s]||'b-gray');
+function senCard(d){
+  return `<div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Supplier <b>${d.supplierName}</b></div><div class="srow">PO <b>${d.poNo}</b></div><div class="srow">SEN <b>${d.senNo}</b></div>${d.vehicleNo?`<div class="srow">Vehicle <b>${d.vehicleNo}</b></div>`:''}${d.invoiceNo?`<div class="srow">Supplier Invoice <b>${d.invoiceNo}</b></div>`:''}<div style="border-top:1px solid var(--line);margin:8px 0 4px"></div>${d.items.map(it=>`<div class="srow">${it.SKUName} <b class="tnum">${it.ReceivedQty} × ${inr(it.Rate)}</b></div>`).join('')}<div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:9px">Value (incl. GST) <b class="tnum" style="color:var(--indigo)">${inr(d.value)}</b></div></div></div>`;
+}
+
+/* ---- P2P dashboard ---- */
+function renderP2PDashboard(){
+  view.innerHTML=head('P2P Dashboard','Purchase → Receipt → Payment pipeline')+`<div id="dv2p2p"><div class="loading"><div class="spin"></div>Loading…</div></div>
+    <div class="sec"><h3>Recent Purchase Orders</h3><a data-go="p2p_polist">See all</a></div>
+    <div id="p2pRecent"><div class="loading"><div class="spin"></div></div></div>`;
+  api('getP2PDashV2').then(d=>{
+    if(current!=='p2p_dashboard') return;
+    dv2Render('dv2p2p', d, p=>[
+      ['Total POs',p.total,'#2563EB','p2p_polist'],
+      ['Draft / To Send',p.draft,'#8B5CF6','p2p_polist'],
+      ['Awaiting Material',p.awaitingMaterial,'#F59E0B','p2p_gate'],
+      ['QC Pending',p.qc,'#14B8A6','p2p_qc'],
+      ['To Receive',p.recv,'#2563EB','p2p_receiving'],
+      ['To Return',p.returns,'#DC2626','p2p_return'],
+      ['Returned',p.returned,'#F97316','p2p_return'],
+      ['Payment Pending',p.payment,'#EC4899','p2p_payment'],
+      ['Fully Closed',p.closed,'#64748B','p2p_polist']
+    ], 'Monthly POs');
+  }).catch(()=>{ const el=document.getElementById('dv2p2p'); if(el) el.innerHTML='<div class="empty">Could not load P2P dashboard.</div>'; });
+  api('getPOs').then(list=>{
+    const el=document.getElementById('p2pRecent'); if(!el) return;
+    el.innerHTML=list.length?list.slice(0,6).map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div class="arrow">${I.chev}</div></div></div>`).join(''):'<div class="empty">No purchase orders yet.</div>';
+  }).catch(()=>{});
+}
+
+/* ---- PO create ---- */
+let poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}];
+function renderPOCreate(){
+  poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; window._poSup=null;
+  const v=STATE.masters.vendors;
+  view.innerHTML=head('Purchase Order','Raise a PO to a supplier','Purchases')+`
+    <div class="two-col"><div>
+      <div class="card"><div class="card-p">
+        <div class="grid2">
+          <div class="field"><label>PO Date</label><input class="inp" type="date" id="poDate" value="${today()}"></div>
+          <div class="field"><label>PO Number</label><input class="inp" value="Auto (PO-${ym()}-###)" disabled></div>
+        </div>
+        <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+        <div id="poSupCard"></div>
+      </div></div>
+      <div class="sec"><h3>SKU Details</h3></div>
+      <div id="poLiWrap"></div>
+      <button class="btn btn-add" id="poAddLi">${I.plus}Add Row</button>
+    </div>
+    <div><div class="summary" style="position:sticky;top:78px">
+      <h3 style="font-size:14.5px;font-weight:650;margin-bottom:12px">Summary</h3>
+      <div class="srow">Total Quantity <b id="poSQty">0</b></div>
+      <div class="srow grand">Grand Total <b id="poSGrand">₹0</b></div>
+      <button class="btn btn-primary" id="savePO" style="margin-top:14px">${I.check}Create PO</button>
+    </div></div></div>`;
+  renderPOLines();
+  makeCombo(document.getElementById('poSup'),v,x=>x.VendorName,vd=>{ window._poSup=vd; document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${vd.VendorName.slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.VendorName}</div><div class="sub">${vd.VendorCode} · ${vd.GST||'—'}</div></div></div>`; });
+  document.getElementById('poAddLi').onclick=()=>{poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18});renderPOLines();};
+  document.getElementById('savePO').onclick=doSavePO;
+}
+function renderPOLines(){
+  const wrap=document.getElementById('poLiWrap');
+  wrap.innerHTML=poLines.map((it,i)=>`<div class="li">
+    <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp poSkuIn" data-posku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}</div></div><button class="li-del" data-podel="${i}">${I.trash}</button></div>
+    <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr"><div class="f"><label>Qty</label><input type="number" value="${it.qty}" data-pof="qty" data-poi="${i}"></div><div class="f"><label>Rate</label><input type="number" value="${it.rate}" data-pof="rate" data-poi="${i}"></div><div class="f"><label>GST %</label><input type="number" value="${it.gst}" data-pof="gst" data-poi="${i}"></div></div>
+    <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)}</span><b>${inr(it.qty*it.rate*(1+it.gst/100))}</b></div></div>`).join('');
+  recalcPO();
+  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.skus,x=>x.SKUName,m=>{ poLines[i].skuName=m.SKUName; poLines[i].skuCode=m.SKUCode; poLines[i].rate=m.Rate; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
+  wrap.querySelectorAll('[data-pof]').forEach(inp=>inp.addEventListener('input',e=>{ poLines[e.target.dataset.poi][e.target.dataset.pof]=+e.target.value||0; recalcPO(); }));
+  wrap.querySelectorAll('[data-podel]').forEach(b=>b.addEventListener('click',()=>{ poLines.splice(+b.dataset.podel,1); if(!poLines.length)poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18}); renderPOLines(); }));
+}
+function recalcPO(){ let q=0,g=0; poLines.forEach(it=>{q+=+it.qty||0;g+=(+it.qty||0)*(+it.rate||0)*(1+(+it.gst||0)/100);}); const a=document.getElementById('poSQty'),b=document.getElementById('poSGrand'); if(a)a.textContent=q; if(b)b.textContent=inr(Math.round(g)); }
+function doSavePO(){
+  if(!window._poSup)return toast('Select a supplier',true);
+  const items=poLines.filter(it=>it.skuCode&&(+it.qty>0));
+  if(!items.length)return toast('Add at least one SKU with quantity',true);
+  busy('savePO');
+  api('savePO',{supplierCode:window._poSup.VendorCode,supplierName:window._poSup.VendorName,poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
+    .then(r=>{toast('PO created — '+r.poNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true));
+}
+
+/* ---- PO list / send ---- */
+function renderPOList(){
+  view.innerHTML=head('Purchase Orders','Send POs to suppliers and track receipt','Purchases')+`<div id="poList"><div class="loading"><div class="spin"></div></div></div>`;
+  api('getPOs').then(list=>{
+    document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div>${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send to Supplier →</button>`:'<div class="arrow">'+I.chev+'</div>'}</div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
+  });
+}
+function doSendPO(poNo){ api('sendPO',poNo).then(()=>{toast('PO sent to supplier');renderPOList();}).catch(err=>toast(err.message||'Failed',true)); }
+
+/* ---- Gate Entry (SEN) ---- */
+function renderGateIn(arg){
+  view.innerHTML=head('Gate Entry — Inbound','A unique SEN number is generated on entry · pick the PO to auto-fill','Purchases')+`
+    <div class="field"><label>Purchase Order <span class="rq">*</span></label><div class="cmb"><input class="inp" id="genPO" placeholder="Search PO number / supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="genForm"></div>`;
+  api('getPOsForGate').then(list=>{
+    if(!list.length) document.getElementById('genForm').innerHTML='<div class="empty">No open POs. Create and send a PO first. Fully-received POs are hidden automatically.</div>';
+    makeCombo(document.getElementById('genPO'),list,x=>x.PONo+' — '+x.SupplierName,po=>loadGatePO(po.PONo));
+    if(arg&&list.some(p=>p.PONo===arg)){document.getElementById('genPO').value=arg;loadGatePO(arg);}
+  });
+}
+function loadGatePO(poNo){
+  api('getPOSheet',poNo).then(d=>{
+    if(!d)return; window._genData=d;
+    document.getElementById('genForm').innerHTML=`
+      <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Supplier <b>${d.supplierName}</b></div><div class="srow">PO Date <b>${d.poDate}</b></div><div class="srow">PO <b>${d.poNo}</b></div></div></div>
+      <div class="grid2">
+        <div class="field"><label>Vehicle Number</label><input class="inp" id="genVeh" placeholder="MH-00-XX-0000"></div>
+        <div class="field"><label>Driver Name</label><input class="inp" id="genDrv"></div>
+        <div class="field"><label>Supplier Invoice No.</label><input class="inp" id="genInv" placeholder="INV-000000"></div>
+      </div>
+      <div class="sec"><h3>Received Quantity (partial allowed)</h3></div>
+      <div class="tbl-wrap"><table class="tbl seltbl"><thead><tr><th>SKU</th><th class="num">PO Qty</th><th class="num">Remaining</th><th class="num">Receiving Now</th></tr></thead>
+      <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td class="num">${it.POQty}</td><td class="num">${it.RemainingQty}</td><td class="num"><input class="qin" type="number" value="${it.RemainingQty}" min="0" max="${it.RemainingQty}" data-gen="${i}"></td></tr>`).join('')}</tbody></table></div>
+      <button class="btn btn-primary" id="saveGen" style="margin-top:14px">${I.check}Record Gate Entry & Generate SEN</button>`;
+    document.getElementById('saveGen').onclick=doSaveGateIn;
+  });
+}
+function doSaveGateIn(){
+  const d=window._genData; if(!d)return;
+  const items=d.items.map((it,i)=>{const inp=document.querySelector(`[data-gen="${i}"]`);return {skuCode:it.SKUCode,skuName:it.SKUName,poQty:it.POQty,receivedQty:inp?Math.min(+inp.value||0,it.RemainingQty):0};}).filter(x=>x.receivedQty>0);
+  if(!items.length)return toast('Enter received quantity for at least one SKU',true);
+  busy('saveGen');
+  api('saveGateEntryIn',{poNo:d.poNo,supplierName:d.supplierName,vehicleNo:pval('genVeh'),driverName:pval('genDrv'),invoiceNo:pval('genInv'),items:items})
+    .then(r=>{toast('Gate entry recorded — '+r.senNo);go('p2p_qc');}).catch(err=>toast(err.message||'Failed',true));
+}
+
+/* ---- QC ---- */
+let qcChoice='';
+function renderQC(arg){
+  view.innerHTML=head('QC Check','Inspect a gate entry (SEN) and set the QC result','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="qcSEN" placeholder="Search SEN / PO / supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="qcForm"></div>`;
+  api('getSENsForQC').then(list=>{
+    if(!list.length) document.getElementById('qcForm').innerHTML='<div class="empty">No gate entries pending QC.</div>';
+    makeCombo(document.getElementById('qcSEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadQC(s.SENNo));
+    if(arg)loadQC(arg);
+  });
+}
+function loadQC(senNo){
+  api('getSENSheet',senNo).then(d=>{
+    if(!d)return; window._qcData=d; qcChoice='';
+    document.getElementById('qcForm').innerHTML=`${senCard(d)}
+      <div class="sec"><h3>QC Result</h3></div>
+      <div class="qc-opts">${['Accept','Accept with Deduction','Reject'].map(o=>`<button class="qc-opt" data-qc="${o}">${o}</button>`).join('')}</div>
+      <div id="qcDeduct" style="display:none"><div class="field"><label>Deduction Amount (₹)</label><input class="inp tnum" type="number" id="qcDed" placeholder="0"></div></div>
+      <div class="field"><label>Remarks</label><textarea class="inp" id="qcRem" placeholder="Inspection notes…"></textarea></div>
+      <button class="btn btn-primary" id="saveQC">${I.check}Submit QC</button>`;
+    document.querySelectorAll('[data-qc]').forEach(b=>b.onclick=()=>{ qcChoice=b.dataset.qc; document.querySelectorAll('.qc-opt').forEach(x=>x.classList.toggle('on',x===b)); document.getElementById('qcDeduct').style.display=qcChoice==='Accept with Deduction'?'block':'none'; });
+    document.getElementById('saveQC').onclick=doSaveQC;
+  });
+}
+function doSaveQC(){
+  if(!window._qcData)return; if(!qcChoice)return toast('Select a QC result',true);
+  busy('saveQC');
+  api('saveQC',{senNo:window._qcData.senNo,qcStatus:qcChoice,deductionAmount:qcChoice==='Accept with Deduction'?(+pval('qcDed')||0):0,remarks:pval('qcRem')})
+    .then(()=>{toast('QC saved — '+qcChoice);go(qcChoice==='Reject'?'p2p_return':'p2p_receiving');}).catch(err=>toast(err.message||'Failed',true));
+}
+
+/* ---- Material Received ---- */
+function renderReceiving(arg){
+  view.innerHTML=head('Material Received','Post GRN for QC-passed gate entries','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="rcSEN" placeholder="Search SEN…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="rcForm"></div>`;
+  api('getSENsForReceiving').then(list=>{
+    if(!list.length)document.getElementById('rcForm').innerHTML='<div class="empty">No QC-passed gate entries to receive. Only Accept / Accept with Deduction reach here.</div>';
+    makeCombo(document.getElementById('rcSEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadRc(s.SENNo));
+    if(arg)loadRc(arg);
+  });
+}
+function loadRc(senNo){
+  api('getSENSheet',senNo).then(d=>{ if(!d)return; window._rcData=d;
+    document.getElementById('rcForm').innerHTML=`${senCard(d)}${d.qcStatus?`<div class="psub" style="margin:-4px 2px 10px">QC result: <b>${d.qcStatus}</b>${d.deduction?` · Deduction ${inr(d.deduction)}`:''}</div>`:''}
+      <div class="grid2"><div class="field"><label>Received By</label><input class="inp" id="rcBy" placeholder="Store keeper"></div><div class="field"><label>Date</label><input class="inp" type="date" id="rcDate" value="${today()}"></div></div>
+      <div class="field"><label>Remarks</label><textarea class="inp" id="rcRem"></textarea></div>
+      <button class="btn btn-primary" id="saveRc">${I.check}Confirm Material Received</button>`;
+    document.getElementById('saveRc').onclick=doSaveReceiving;
+  });
+}
+function doSaveReceiving(){ if(!window._rcData)return; busy('saveRc'); api('saveReceiving',{senNo:window._rcData.senNo,receiverName:pval('rcBy'),remarks:pval('rcRem')}).then(r=>{toast('Material received — '+r.grnNo);go('p2p_payment');}).catch(err=>toast(err.message||'Failed',true)); }
+
+/* ---- Material Return ---- */
+function renderMatReturn(arg){
+  view.innerHTML=head('Material Return','Return QC-rejected material to the supplier','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="rtSEN" placeholder="Search SEN…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="rtForm"></div>`;
+  api('getSENsForReturn').then(list=>{
+    if(!list.length)document.getElementById('rtForm').innerHTML='<div class="empty">No QC-rejected gate entries to return. Only Reject reaches here.</div>';
+    makeCombo(document.getElementById('rtSEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadRt(s.SENNo));
+    if(arg)loadRt(arg);
+  });
+}
+function loadRt(senNo){
+  api('getSENSheet',senNo).then(d=>{ if(!d)return; window._rtData=d;
+    document.getElementById('rtForm').innerHTML=`${senCard(d)}<div class="field"><label>Return Reason</label><textarea class="inp" id="rtReason" placeholder="Why the material was rejected…"></textarea></div><button class="btn btn-primary" id="saveRt">${I.check}Confirm Material Return</button>`;
+    document.getElementById('saveRt').onclick=doSaveReturn;
+  });
+}
+function doSaveReturn(){ if(!window._rtData)return; busy('saveRt'); api('saveReturn',{senNo:window._rtData.senNo,reason:pval('rtReason')}).then(r=>{toast('Material returned — '+r.prNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true)); }
+
+/* ---- Payment ---- */
+function renderPayment(arg){
+  view.innerHTML=head('Payment','Pay suppliers for received material','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="pySEN" placeholder="Search SEN…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="pyForm"></div>`;
+  api('getSENsForPayment').then(list=>{
+    window._pyList=list;
+    if(!list.length)document.getElementById('pyForm').innerHTML='<div class="empty">No received SENs with an outstanding balance.</div>';
+    makeCombo(document.getElementById('pySEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadPy(s.SENNo));
+    if(arg)loadPy(arg);
+  });
+}
+function loadPy(senNo){
+  api('getSENSheet',senNo).then(d=>{ if(!d)return;
+    const info=(window._pyList||[]).find(x=>x.SENNo===senNo)||{}; window._pyData={senNo:senNo};
+    document.getElementById('pyForm').innerHTML=`${senCard(d)}
+      <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Payable <b class="tnum">${inr(info.payable||0)}</b></div><div class="srow">Already Paid <b class="tnum">${inr(info.paid||0)}</b></div><div class="srow">Outstanding <b class="tnum" style="color:var(--indigo)">${inr(info.outstanding||0)}</b></div></div></div>
+      <div class="grid2"><div class="field"><label>Amount <span class="rq">*</span></label><input class="inp tnum" type="number" id="pyAmt" value="${info.outstanding||0}"></div><div class="field"><label>Mode</label><select class="sel" id="pyMode"><option>NEFT</option><option>RTGS</option><option>Cheque</option><option>Cash</option><option>UPI</option></select></div></div>
+      <div class="field"><label>Reference No.</label><input class="inp" id="pyRef"></div>
+      <button class="btn btn-primary" id="savePy">${I.check}Record Payment</button>`;
+    document.getElementById('savePy').onclick=doSavePayment;
+  });
+}
+function doSavePayment(){ if(!window._pyData)return; const amt=+pval('pyAmt')||0; if(amt<=0)return toast('Enter an amount',true); busy('savePy'); api('savePayment',{senNo:window._pyData.senNo,amount:amt,paymentMode:pval('pyMode'),refNo:pval('pyRef')}).then(r=>{toast('Payment recorded — '+r.payNo);go('p2p_payment');}).catch(err=>toast(err.message||'Failed',true)); }
+
+/* ---------- MASTERS ---------- */
+let masterTab='Vendor';
+const MASTER_CFG={
+  Vendor:{fn:'saveVendor',delFn:'deleteVendor',key:'vendors',idCol:'VendorCode',req:['VendorCode','VendorName'],cols:['VendorCode','VendorName','ContactPerson','Mobile','GST','CreditDays','Address']},
+  SKU:{fn:'saveSKU',delFn:'deleteSKU',key:'skus',idCol:'SKUCode',req:['SKUCode','SKUName'],cols:['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate']},
+  Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']}
+};
+function masterFields(tab){
+  if(tab==='Vendor') return `<div class="grid2">
+    <div class="field"><label>Vendor Code <span class="rq">*</span></label><input class="inp" id="mf_VendorCode" placeholder="VND-0000"></div>
+    <div class="field"><label>Vendor Name <span class="rq">*</span></label><input class="inp" id="mf_VendorName" placeholder="Company name"></div>
+    <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
+    <div class="field"><label>Mobile</label><input class="inp" id="mf_Mobile" placeholder="98xxxxxxxx"></div>
+    <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
+    <div class="field"><label>Payment Terms (Credit Days)</label><input class="inp" type="number" id="mf_CreditDays" placeholder="e.g. 30"></div>
+    </div><div class="field"><label>Address</label><textarea class="inp" id="mf_Address" placeholder="Street, city"></textarea></div>`;
+  if(tab==='SKU') return `<div class="grid2">
+    <div class="field"><label>SKU Code <span class="rq">*</span></label><input class="inp" id="mf_SKUCode" placeholder="SKU-0000"></div>
+    <div class="field"><label>SKU Name <span class="rq">*</span></label><input class="inp" id="mf_SKUName"></div>
+    <div class="field"><label>Brand</label><input class="inp" id="mf_Brand"></div>
+    <div class="field"><label>Category</label><input class="inp" id="mf_Category"></div>
+    <div class="field"><label>UOM</label><input class="inp" id="mf_UOM" placeholder="Kg / Nos / Ton"></div>
+    <div class="field"><label>GST %</label><input class="inp" type="number" id="mf_GSTPercent" value="18"></div>
+    <div class="field"><label>Rate</label><input class="inp" type="number" id="mf_Rate" placeholder="0"></div>
+    </div>`;
+  return `<div class="grid2">
+    <div class="field"><label>Transporter Name <span class="rq">*</span></label><input class="inp" id="mf_TransporterName"></div>
+    <div class="field"><label>Contact Number</label><input class="inp" id="mf_ContactNumber" placeholder="98xxxxxxxx"></div>
+    </div>`;
+}
+function renderMasters(){
+  const m=STATE.masters;
+  const seg=['Vendor','SKU','Transporter'].map(t=>`<button class="${t===masterTab?'on':''}" data-mtab="${t}">${t}</button>`).join('');
+  let body='';
+  if(masterTab==='Vendor') body=m.vendors.map(v=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#16A34A,#22C55E)">${(v.VendorName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${v.VendorName}</div><div class="b">${v.VendorCode} · ${v.GST||'—'}</div></div><button class="row-del" data-mdel="${v.VendorCode}" title="Remove vendor">${I.trash}</button></div>`).join('');
+  else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
+  else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
+  view.innerHTML=head('Master Data','Vendors, SKUs and transporters','Master Data')+`
+    <div class="seg">${seg}</div>
+    <div id="mFormWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 4px"><h3>Add ${masterTab}</h3></div>
+      <div id="mFields"></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-sm" id="saveMaster">${I.check}Save ${masterTab}</button>
+        <button class="btn btn-ghost btn-sm" id="cancelMaster">Cancel</button>
+      </div>
+    </div></div></div>
+    ${body||'<div class="empty">No records yet.</div>'}
+    <button class="btn btn-add" id="addMaster" style="margin-top:6px">${I.plus}Add ${masterTab}</button>`;
+  const wrap=document.getElementById('mFormWrap'), addBtn=document.getElementById('addMaster');
+  addBtn.onclick=()=>{ document.getElementById('mFields').innerHTML=masterFields(masterTab); wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
+  document.getElementById('cancelMaster').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
+  document.getElementById('saveMaster').onclick=doSaveMaster;
+}
+function doSaveMaster(){
+  const cfg=MASTER_CFG[masterTab], obj={};
+  cfg.cols.forEach(c=>{ const el=document.getElementById('mf_'+c); if(el) obj[c]= el.type==='number' ? (+el.value||0) : el.value.trim(); });
+  for(const r of cfg.req){ if(!obj[r]){ toast(r.replace(/([A-Z])/g,' $1').trim()+' is required',true); return; } }
+  busy('saveMaster');
+  api(cfg.fn,obj).then(list=>{
+    STATE.masters[cfg.key]=list;
+    toast(masterTab+' added');
+    renderMasters();
+  }).catch(err=>toast(err.message||'Save failed',true));
+}
+function delMaster(key){
+  const cfg=MASTER_CFG[masterTab];
+  askConfirm('Remove this '+masterTab.toLowerCase()+' — “'+key+'”?',()=>{
+    api(cfg.delFn,key).then(list=>{ STATE.masters[cfg.key]=list; toast(masterTab+' removed'); renderMasters(); })
+      .catch(err=>toast(err.message||'Failed',true));
+  });
+}
+
+/* ---------- USERS ---------- */
+const USER_ROLES=['Sales','Dispatch Executive','Security','Billing Executive','Accounts','Admin'];
+function renderUsers(){
+  view.innerHTML=head('User Management','Roles control which modules each person sees','User Management')+`
+    <div id="uFormWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 4px"><h3>Add User</h3></div>
+      <div class="grid2">
+        <div class="field"><label>Email <span class="rq">*</span></label><input class="inp" id="uf_Email" type="email" placeholder="person@company.com"></div>
+        <div class="field"><label>Name <span class="rq">*</span></label><input class="inp" id="uf_Name" placeholder="Full name"></div>
+        <div class="field"><label>Role <span class="rq">*</span></label><select class="sel" id="uf_Role">${USER_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-sm" id="saveUser">${I.check}Save User</button>
+        <button class="btn btn-ghost btn-sm" id="cancelUser">Cancel</button>
+      </div>
+    </div></div></div>
+    <div id="uList"><div class="loading"><div class="spin"></div></div></div>
+    <button class="btn btn-add" id="addUser" style="margin-top:6px">${I.plus}Add User</button>`;
+  const wrap=document.getElementById('uFormWrap'), addBtn=document.getElementById('addUser');
+  addBtn.onclick=()=>{ wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
+  document.getElementById('cancelUser').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
+  document.getElementById('saveUser').onclick=doSaveUser;
+  loadUsers();
+}
+function loadUsers(){
+  api('getUsers').then(list=>{
+    const cols=['#16A34A','#0D9488','#D97706','#7C3AED','#2563EB','#DC2626'];
+    document.getElementById('uList').innerHTML=list.map((u,i)=>`<div class="urow"><div class="ua" style="background:${cols[i%cols.length]}">${(u.Name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${u.Name}</div><div class="b">${u.Role} · ${u.Email}</div></div><button class="row-del" data-udel="${u.Email}" title="Remove user">${I.trash}</button></div>`).join('')||'<div class="empty">No users yet.</div>';
+  });
+}
+function doSaveUser(){
+  const Email=document.getElementById('uf_Email').value.trim();
+  const Name=document.getElementById('uf_Name').value.trim();
+  const Role=document.getElementById('uf_Role').value;
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(Email)) return toast('A valid email is required',true);
+  if(!Name) return toast('Name is required',true);
+  busy('saveUser');
+  api('saveUser',{Email:Email,Name:Name,Role:Role}).then(()=>{ toast('User added'); renderUsers(); }).catch(err=>toast(err.message||'Save failed',true));
+}
+function delUser(email){
+  askConfirm('Remove user “'+email+'”?',()=>{
+    api('deleteUser',email).then(()=>{ toast('User removed'); renderUsers(); }).catch(err=>toast(err.message||'Failed',true));
+  });
+}
+
+/* ---------- MORE (mobile) ---------- */
+function renderMore(){
+  const EXCLUDE=['dashboard','orders','create','more'];
+  const tiles=MODULES.filter(m=>allowed(m)&&EXCLUDE.indexOf(m.id)<0);
+  const colByGroup={Operations:'ic-indigo',Finance:'ic-amber',Returns:'ic-red',Purchases:'ic-teal',Admin:'ic-red'};
+  const order=['Operations','Finance','Returns','Purchases','Admin'];
+  const labels={Operations:'Order to Collection',Finance:'Finance',Returns:'Returns',Purchases:'Purchase to Payment',Admin:'Administration'};
+  const groups={}; tiles.forEach(t=>{(groups[t.group||'Other']=groups[t.group||'Other']||[]).push(t);});
+  const keys=order.filter(g=>groups[g]).concat(Object.keys(groups).filter(g=>order.indexOf(g)<0));
+  let body='';
+  keys.forEach(g=>{ body+=`<div class="sec"><h3>${labels[g]||g}</h3></div><div class="menu-grid">${groups[g].map(t=>`<div class="mtile" data-go="${t.id}"><div class="mi ${colByGroup[g]||'ic-indigo'}">${t.ic}</div><span>${t.label}</span></div>`).join('')}</div>`; });
+  view.innerHTML=head('More','All modules')+`
+    <div class="urow" style="padding:15px"><div class="ua" style="background:linear-gradient(135deg,#F59E0B,#D97706);width:46px;height:46px">${(STATE.user.name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase()}</div><div class="um"><div class="a" style="font-size:15px">${STATE.user.name}</div><div class="b">${STATE.user.role}</div></div></div>
+    ${body}`;
+}
+
+/*****************************************************************
+ * GLOBAL EVENTS
+ *****************************************************************/
+document.addEventListener('input',e=>{
+  const t=e.target; if(!t) return;
+  if(t.classList&&t.classList.contains('upcase')&&t.value){ const p=t.selectionStart; t.value=t.value.toUpperCase(); try{t.setSelectionRange(p,p);}catch(_){}}
+  if(t.id==='geMob'){ t.value=t.value.replace(/\D/g,'').slice(0,10); }
+  if(t.id==='payAmt'||t.id==='payDed'){                    // Actual Received = Invoice Amount − Deduction
+    const a=+(document.getElementById('payAmt')||{}).value||0, d=+(document.getElementById('payDed')||{}).value||0;
+    const act=document.getElementById('payAct'); if(act) act.value=Math.max(a-d,0);
+  }
+});
+document.addEventListener('click',e=>{
+  const g=e.target.closest('[data-go]'); if(g){go(g.dataset.go);return;}
+  const nt=e.target.closest('[data-navtoggle]'); if(nt){toggleNav(nt.dataset.navtoggle);return;}
+  const ac=e.target.closest('[data-act]'); if(ac){go(ac.dataset.act, ac.dataset.arg||undefined);return;}
+  const d=e.target.closest('[data-detail]'); if(d){go('detail',d.dataset.detail);return;}
+  const f=e.target.closest('[data-filter]'); if(f){orderFilter=f.dataset.filter;go('orders');return;}
+  const vt=e.target.closest('[data-vtog]'); if(vt){vt.closest('[data-veh]').classList.toggle('open');return;}
+  const mt=e.target.closest('[data-mtab]'); if(mt){masterTab=mt.dataset.mtab;renderMasters();return;}
+  const md=e.target.closest('[data-mdel]'); if(md){delMaster(md.dataset.mdel);return;}
+  const ud=e.target.closest('[data-udel]'); if(ud){delUser(ud.dataset.udel);return;}
+  const sp=e.target.closest('[data-sendpo]'); if(sp){doSendPO(sp.dataset.sendpo);return;}
+  const del=e.target.closest('[data-del]'); if(del){nItems.splice(+del.dataset.del,1);if(!nItems.length)nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
+  if(e.target.closest('#addLi')){nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
+
+  const chk=e.target.closest('[data-chk]'); if(chk){chk.classList.toggle('on');refreshGO();return;}
+
+  if(e.target.closest('#saveOrder')){doSaveOrder();return;}
+  if(e.target.closest('#savePlan')){doSavePlan(e.target.closest('#savePlan'));return;}
+  if(e.target.closest('#saveGate')){doSaveGate();return;}
+  if(e.target.closest('#saveLoad')){doSaveLoad(e.target.closest('#saveLoad'));return;}
+  if(e.target.closest('#saveInv')){doSaveInvoice();return;}
+  if(e.target.closest('#saveGO')){doSaveGateOut();return;}
+  if(e.target.closest('#savePOD')){doSavePOD();return;}
+  if(e.target.closest('#saveRE')){doSaveRE();return;}
+  if(e.target.closest('#saveRR')){doSaveRR();return;}
+  if(e.target.closest('#savePay')){doSavePay(e.target.closest('#savePay'));return;}
+
+  const t=e.target.closest('[data-toast]'); if(t){toast(t.dataset.toast);return;}
+});
+
+document.addEventListener('input',e=>{
+  // SKU name → code autofill
+  const sk=e.target.dataset.sku;
+  if(sk!==undefined){const m=STATE.masters.skus.find(x=>x.SKUName===e.target.value);if(m){nItems[sk].skuName=m.SKUName;nItems[sk].skuCode=m.SKUCode;nItems[sk].rate=m.Rate;nItems[sk].sgst=m.GSTPercent/2;nItems[sk].cgst=m.GSTPercent/2;renderLi();}else{nItems[sk].skuName=e.target.value;}return;}
+  const f=e.target.dataset.f,i=e.target.dataset.i;
+  if(f!==undefined&&i!==undefined){nItems[i][f]=+e.target.value||0;recalc();
+    const li=e.target.closest('.li').querySelector('.li-tot');const it=nItems[i];
+    li.querySelector('span').textContent='Taxable '+inr(it.qty*it.rate)+' · Tax '+inr(it.qty*it.rate*(it.sgst+it.cgst)/100);
+    li.querySelector('b').textContent=inr(it.qty*it.rate*(1+(it.sgst+it.cgst)/100));return;}
+});
+document.addEventListener('change',e=>{
+  if(e.target.dataset.ldchk!==undefined||e.target.dataset.ldqty!==undefined){
+    const checks=document.querySelectorAll('[data-ldchk]');let n=0;checks.forEach(c=>{if(c.checked)n++;});
+    const pct=checks.length?Math.round(n/checks.length*100):0;
+    const bar=document.getElementById('ldBar'),lbl=document.getElementById('ldPct');if(bar)bar.style.width=pct+'%';if(lbl)lbl.textContent=pct+'%';
+  }
+});
+
+/* ---- save handlers ---- */
+function doSaveOrder(){
+  const vend=document.getElementById('vendIn').value;
+  const vd=STATE.masters.vendors.find(x=>x.VendorName===vend);
+  if(!vd) return toast('Select a valid vendor',true);
+  if(!nItems.some(it=>it.skuCode&&it.qty>0)) return toast('Add at least one SKU',true);
+  busy('saveOrder');
+  api('saveOrder',{vendorCode:vd.VendorCode,vendorName:vd.VendorName,orderDate:document.getElementById('oDate').value,items:nItems.filter(it=>it.skuCode)})
+    .then(r=>{toast('Order '+r.orderNo+' saved');nItems=[];go('orders');refreshDash();})
+    .catch(err=>toast(err.message||'Save failed',true));
+}
+function doSavePlan(btn){
+  const items=JSON.parse(btn.dataset.items);
+  items.forEach((it,i)=>{const chk=document.querySelector(`[data-plan-chk="${i}"]`);const inp=document.querySelector(`[data-plan="${i}"]`);const on=chk?chk.checked:true;it.plannedQty=on?Math.min(+inp.value||0,it.RemainingQty):0;it.skuCode=it.SKUCode;it.skuName=it.SKUName;});
+  const sel=items.filter(it=>it.plannedQty>0);
+  if(!sel.length)return toast('Tick at least one SKU with a quantity to plan',true);
+  busy('savePlan');
+  api('savePlanning',{orderNo:btn.dataset.order,plannedDate:document.getElementById('pDate').value,plannedTime:document.getElementById('pTime').value,transporterName:document.getElementById('pTrans').value,remarks:document.getElementById('pRemarks').value,items:sel})
+    .then(r=>{toast('Dispatch planned ('+r.planNo+')');go('gate');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveGate(){
+  const planNo=document.getElementById('gePlan').value;
+  const plan=(window._gePlans||[]).find(x=>x.PlanNo===planNo);
+  if(!plan)return toast('Select a dispatch plan',true);
+  if(!document.getElementById('geVeh').value)return toast('Vehicle number required',true);
+  busy('saveGate');
+  api('saveGateEntry',{planNo:planNo,orderNo:plan.OrderNo,vehicleNo:document.getElementById('geVeh').value,driverName:document.getElementById('geDrv').value,dlNo:document.getElementById('geDL').value,rcNo:document.getElementById('geRC').value})
+    .then(r=>{toast('Gate entry '+r.gateEntryNo+' recorded');go('loading');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveLoad(btn){
+  const skus=JSON.parse(btn.dataset.skus);
+  const items=skus.map((s,i)=>({skuCode:s.SKUCode,skuName:s.SKUName,plannedQty:s.PlannedQty,dispatchQty:Math.min(+document.querySelector(`[data-ldqty="${i}"]`).value||0, s.BalanceQty)}));
+  if(!items.some(it=>it.dispatchQty>0))return toast('Enter load qty',true);
+  busy('saveLoad');
+  api('saveLoading',{gateEntryNo:btn.dataset.gate,planNo:btn.dataset.plan,orderNo:btn.dataset.order,items})
+    .then(()=>{toast('Loading completed');go('invoice');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveInvoice(){
+  const sel=document.getElementById('invGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  if(!document.getElementById('invNo').value)return toast('Invoice number required',true);
+  busy('saveInv');
+  api('saveInvoice',{gateEntryNo:sel.value,orderNo:opt.dataset.order,invoiceNo:document.getElementById('invNo').value,invoiceDate:document.getElementById('invDate').value,invoiceAmount:document.getElementById('invAmt').value,file:invFile})
+    .then(()=>{toast('Invoice saved');go('gateout');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveGateOut(){
+  const sel=document.getElementById('goGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  const on=document.querySelectorAll('[data-chk].on').length;
+  if(on<5)return toast('Complete all 5 verifications (including Weighment Done)',true);
+  busy('saveGO');
+  api('saveGateOut',{gateEntryNo:sel.value,orderNo:opt.dataset.order,vehicleNo:opt.dataset.veh,driverName:opt.dataset.drv,invoiceNo:'',checks:{invoice:true,lr:true,vehicle:true,docs:true,weighment:true}})
+    .then(()=>{toast('Vehicle gated out');go('pod');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSavePOD(){
+  const sel=document.getElementById('podGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  if(!document.getElementById('podRcv').value)return toast('Receiver name required',true);
+  const its=(window._podItems||[]).map((it,i)=>{
+    const rEl=document.querySelector(`[data-podr="${i}"]`);
+    const loaded=it.LoadedQty||0;
+    const rej=Math.max(0,Math.min(rEl?+rEl.value||0:0, loaded));
+    return {skuCode:it.SKUCode,skuName:it.SKUName,loadedQty:loaded,deliveredQty:loaded-rej,rejectedQty:rej};
+  });
+  busy('savePOD');
+  api('savePOD',{gateEntryNo:sel.value,orderNo:opt.dataset.order,deliveryDate:document.getElementById('podDate').value,receiverName:document.getElementById('podRcv').value,receiverMobile:document.getElementById('podMob').value,remarks:document.getElementById('podRem').value,file:podFile,items:its})
+    .then(r=>{toast(r&&r.hasReturn?('Partial delivery — '+r.rejected+' returned, go to Return Gate Entry'):'Delivery confirmed');refreshReturns();go(r&&r.hasReturn?'returnentry':'collection');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveRE(){
+  const sel=document.getElementById('reGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  busy('saveRE');
+  api('saveReturnGateEntry',{gateEntryNo:sel.value,orderNo:opt.dataset.order,vehicleNo:document.getElementById('reVeh').value||opt.dataset.veh,driverName:document.getElementById('reDrv').value||opt.dataset.drv})
+    .then(r=>{toast('Return logged ('+r.returnNo+')');refreshReturns();go('returnreceived');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveRR(){
+  const sel=document.getElementById('rrSel');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a return',true);
+  const recv=(document.getElementById('rrRecv')||{}).value||'';
+  if(!recv.trim())return toast('Receiver Name is required',true);
+  busy('saveRR');
+  api('saveReturnReceived',{returnNo:sel.value,gateEntryNo:opt.dataset.gate,orderNo:opt.dataset.order,receiverName:recv.trim().toUpperCase()})
+    .then(()=>{toast('Received — returned lines for '+opt.dataset.order+' closed');refreshReturns();go('orders');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSavePay(btn){
+  const amt=+document.getElementById('payAmt').value||0;
+  if(amt<=0)return toast('Enter amount',true);
+  busy('savePay');
+  const _ref=document.getElementById('payRef').value.trim();
+  if(!_ref)return toast('Reference No. is required',true);
+  api('saveCollection',{orderNo:btn.dataset.order,invoiceNo:btn.dataset.inv,vendorName:btn.dataset.vendor,invoiceAmount:btn.dataset.amount,
+    collectionDate:document.getElementById('payDate').value,amount:amt,
+    deductionAmount:+(document.getElementById('payDed')||{}).value||0,
+    actualReceived:+(document.getElementById('payAct')||{}).value||0,
+    grossWeight:+(document.getElementById('payGW')||{}).value||0,
+    netWeight:+(document.getElementById('payNW')||{}).value||0,
+    partyNetWeight:+(document.getElementById('payPNW')||{}).value||0,
+    mode:document.getElementById('payMode').value,refNo:_ref})
+    .then(()=>{toast('Payment '+inr(amt)+' recorded');loadCollection(btn.dataset.order);refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+
+function refreshGO(){
+  const on=document.querySelectorAll('[data-chk].on').length;const btn=document.getElementById('saveGO');if(!btn)return;
+  btn.disabled=on<4;btn.textContent=on<4?`Confirm Gate Out (${on}/4)`:'Confirm Gate Out ✓';
+}
+
+/* ---- file → base64 ---- */
+function handleFile(e,target,cb){
+  const file=e.target.files[0];if(!file)return;
+  const ext=(file.name.split('.').pop()||'').toUpperCase();
+  const reader=new FileReader();
+  reader.onload=()=>{cb({base64:reader.result.split(',')[1],name:file.name,mime:file.type});
+    const col=ext==='PDF'?'#DC2626':(ext==='PNG'?'#2563EB':'#0D9488');
+    document.getElementById(target).innerHTML=`<div class="doc"><div class="di" style="background:${col}">${ext}</div><div class="dm"><div class="a">${file.name}</div><div class="b">${(file.size/1024).toFixed(0)} KB · ready</div></div><span class="badge b-ok">${I.check}</span></div>`;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ---- export ---- */
+document.addEventListener('click',e=>{
+  if(e.target.id==='expCsv'||e.target.id==='expXls'){
+    if(!reportData.length)return;
+    const q=(repFilter||'').toLowerCase().trim();
+    const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
+    if(!rows.length)return;
+    const cols=Object.keys(rows[0]);
+    const csv=[cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]).replace(/"/g,'""')}"`).join(','))].join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=curReport+(e.target.id==='expXls'?'.xls':'.csv');a.click();
+    toast('Exported '+a.download);
+  }
+});
+
+/* ---- helpers ---- */
+function busy(id){const b=document.getElementById(id);if(b){b.disabled=true;b.innerHTML='<div class="spin" style="width:18px;height:18px;border-width:2px;margin:0"></div>';}}
+function askConfirm(msg,onYes){
+  let ov=document.getElementById('confirmOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='confirmOv'; ov.className='cfm'; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="cfm-card"><div class="cfm-msg">${msg}</div><div class="cfm-row"><button class="btn btn-ghost btn-sm" id="cfmNo">Cancel</button><button class="btn btn-danger btn-sm" id="cfmYes">Remove</button></div></div>`;
+  ov.style.display='flex';
+  document.getElementById('cfmNo').onclick=()=>{ov.style.display='none';};
+  document.getElementById('cfmYes').onclick=()=>{ov.style.display='none';onYes();};
+}
+function refreshDash(){return api('getDashboard').then(d=>{STATE.dashboard=d;});}
+let toastT;
+function toast(msg,isErr){const t=document.getElementById('toast');document.getElementById('toastMsg').textContent=msg;t.classList.toggle('err',!!isErr);document.getElementById('toastIc').innerHTML=isErr?'<path d="M18 6L6 18M6 6l12 12"/>':'<path d="M20 6L9 17l-5-5"/>';t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
+function today(){return new Date().toISOString().slice(0,10);}
+function ym(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
+
+/* sidebar mobile */
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show');}
+function toggleSidebar(){
+  if(window.innerWidth<=900){
+    const sb=document.getElementById('sidebar'), open=sb.classList.toggle('open');
+    document.getElementById('overlay').classList.toggle('show',open);
+  } else {
+    document.body.classList.toggle('nav-hidden');
+  }
+}
+document.getElementById('ham').addEventListener('click',toggleSidebar);
+document.getElementById('overlay').addEventListener('click',closeSidebar);
+
+/*****************************************************************
+ * BOOT — role-based login gate
+ *****************************************************************/
+function doLogin(){
+  const email=(document.getElementById('loginEmail').value||'').trim();
+  const role=document.getElementById('loginRole').value;
+  const err=document.getElementById('lgErr');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent='Enter a valid email address.'; return; }
+  if(!role){ err.textContent='Please choose your role.'; return; }
+  err.textContent='';
+  const name=email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  STATE.user={email:email,name:name,role:role};
+  const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='Signing in…';
+  api('getBootstrap').then(b=>{
+    STATE.masters=b.masters; STATE.dashboard=b.dashboard; STATE.orders=b.orders; STATE.showReturns=!!b.showReturns;
+    document.getElementById('login').style.display='none';
+    setUser(STATE.user); buildNav(); go(defaultRoute());
+  }).catch(e=>{ btn.disabled=false; btn.textContent='Sign in →'; err.textContent='Could not load data. '+(e.message||'')+' If in Apps Script, run setupDatabase() first.'; });
+}
+document.getElementById('loginBtn').addEventListener('click',doLogin);
+document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+
+/*****************************************************************
+ * MOCK BACKEND (preview only — real data comes from Sheets)
+ *****************************************************************/
+const MOCK=(function(){
+  function ymM(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
+  const YM=ymM(), pad=n=>String(n).padStart(3,'0');
+  const pad4=n=>String(n).padStart(4,'0');
+  const FY=(()=>{const d=new Date();let y=d.getFullYear();if(d.getMonth()>=3)y++;return 'SRFM'+String(y).slice(-2);})();
+  const DDMMYY=(()=>{const d=new Date(),p=x=>String(x).padStart(2,'0');return p(d.getDate())+p(d.getMonth()+1)+String(d.getFullYear()).slice(-2);})();
+  const masters={
+    vendors:[{VendorCode:'VND-0142',VendorName:'Bharat Steel Co.',GST:'27ABCDE1234F1Z5'},{VendorCode:'VND-0138',VendorName:'Surya Cements Ltd',GST:'27FGHIJ5678K2Z9'},{VendorCode:'VND-0129',VendorName:'Vega Polymers',GST:'29KLMNO9012P3Z1'},{VendorCode:'VND-0117',VendorName:'Maple Traders',GST:'24PQRST3456U4Z7'}],
+    skus:[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Brand:'BharatTMT',UOM:'MT',GSTPercent:18,Rate:62000},{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Brand:'BharatTMT',UOM:'MT',GSTPercent:18,Rate:61500},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',Brand:'BharatMS',UOM:'MT',GSTPercent:18,Rate:58000},{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',Brand:'BharatMS',UOM:'MT',GSTPercent:18,Rate:54000}],
+    transporters:[{TransporterName:'Mahalaxmi Logistics',ContactNumber:'98220 11200'},{TransporterName:'Speedways Carriers',ContactNumber:'98220 44521'},{TransporterName:'Konark Transport',ContactNumber:'98220 78812'}]
+  };
+  const users=[{Email:'admin@example.com',Name:'Rajesh Kumar',Role:'Admin'},{Email:'sales@example.com',Name:'Amit Rao',Role:'Sales'},{Email:'dispatch@example.com',Name:'Dev P.',Role:'Dispatch Executive'},{Email:'security@example.com',Name:'Vikram S.',Role:'Security'},{Email:'billing@example.com',Name:'Neha Jain',Role:'Billing Executive'},{Email:'accounts@example.com',Name:'Priya Sharma',Role:'Accounts'}];
+  const o1='ORD-'+YM+'-001',o2='ORD-'+YM+'-002',o3='ORD-'+YM+'-003',o4='ORD-'+YM+'-004',o5='ORD-'+YM+'-005';
+  // ---------- tables (mirror the sheets) ----------
+  let orders=[
+    {OrderNo:o1,OrderDate:'18 Jun 2026',VendorName:'Vega Polymers',VendorCode:'VND-0129',TotalQty:21,TotalValue:1493880,Status:'Vehicle Dispatched'},
+    {OrderNo:o2,OrderDate:'21 Jun 2026',VendorName:'Surya Cements Ltd',VendorCode:'VND-0138',TotalQty:12,TotalValue:214500,Status:'Partially Collected'},
+    {OrderNo:o3,OrderDate:'22 Jun 2026',VendorName:'Bharat Steel Co.',VendorCode:'VND-0142',TotalQty:24,TotalValue:1748760,Status:'Vehicle Arrived'},
+    {OrderNo:o4,OrderDate:'15 Jun 2026',VendorName:'Maple Traders',VendorCode:'VND-0117',TotalQty:6,TotalValue:105000,Status:'Fully Collected'},
+    {OrderNo:o5,OrderDate:'23 Jun 2026',VendorName:'Orion Hardware',VendorCode:'VND-0117',TotalQty:15,TotalValue:984120,Status:'Partial Planning'}
+  ];
+  let orderItems={};
+  orderItems[o1]=[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Qty:12,Rate:62000},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',Qty:9,Rate:58000}];
+  orderItems[o2]=[{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Qty:12,Rate:61500}];
+  orderItems[o3]=[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Qty:12,Rate:62000},{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Qty:12,Rate:61500}];
+  orderItems[o4]=[{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',Qty:6,Rate:54000}];
+  orderItems[o5]=[{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',Qty:9,Rate:54000},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',Qty:6,Rate:58000}];
+  let plans=[
+    {PlanNo:'PLN-'+YM+'-001',OrderNo:o1,Status:'Closed',items:[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',PlannedQty:12},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',PlannedQty:9}]},
+    {PlanNo:'PLN-'+YM+'-002',OrderNo:o2,Status:'Closed',items:[{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',PlannedQty:12}]},
+    {PlanNo:'PLN-'+YM+'-003',OrderNo:o3,Status:'Open',items:[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',PlannedQty:12}]},   // only 1 of 2 items planned; vehicle GE-003 attached
+    {PlanNo:'PLN-'+YM+'-004',OrderNo:o5,Status:'Open',items:[{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',PlannedQty:9}]}    // open, no vehicle yet → shows in Gate Entry; ANG-50x50 still to plan
+  ];
+  let gates=[
+    {GateEntryNo:'GE-'+YM+'-001',PlanNo:'PLN-'+YM+'-001',OrderNo:o1,VehicleNo:'MH-12-GH-4521',DriverName:'Ramesh P.',Status:'Vehicle Dispatched'},
+    {GateEntryNo:'GE-'+YM+'-002',PlanNo:'PLN-'+YM+'-002',OrderNo:o2,VehicleNo:'MH-31-KL-7782',DriverName:'Imran K.',Status:'Delivered'},
+    {GateEntryNo:'GE-'+YM+'-003',PlanNo:'PLN-'+YM+'-003',OrderNo:o3,VehicleNo:'MH-14-AB-9087',DriverName:'Suresh M.',Status:'Vehicle Arrived'}
+  ];
+  let loadItems=[
+    {GateEntryNo:'GE-'+YM+'-001',PlanNo:'PLN-'+YM+'-001',OrderNo:o1,SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',PlannedQty:12,DispatchQty:12},
+    {GateEntryNo:'GE-'+YM+'-001',PlanNo:'PLN-'+YM+'-001',OrderNo:o1,SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',PlannedQty:9,DispatchQty:9},
+    {GateEntryNo:'GE-'+YM+'-002',PlanNo:'PLN-'+YM+'-002',OrderNo:o2,SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',PlannedQty:12,DispatchQty:12}
+  ];
+  let invoices=[
+    {OrderNo:o1,GateEntryNo:'GE-'+YM+'-001',InvoiceNo:'INV-9921',InvoiceAmount:1493880},
+    {OrderNo:o2,GateEntryNo:'GE-'+YM+'-002',InvoiceNo:'INV-9918',InvoiceAmount:214500}
+  ];
+  let podItems=[], pods=[{GateEntryNo:'GE-'+YM+'-002',OrderNo:o2,Status:'Delivered',HasReturn:false}], returns=[];
+  let collections=[{OrderNo:o2,CollectionAmount:145860,PaymentMode:'Bank Transfer',CollectionDate:'20 Jun 2026',RefNo:'NEFT9921'}];
+  let seq={PLN:4,GE:3,RET:0,COL:0,SCH:0};
+  let scheds=[], schedItems=[];
+  // ---------- ledger helpers (mirror Code.gs) ----------
+  const O=no=>orders.find(o=>o.OrderNo===no);
+  function loadedBySku(no){const m={};loadItems.filter(l=>l.OrderNo===no).forEach(l=>m[l.SKUCode]=(m[l.SKUCode]||0)+l.DispatchQty);return m;}
+  function openPlannedBySku(no){const m={};plans.filter(p=>p.OrderNo===no&&p.Status==='Open').forEach(p=>p.items.forEach(it=>m[it.SKUCode]=(m[it.SKUCode]||0)+it.PlannedQty));return m;}
+  function orderItemsFor(no){const ld=loadedBySku(no),op=openPlannedBySku(no);const sm={};let hasS=false;schedItems.filter(s=>s.OrderNo===no).forEach(s=>{hasS=true;sm[s.SKUCode]=(sm[s.SKUCode]||0)+s.ScheduledQty;});return (orderItems[no]||[]).map(i=>{const base=hasS?Math.min(i.Qty,sm[i.SKUCode]||0):i.Qty;const rem=base-(ld[i.SKUCode]||0)-(op[i.SKUCode]||0);return{SKUCode:i.SKUCode,SKUName:i.SKUName,OrderedQty:i.Qty,ScheduledQty:hasS?(sm[i.SKUCode]||0):i.Qty,LoadedQty:ld[i.SKUCode]||0,OpenPlannedQty:op[i.SKUCode]||0,RemainingQty:Math.max(rem,0)};}).filter(r=>r.RemainingQty>0);}
+  function skuRows(list){const K=(o,s)=>o+'|'+s;const plan={},load={},del={},rej={};plans.forEach(pl=>(pl.items||[]).forEach(it=>{plan[K(pl.OrderNo,it.SKUCode)]=(plan[K(pl.OrderNo,it.SKUCode)]||0)+(+it.PlannedQty||0);}));loadItems.forEach(l=>{load[K(l.OrderNo,l.SKUCode)]=(load[K(l.OrderNo,l.SKUCode)]||0)+(+l.DispatchQty||0);});podItems.forEach(p=>{const k=K(p.OrderNo,p.SKUCode);const lq=+p.LoadedQty||0,rq=+p.RejectedQty||0;del[k]=(del[k]||0)+Math.max(lq-rq,0);rej[k]=(rej[k]||0)+rq;});const byO={};list.forEach(o=>byO[o.OrderNo]=o);const rows=[];Object.keys(orderItems).forEach(no=>{const o=byO[no];if(!o)return;orderItems[no].forEach(it=>{const k=K(no,it.SKUCode);const ordered=+it.Qty||0,rate=+it.Rate||0,ld=load[k]||0;rows.push({OrderNo:no,Vendor:o.VendorName,SKUCode:it.SKUCode,SKU:it.SKUName,Ordered:ordered,Planned:plan[k]||0,Dispatched:ld,Delivered:del[k]||0,Rejected:rej[k]||0,Pending:Math.max(ordered-ld,0),Rate:rate,Value:Math.round(ordered*rate),Status:o.Status});});});return rows;}
+  function podRows(){return podItems.map(p=>{const g=gates.find(x=>x.GateEntryNo===p.GateEntryNo)||{};const lq=+p.LoadedQty||0,rq=+p.RejectedQty||0;return{OrderNo:p.OrderNo,GateEntryNo:p.GateEntryNo,Vehicle:g.VehicleNo||'',SKU:p.SKUName,Loaded:lq,Delivered:Math.max(lq-rq,0),Rejected:rq};});}
+  function coll(no){const inv=invoices.filter(i=>i.OrderNo===no);const invoiced=inv.reduce((a,i)=>a+i.InvoiceAmount,0);const rows=collections.filter(c=>c.OrderNo===no);const collected=rows.reduce((a,c)=>a+c.CollectionAmount,0);const o=O(no);return{orderNo:no,vendorName:o?o.VendorName:'',invoiceNo:inv.map(i=>i.InvoiceNo).join(', '),invoiced,collected,outstanding:Math.max(invoiced-collected,0),history:rows.slice().reverse().map(c=>({date:c.CollectionDate,amount:c.CollectionAmount,mode:c.PaymentMode,ref:c.RefNo}))};}
+  function recompute(no){const items=(orderItems[no]||[]);const ordered=items.reduce((s,i)=>s+(+i.Qty||0),0);const lmap={};loadItems.filter(l=>l.OrderNo===no).forEach(l=>lmap[l.SKUCode]=(lmap[l.SKUCode]||0)+(+l.DispatchQty||0));const loaded=Object.keys(lmap).reduce((s,k)=>s+lmap[k],0);const fullyShipped=ordered>0&&loaded>=ordered;const pend=orderItemsFor(no).reduce((s,i)=>s+i.RemainingQty,0);const gs=gates.filter(g=>g.OrderNo===no);const inFlight=gs.some(g=>['Vehicle Arrived','Loading Completed','Invoice Generated','Vehicle Dispatched'].includes(g.Status));const rp=gs.some(g=>g.Status==='Return Pending');const rt=returns.some(r=>r.OrderNo===no&&r.Status==='Returned');const c=coll(no);const o=O(no);let s;if(rp)s='Return Pending';else if(rt)s='Returned';else if(loaded>0&&!fullyShipped)s='Partially Dispatched';else if(c.invoiced>0&&c.outstanding>0)s=c.collected>0?'Partially Collected':'Delivered';else if(pend>0||inFlight)s='Partial Planning';else if(c.invoiced>0&&c.outstanding<=0&&fullyShipped)s='Fully Collected';else s='Closed';if(o)o.Status=s;return s;}
+  const sIdx=(s,scheduled)=>({'Pending Dispatch Planning':scheduled?1:0,'Partial Planning':2,'Fully Planned':2,'Vehicle Arrived':3,'Partial Loading':4,'Loading Completed':5,'Invoice Generated':6,'Vehicle Dispatched':7,'Delivered':8,'Return Pending':8,'Returned':8,'Partially Dispatched':8,'Partially Collected':8,'Fully Collected':9,'Closed':9}[s]!=null?({'Pending Dispatch Planning':scheduled?1:0,'Partial Planning':2,'Fully Planned':2,'Vehicle Arrived':3,'Partial Loading':4,'Loading Completed':5,'Invoice Generated':6,'Vehicle Dispatched':7,'Delivered':8,'Return Pending':8,'Returned':8,'Partially Dispatched':8,'Partially Collected':8,'Fully Collected':9,'Closed':9}[s]):0);
+  const isSched=no=>scheds.some(s=>s.OrderNo===no);
+  function bucket(s){const i=sIdx(s);return i===0?'Created':i<=2?'Dispatch':i<=5?'Loading':i<=7?'Delivery':'Collection';}
+  function dash(){const c=s=>orders.filter(o=>o.Status===s).length;const inv=invoices.reduce((a,i)=>a+i.InvoiceAmount,0),col=collections.reduce((a,c)=>a+c.CollectionAmount,0);return{totalOrders:orders.length,partialOrders:c('Partial Planning')+c('Partial Loading')+c('Partially Collected')+c('Partially Dispatched'),pendingDispatch:c('Pending Dispatch Planning'),dispatchPlanned:c('Fully Planned')+c('Partial Planning'),vehicleArrived:c('Vehicle Arrived'),loadingPending:c('Vehicle Arrived')+c('Partial Loading'),invoicePending:c('Loading Completed'),podPending:c('Vehicle Dispatched'),collectionPending:collOrders().length,fullyClosed:c('Fully Collected')+c('Closed'),outstanding:Math.max(inv-col,0)};}
+  function collOrders(){return orders.filter(o=>['Return Pending','Returned'].indexOf(o.Status)<0).map(o=>{const c=coll(o.OrderNo);return{OrderNo:o.OrderNo,VendorName:o.VendorName,outstanding:c.outstanding,invoiced:c.invoiced};}).filter(o=>o.invoiced>0&&o.outstanding>0);}
+  // ---------- P2P (mock) ----------
+  let pos=[], poItemsM={}, sens=[], senItemsM={}, qcs=[], receivings=[], preturns=[], payments=[];
+  let pseq={PO:0,SEN:0,GRN:0,PRN:0,PAY:0};
+  (function(){const no='PO-'+YM+'-'+String(++pseq.PO).padStart(3,'0');pos.push({PONo:no,PODate:'01 Jul 2026',SupplierCode:'VND-0142',SupplierName:'Bharat Steel Co.',TotalQty:1000,TotalValue:1180000,Status:'Sent to Supplier'});poItemsM[no]=[{PONo:no,SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Qty:600,Rate:1000,GSTPercent:18},{PONo:no,SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Qty:400,Rate:1000,GSTPercent:18}];})();
+  const POf=no=>pos.find(p=>p.PONo===no), SENf=no=>sens.find(s=>s.SENNo===no);
+  function poAccepted(no){const q={};qcs.forEach(x=>q[x.SENNo]=x.QCStatus);const m={};Object.keys(senItemsM).forEach(sn=>{const st=q[sn];if(st==='Accept'||st==='Accept with Deduction')senItemsM[sn].filter(i=>i.PONo===no).forEach(i=>m[i.SKUCode]=(m[i.SKUCode]||0)+i.ReceivedQty);});return m;}
+  function poPipeline(no){const q={};qcs.forEach(x=>q[x.SENNo]=x.QCStatus);const m={};Object.keys(senItemsM).forEach(sn=>{if(!q[sn])senItemsM[sn].filter(i=>i.PONo===no).forEach(i=>m[i.SKUCode]=(m[i.SKUCode]||0)+i.ReceivedQty);});return m;}
+  function poItemsForM(no){const acc=poAccepted(no),pipe=poPipeline(no);return (poItemsM[no]||[]).map(i=>{const a=acc[i.SKUCode]||0,p=pipe[i.SKUCode]||0;return{SKUCode:i.SKUCode,SKUName:i.SKUName,POQty:i.Qty,Rate:i.Rate,GSTPercent:i.GSTPercent,AcceptedQty:a,InPipelineQty:p,RemainingQty:Math.max(i.Qty-a-p,0)};});}
+  function recomputePOm(no){const po=POf(no);if(!po)return;const items=poItemsForM(no);const rem=items.reduce((s,i)=>s+i.RemainingQty,0),acc=items.reduce((s,i)=>s+i.AcceptedQty,0);po.Status=(acc>0&&rem<=0)?'Fully Received':(acc>0?'Partially Received':(po.Status==='Draft'?'Draft':'Sent to Supplier'));}
+  function senSheetM(no){const s=SENf(no);if(!s)return null;const rate={};(poItemsM[s.PONo]||[]).forEach(i=>rate[i.SKUCode]={rate:i.Rate,gst:i.GSTPercent});let value=0;const items=(senItemsM[no]||[]).map(i=>{const r=rate[i.SKUCode]||{rate:0,gst:0};value+=i.ReceivedQty*r.rate*(1+r.gst/100);return{SKUCode:i.SKUCode,SKUName:i.SKUName,POQty:i.POQty,ReceivedQty:i.ReceivedQty,Rate:r.rate};});const qc=qcs.find(q=>q.SENNo===no)||{};return{senNo:no,poNo:s.PONo,supplierName:s.SupplierName,vehicleNo:s.VehicleNo,invoiceNo:s.InvoiceNo,status:s.Status,items,qcStatus:qc.QCStatus||'',deduction:qc.DeductionAmount||0,value:Math.round(value)};}
+  function payListM(){const paid={};payments.forEach(p=>paid[p.SENNo]=(paid[p.SENNo]||0)+p.Amount);return sens.filter(s=>s.Status==='Material Received'||s.Status==='Paid').map(s=>{const sh=senSheetM(s.SENNo);const payable=Math.max((sh.value||0)-(sh.deduction||0),0);const pd=paid[s.SENNo]||0;return{SENNo:s.SENNo,PONo:s.PONo,SupplierName:s.SupplierName,payable,paid:pd,outstanding:Math.max(payable-pd,0)};}).filter(x=>x.outstanding>0);}
+  const senList=st=>sens.filter(s=>s.Status===st).map(s=>({SENNo:s.SENNo,PONo:s.PONo,SupplierName:s.SupplierName,GateDate:s.GateDate,VehicleNo:s.VehicleNo,Status:s.Status}));
+  return {
+    getBootstrap:()=>({user:{name:'Rajesh Kumar',role:'Admin',email:'admin@example.com'},masters,dashboard:dash()}),
+    getDashboard:()=>dash(),
+    getMasters:()=>masters,
+    savePO:(p)=>{const no='PO/'+FY+'-'+pad4(++pseq.PO);let tq=0,tv=0;const items=(p.items||[]).filter(it=>+it.qty>0).map(it=>{const amt=it.qty*it.rate*(1+(it.gstPercent||0)/100);tq+=+it.qty;tv+=amt;return{PONo:no,SKUCode:it.skuCode,SKUName:it.skuName,Qty:+it.qty,Rate:+it.rate,GSTPercent:+it.gstPercent||0,Amount:Math.round(amt)};});pos.unshift({PONo:no,PODate:p.poDate||'Today',SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,TotalQty:tq,TotalValue:Math.round(tv),Status:'Draft'});poItemsM[no]=items;return{poNo:no,totalValue:Math.round(tv)};},
+    getPOs:()=>pos.map(p=>({PONo:p.PONo,PODate:p.PODate,SupplierName:p.SupplierName,TotalQty:p.TotalQty,TotalValue:p.TotalValue,Status:p.Status})),
+    sendPO:(no)=>{const p=POf(no);if(p&&p.Status==='Draft')p.Status='Sent to Supplier';return pos;},
+    getPOsForGate:()=>pos.filter(p=>['Sent to Supplier','Partially Received','Draft'].indexOf(p.Status)>-1).map(p=>({PONo:p.PONo,SupplierName:p.SupplierName,remaining:poItemsForM(p.PONo).reduce((s,i)=>s+i.RemainingQty,0)})).filter(p=>p.remaining>0),
+    getPOSheet:(no)=>{const p=POf(no);if(!p)return null;return{poNo:no,supplierName:p.SupplierName,supplierCode:p.SupplierCode,poDate:p.PODate,items:poItemsForM(no).filter(i=>i.RemainingQty>0)};},
+    saveGateEntryIn:(p)=>{const no='SEN-'+pad4(++pseq.SEN);sens.unshift({SENNo:no,PONo:p.poNo,SupplierName:p.supplierName,GateDate:'Today',VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',InvoiceNo:p.invoiceNo||'',Status:'Pending QC'});senItemsM[no]=(p.items||[]).filter(it=>+it.receivedQty>0).map(it=>({SENNo:no,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,POQty:+it.poQty||0,ReceivedQty:+it.receivedQty||0}));recomputePOm(p.poNo);return{senNo:no};},
+    getSENsForQC:()=>senList('Pending QC'),
+    getSENSheet:(no)=>senSheetM(no),
+    saveQC:(p)=>{const s=SENf(p.senNo);qcs.push({SENNo:p.senNo,PONo:s.PONo,QCStatus:p.qcStatus,DeductionAmount:+p.deductionAmount||0,Remarks:p.remarks||''});s.Status=(p.qcStatus==='Reject')?'QC Rejected':'QC Passed';recomputePOm(s.PONo);return{ok:true,next:s.Status};},
+    getSENsForReceiving:()=>senList('QC Passed'),
+    saveReceiving:(p)=>{const s=SENf(p.senNo);const grn='GRN-'+YM+'-'+String(++pseq.GRN).padStart(3,'0');receivings.push({GRNNo:grn,SENNo:p.senNo,PONo:s.PONo});s.Status='Material Received';recomputePOm(s.PONo);return{grnNo:grn};},
+    getSENsForReturn:()=>senList('QC Rejected'),
+    saveReturn:(p)=>{const s=SENf(p.senNo);const pr='PRN-'+YM+'-'+String(++pseq.PRN).padStart(3,'0');preturns.push({PRNo:pr,SENNo:p.senNo,PONo:s.PONo});s.Status='Material Returned';recomputePOm(s.PONo);return{prNo:pr};},
+    getSENsForPayment:()=>payListM(),
+    savePayment:(p)=>{const s=SENf(p.senNo);const no='PAY-'+YM+'-'+String(++pseq.PAY).padStart(3,'0');payments.push({PayNo:no,SENNo:p.senNo,PONo:s.PONo,Amount:+p.amount||0});if(!payListM().some(x=>x.SENNo===p.senNo))s.Status='Paid';return{payNo:no};},
+    getP2PDashboard:()=>({totalPO:pos.length,poOpen:pos.filter(p=>['Draft','Sent to Supplier','Partially Received'].indexOf(p.Status)>-1).length,pendingQC:sens.filter(s=>s.Status==='Pending QC').length,toReceive:sens.filter(s=>s.Status==='QC Passed').length,toReturn:sens.filter(s=>s.Status==='QC Rejected').length,toPay:payListM().length}),
+    saveVendor:(v)=>{masters.vendors.push({VendorCode:v.VendorCode,VendorName:v.VendorName,Address:v.Address||'',ContactPerson:v.ContactPerson||'',Mobile:v.Mobile||'',GST:v.GST||'',CreditDays:+v.CreditDays||0});return masters.vendors;},
+    saveSKU:(s)=>{masters.skus.push({SKUCode:s.SKUCode,SKUName:s.SKUName,Brand:s.Brand||'',Category:s.Category||'',UOM:s.UOM||'',GSTPercent:+s.GSTPercent||0,Rate:+s.Rate||0});return masters.skus;},
+    saveTransporter:(t)=>{masters.transporters.push({TransporterName:t.TransporterName,ContactNumber:t.ContactNumber||''});return masters.transporters;},
+    deleteVendor:(code)=>{masters.vendors=masters.vendors.filter(v=>v.VendorCode!==code);return masters.vendors;},
+    deleteSKU:(code)=>{masters.skus=masters.skus.filter(s=>s.SKUCode!==code);return masters.skus;},
+    deleteTransporter:(name)=>{masters.transporters=masters.transporters.filter(t=>t.TransporterName!==name);return masters.transporters;},
+    saveUser:(u)=>{users.push({Email:u.Email,Name:u.Name,Role:u.Role});return users;},
+    deleteUser:(email)=>{const i=users.findIndex(u=>u.Email===email);if(i>-1)users.splice(i,1);return users;},
+    getUsers:()=>users,
+    getOrders:(f)=>orders.map(o=>({...o,StageIndex:sIdx(o.Status,isSched(o.OrderNo))})).filter(o=>(f==='All'||!f)?true:bucket(o.Status)===f).slice().reverse(),
+    getOrderDetail:(no)=>{const o=O(no);if(!o)return null;const inv=invoices.filter(i=>i.OrderNo===no);const c=coll(no);return{order:{...o,Scheduled:isSched(no),StageIndex:sIdx(o.Status,isSched(no))},items:orderItems[no]||[],vehicles:gates.filter(g=>g.OrderNo===no).map(g=>{const gi=inv.find(i=>i.GateEntryNo===g.GateEntryNo);return{gateEntryNo:g.GateEntryNo,vehicleNo:g.VehicleNo,driver:g.DriverName,status:g.Status,invoiceNo:gi?gi.InvoiceNo:'',invoiceAmount:gi?gi.InvoiceAmount:0,gatedOut:['Vehicle Dispatched','Delivered','Return Pending','Returned','Closed'].includes(g.Status),delivered:['Delivered','Return Pending','Returned','Closed'].includes(g.Status)};}),invoiced:c.invoiced,collected:c.collected,outstanding:c.outstanding};},
+    getPendingDispatch:()=>orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)<0).map(o=>({OrderNo:o.OrderNo,VendorName:o.VendorName,TotalValue:o.TotalValue,Status:o.Status,RemainingQty:orderItemsFor(o.OrderNo).reduce((s,i)=>s+i.RemainingQty,0)})).filter(o=>o.RemainingQty>0),
+    getOrderItemsFor:(no)=>orderItemsFor(no),
+    getSchedulableOrders:()=>orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)<0).map(o=>({OrderNo:o.OrderNo,VendorName:o.VendorName,RemainingQty:orderItemsFor(o.OrderNo).reduce((s,i)=>s+i.RemainingQty,0)})).filter(o=>o.RemainingQty>0),
+    getScheduleSheet:(no)=>{const o=O(no);if(!o)return null;const ld=loadedBySku(no),op=openPlannedBySku(no);const sm={};schedItems.filter(s=>s.OrderNo===no).forEach(s=>sm[s.SKUCode]=(sm[s.SKUCode]||0)+s.ScheduledQty);const items=(orderItems[no]||[]).map(i=>{const pending=Math.max(i.Qty-(ld[i.SKUCode]||0)-(op[i.SKUCode]||0),0);return{SKUCode:i.SKUCode,SKUName:i.SKUName,OrderedQty:i.Qty,PendingQty:pending,ScheduledQty:(sm[i.SKUCode]!=null?sm[i.SKUCode]:pending)};});const ex=scheds.filter(s=>s.OrderNo===no).slice(-1)[0];return{orderNo:no,vendorName:o.VendorName,promisedDate:ex?ex.PromisedDate:'',promisedTime:ex?(ex.PromisedTime||''):'',items};},
+    saveSchedule:(p)=>{const no='SCH-'+YM+'-'+pad(++seq.SCH);scheds.push({ScheduleNo:no,OrderNo:p.orderNo,PromisedDate:p.promisedDate||'',PromisedTime:p.promisedTime||''});(p.items||[]).filter(it=>+it.scheduledQty>0).forEach(it=>schedItems.push({ScheduleNo:no,OrderNo:p.orderNo,SKUCode:it.skuCode,ScheduledQty:+it.scheduledQty}));return{scheduleNo:no};},
+    getDispatchPlanned:()=>{const used=gates.map(g=>g.PlanNo);return plans.filter(p=>p.Status==='Open'&&used.indexOf(p.PlanNo)<0).map(p=>{const o=O(p.OrderNo);return{PlanNo:p.PlanNo,OrderNo:p.OrderNo,VendorName:o?o.VendorName:'',Summary:p.items.map(i=>i.SKUName+' \u00d7'+i.PlannedQty).join(', ')};});},
+    getGateEntries:(st)=>gates.filter(g=>!st||g.Status===st).slice().reverse().map(g=>({GateEntryNo:g.GateEntryNo,PlanNo:g.PlanNo,OrderNo:g.OrderNo,VehicleNo:g.VehicleNo,DriverName:g.DriverName,Status:g.Status})),
+    getLoadingSheet:(ge)=>{const g=gates.find(x=>x.GateEntryNo===ge);const pl=plans.find(p=>p.PlanNo===g.PlanNo)||{items:[]};const o=O(g.OrderNo)||{};const vd=masters.vendors.find(v=>v.VendorName===o.VendorName)||{};const lt={};loadItems.filter(l=>l.GateEntryNo===ge).forEach(l=>lt[l.SKUCode]=(lt[l.SKUCode]||0)+l.DispatchQty);const skus=pl.items.map(pi=>{const bal=pi.PlannedQty-(lt[pi.SKUCode]||0);return{SKUCode:pi.SKUCode,SKUName:pi.SKUName,PlannedQty:pi.PlannedQty,BalanceQty:Math.max(bal,0),DispatchQty:0};}).filter(r=>r.BalanceQty>0);return{gateEntryNo:ge,planNo:g.PlanNo,orderNo:g.OrderNo,vehicleNo:g.VehicleNo,vendorName:o.VendorName||'',vendorCode:vd.VendorCode||'',vendorGST:vd.GST||'',skus};},
+    getPODSheet:(ge)=>{const g=gates.find(x=>x.GateEntryNo===ge);const items=loadItems.filter(l=>l.GateEntryNo===ge).map(l=>({SKUCode:l.SKUCode,SKUName:l.SKUName,LoadedQty:l.DispatchQty,DeliveredQty:l.DispatchQty,RejectedQty:0}));return{gateEntryNo:ge,orderNo:g.OrderNo,vehicleNo:g.VehicleNo,items};},
+    getInvoiceSheet:(ge)=>{const g=gates.find(x=>x.GateEntryNo===ge);if(!g)return null;const o=O(g.OrderNo)||{};const ois=orderItems[g.OrderNo]||[];let amt=0;const items=loadItems.filter(l=>l.GateEntryNo===ge).map(l=>{const s=masters.skus.find(x=>x.SKUCode===l.SKUCode)||{};const oi=ois.find(x=>x.SKUCode===l.SKUCode)||{};const rate=(oi.Rate!==undefined&&oi.Rate>0)?oi.Rate:(s.Rate||0);const gst=s.GSTPercent||0;const qty=l.DispatchQty||0,line=qty*rate*(1+gst/100);amt+=line;return{SKUCode:l.SKUCode,SKUName:l.SKUName,Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(line)};});return{gateEntryNo:ge,orderNo:g.OrderNo,vehicleNo:g.VehicleNo,vendorName:o.VendorName||'',items,suggestedAmount:Math.round(amt)};},
+    getReturnPending:()=>gates.filter(g=>g.Status==='Return Pending').slice().reverse().map(g=>({GateEntryNo:g.GateEntryNo,OrderNo:g.OrderNo,VehicleNo:g.VehicleNo,DriverName:g.DriverName})),
+    getReturnFlags:()=>({showReturns: gates.some(g=>g.Status==='Return Pending')||returns.some(r=>r.Status==='Returned')}),
+    getRejectedItems:(ge)=>podItems.filter(i=>i.GateEntryNo===ge&&i.RejectedQty>0).map(i=>({SKUCode:i.SKUCode,SKUName:i.SKUName,RejectedQty:i.RejectedQty})),
+    getReturnsToReceive:()=>returns.filter(r=>r.Status==='Returned').slice().reverse().map(r=>({ReturnNo:r.ReturnNo,GateEntryNo:r.GateEntryNo,OrderNo:r.OrderNo,VehicleNo:r.VehicleNo})),
+    getCollectionOrders:()=>collOrders(),
+    getCollection:(no)=>coll(no),
+    saveOrder:(p)=>{const no=FY+'-'+pad4(orders.length+1);let q=0,v=0;p.items.forEach(it=>{q+=it.qty;v+=it.qty*it.rate*(1+(it.sgst+it.cgst)/100);});orders.push({OrderNo:no,OrderDate:'24 Jun 2026',VendorName:p.vendorName,VendorCode:p.vendorCode,TotalQty:q,TotalValue:v,Status:'Pending Dispatch Planning'});orderItems[no]=p.items.map(it=>({SKUCode:it.skuCode,SKUName:it.skuName,Qty:it.qty,Rate:it.rate}));return{orderNo:no,totalValue:v};},
+    savePlanning:(p)=>{const no='PLN-'+DDMMYY+'-'+pad4(++seq.PLN);plans.push({PlanNo:no,OrderNo:p.orderNo,Status:'Open',items:(p.items||[]).filter(it=>+it.plannedQty>0).map(it=>({SKUCode:it.skuCode,SKUName:it.skuName,PlannedQty:+it.plannedQty}))});const rem=orderItemsFor(p.orderNo).reduce((s,i)=>s+i.RemainingQty,0);const o=O(p.orderNo);if(o)o.Status=rem>0?'Partial Planning':'Fully Planned';return{planNo:no};},
+    saveGateEntry:(p)=>{const no='GE-'+pad4(++seq.GE);gates.push({GateEntryNo:no,PlanNo:p.planNo,OrderNo:p.orderNo,VehicleNo:(p.vehicleNo||'').toUpperCase(),DriverName:(p.driverName||'').toUpperCase(),Status:'Vehicle Arrived'});const o=O(p.orderNo);if(o)o.Status='Vehicle Arrived';return{gateEntryNo:no};},
+    saveLoading:(p)=>{loadItems=loadItems.filter(l=>l.GateEntryNo!==p.gateEntryNo);(p.items||[]).filter(it=>+it.dispatchQty>0).forEach(it=>loadItems.push({GateEntryNo:p.gateEntryNo,PlanNo:p.planNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,PlannedQty:it.plannedQty,DispatchQty:+it.dispatchQty}));const pl=plans.find(x=>x.PlanNo===p.planNo);if(pl)pl.Status='Closed';const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Loading Completed';const o=O(p.orderNo);const ordered=(orderItems[p.orderNo]||[]).reduce((a,i)=>a+i.Qty,0);const loaded=loadItems.filter(l=>l.OrderNo===p.orderNo).reduce((a,l)=>a+l.DispatchQty,0);if(o)o.Status=loaded>=ordered?'Loading Completed':'Partial Loading';return{ok:true};},
+    saveInvoice:(p)=>{invoices.push({OrderNo:p.orderNo,GateEntryNo:p.gateEntryNo,InvoiceNo:p.invoiceNo,InvoiceAmount:+p.invoiceAmount});const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Invoice Generated';const o=O(p.orderNo);if(o)o.Status='Invoice Generated';return{ok:true};},
+    saveGateOut:(p)=>{const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Vehicle Dispatched';const o=O(p.orderNo);if(o)o.Status='Vehicle Dispatched';return{ok:true};},
+    savePOD:(p)=>{const items=p.items||[];const rej=items.reduce((s,i)=>s+(+i.rejectedQty||0),0);items.forEach(it=>{const loaded=+it.loadedQty||0,r=+it.rejectedQty||0;podItems.push({GateEntryNo:p.gateEntryNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,LoadedQty:loaded,DeliveredQty:Math.max(loaded-r,0),RejectedQty:r});});pods.push({GateEntryNo:p.gateEntryNo,OrderNo:p.orderNo,Status:rej>0?'Partial Delivery':'Delivered',HasReturn:rej>0});const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status=rej>0?'Return Pending':'Delivered';const st=recompute(p.orderNo);return{ok:true,hasReturn:rej>0,rejected:rej,orderStatus:st};},
+    saveReturnGateEntry:(p)=>{const no='RE-'+pad4(++seq.RET);returns.push({ReturnNo:no,GateEntryNo:p.gateEntryNo,OrderNo:p.orderNo,VehicleNo:(p.vehicleNo||'').toUpperCase(),DriverName:(p.driverName||'').toUpperCase(),Status:'Returned'});const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Returned';const o=O(p.orderNo);if(o)o.Status='Returned';return{returnNo:no};},
+    saveReturnReceived:(p)=>{const r=returns.find(x=>x.ReturnNo===p.returnNo);if(r){r.Status='Received';r.ReceiverName=(p.receiverName||'').toUpperCase();}const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Closed';const s=recompute(p.orderNo);return{ok:true,orderStatus:s};},
+    saveCollection:(p)=>{const no='COL-'+YM+'-'+pad(++seq.COL);collections.push({CollectionNo:no,OrderNo:p.orderNo,CollectionAmount:+p.amount,PaymentMode:p.mode,CollectionDate:'24 Jun 2026',RefNo:p.refNo});const c=coll(p.orderNo);recompute(p.orderNo);return c;},
+    getReport:(t)=>{
+      const open=orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)<0);
+      const closed=orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)>-1);
+      const partial=orders.filter(o=>['Partial Planning','Partial Loading','Partially Collected','Partially Dispatched'].indexOf(o.Status)>-1);
+      const loaded=orders.filter(o=>o.Status==='Loading Completed');
+      if(t==='SKULedger')return skuRows(orders);
+      if(t==='OpenOrders')return skuRows(open);
+      if(t==='ClosedOrders')return skuRows(closed);
+      if(t==='PartialOrders')return skuRows(partial);
+      if(t==='InvoicePending')return skuRows(loaded);
+      if(t==='POD')return podRows();
+      if(t==='OrderRegister')return orders.map(o=>({OrderNo:o.OrderNo,Date:o.OrderDate,Vendor:o.VendorName,Value:o.TotalValue,Status:o.Status}));
+      if(t==='Outstanding')return orders.map(o=>{const c=coll(o.OrderNo);return{OrderNo:o.OrderNo,Invoiced:c.invoiced,Collected:c.collected,Outstanding:c.outstanding};}).filter(r=>r.Invoiced>0);
+      if(t==='CollectionRegister')return collections.map(c=>({CollectionNo:c.CollectionNo||'',OrderNo:c.OrderNo,Amount:c.CollectionAmount,Mode:c.PaymentMode,Date:c.CollectionDate}));
+      if(t==='GateEntry')return gates.map(g=>({GateEntryNo:g.GateEntryNo,OrderNo:g.OrderNo,Vehicle:g.VehicleNo,Status:g.Status}));
+      if(t==='GateOut')return gates.filter(g=>['Vehicle Dispatched','Delivered'].indexOf(g.Status)>-1).map(g=>({GateEntryNo:g.GateEntryNo,OrderNo:g.OrderNo,Vehicle:g.VehicleNo,Status:g.Status}));
+      if(t==='DispatchPlanning')return plans.map(p=>({PlanNo:p.PlanNo,OrderNo:p.OrderNo,Status:p.Status}));
+      if(t==='InvoiceRegister')return invoices.map(i=>({InvoiceNo:i.InvoiceNo,OrderNo:i.OrderNo,Amount:i.InvoiceAmount}));
+      if(t==='PartyCollection'){const m={};collections.forEach(c=>{const o=O(c.OrderNo);const v=o?o.VendorName:c.OrderNo;m[v]=(m[v]||0)+c.CollectionAmount;});return Object.keys(m).map(k=>({Vendor:k,Collected:m[k]}));}
+      return orders.map(o=>({OrderNo:o.OrderNo,Vendor:o.VendorName,Status:o.Status}));
+    }
+  };
+})();
+function ymM(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
+</script>
+</body>
+</html>
