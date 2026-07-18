@@ -63,6 +63,13 @@ var SBStore = (function(){
       if(op.kind==='insert'){ res=await fetch(url(op.t),{method:'POST',headers:hdrs(),body:JSON.stringify(op.rows.map(serialize))}); }
       else if(op.kind==='update'){ res=await fetch(url(op.t,'?'+encodeURIComponent('"'+op.col+'"')+'=eq.'+encodeURIComponent(op.val)),{method:'PATCH',headers:hdrs(),body:JSON.stringify(serialize(op.set))}); }
       else if(op.kind==='delete'){ res=await fetch(url(op.t,'?'+encodeURIComponent('"'+op.col+'"')+'=eq.'+encodeURIComponent(op.val)),{method:'DELETE',headers:hdrs()}); }
+      else if(op.kind==='upload'){
+        var bin=atob(op.base64), bytes=new Uint8Array(bin.length);
+        for(var bi=0;bi<bin.length;bi++) bytes[bi]=bin.charCodeAt(bi);
+        res=await fetch(String(window.SUPABASE_URL||'').trim().replace(/\/+$/,'')+'/storage/v1/object/uploads/'+op.path,
+          { method:'POST', headers:{ 'apikey':window.SUPABASE_KEY, 'Authorization':'Bearer '+window.SUPABASE_KEY, 'Content-Type':op.mime, 'x-upsert':'true' },
+            body:bytes });
+      }
       if(res && !res.ok){ var txt=''; try{ txt=await res.text(); }catch(e){} throw new Error('Supabase write failed on '+op.t+': '+txt); }
     }
   }
@@ -1585,6 +1592,16 @@ function updateWhere_(name,col,val,updates){ SBStore.rows(name).forEach(function
   SBStore.push({kind:'update',t:name,col:col,val:val,set:updates}); }
 function deleteWhere_(name,col,val){ var a=SBStore.rows(name); for(var i=a.length-1;i>=0;i--){ if(String(a[i][col])===String(val)) a.splice(i,1); }
   SBStore.push({kind:'delete',t:name,col:col,val:val}); }
+
+/* ---- File uploads → Supabase Storage bucket "uploads" ---- */
+function uploadFile_(base64, name, mime){
+  try{
+    var safe=String(name||'file').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-80);
+    var path=new Date().toISOString().slice(0,10)+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+safe;
+    SBStore.push({kind:'upload', path:path, base64:base64, mime:mime||'application/octet-stream'});
+    return String(window.SUPABASE_URL||'').trim().replace(/\/+$/,'')+'/storage/v1/object/public/uploads/'+path;
+  }catch(e){ console.error('[upload]',e); return ''; }
+}
 
 /* ---- FMS storage over tables (banded sheets are rendered by the Sheets mirror, not here) ---- */
 function fmsEnsure_(){ }
