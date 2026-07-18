@@ -512,7 +512,7 @@ function ym_(){ return Utilities.formatDate(new Date(), Session.getScriptTimeZon
 /* Fiscal-year tag: SRFM26 for FY Apr-2025→Mar-2026 style (uses ending year's last two digits;
    Jan–Mar belong to the FY ending that year, Apr–Dec to the FY ending next year). */
 function fyTag_(){
-  const d=new Date(); let y=d.getFullYear(); if(d.getMonth()>=3) y=y+1;   // Apr(3)+ → FY ends next year
+  const d=new Date(); let y=d.getFullYear(); if(d.getMonth()<3) y=y-1;   // Jan–Mar belong to the previous FY (start-year tag)
   return 'SRFM'+String(y).slice(-2);
 }
 /* Generic sequence generator: finds the max numeric suffix among values starting with `tag`
