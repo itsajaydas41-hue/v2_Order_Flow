@@ -30,6 +30,20 @@ body.dark{
   --violet:#A78BFA;--violet-bg:rgba(167,139,250,.16);--teal:#2DD4BF;--teal-bg:rgba(45,212,191,.16);
   --shadow:rgba(0,0,0,.4);
 }
+/* Forest — deep green, glowing accents (ADManager-style). Applied together with .dark */
+body.forest{
+  --canvas:#0B1D14;--surface:#10271B;--surface-2:#153122;--ink:#081710;--ink-h:#0E2418;
+  --t1:#EAF6EE;--t2:#9CC3AA;--t3:#5F8B70;--t-inv:#C9F0D8;
+  --line:#1E4030;
+  --indigo:#4ADE80;--indigo-7:#22C55E;--indigo-50:rgba(74,222,128,.14);--indigo-100:rgba(74,222,128,.24);
+  --ok:#4ADE80;--ok-bg:rgba(74,222,128,.15);
+  --nb:#265239;
+  --shadow:rgba(0,0,0,.5);
+}
+body.forest .sidebar{background:linear-gradient(180deg,#0A1A11,#0D2418)}
+body.forest .hdr{background:rgba(11,29,20,.88)}
+body.forest .fnode:hover{box-shadow:0 8px 22px rgba(74,222,128,.14)}
+body.forest .btn-primary{box-shadow:0 4px 16px rgba(74,222,128,.25)}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var(--t1);-webkit-font-smoothing:antialiased}
 .tnum{font-variant-numeric:tabular-nums}
@@ -488,7 +502,7 @@ body.dark{--nb:#39493F}
     <div class="lg-hint">You'll only see the pages your admin allowed for you.</div>
     <div id="fpBox" style="display:none;border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
       <div class="login-title" style="font-size:16px">Reset password</div>
-      <div class="login-sub" style="margin-bottom:10px">Aapke email par 6-digit code aayega.</div>
+      <div class="login-sub" style="margin-bottom:10px">Aapke email par 6-digit code aayega (spam folder bhi dekh lein).</div>
       <div class="lg-field"><label>Email</label><input id="fpEmail" type="email" placeholder="you@company.com"></div>
       <div id="fpStep2" style="display:none">
         <div class="lg-field"><label>6-digit code (email me aaya hua)</label><input id="fpOtp" inputmode="numeric" maxlength="6" placeholder="123456"></div>
@@ -522,7 +536,7 @@ body.dark{--nb:#39493F}
       <button class="ham" id="ham"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
       <div class="hsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search orders, vendors, vehicles…"></div>
       <div class="hacts">
-        <button class="theme-btn" id="themeBtn" title="Toggle dark / light"></button>
+        <button class="theme-btn" id="themeBtn" title="Theme"></button>
         <button class="ic-btn desk-only"><span class="dt"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></button>
         <div class="uav" id="uav2" style="border-radius:10px;cursor:pointer" title="Sign out">—</div>
       </div>
@@ -560,16 +574,26 @@ function api(fn, payload){
 /* ---------- THEME (dark / light) ---------- */
 const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 1.5v2.5M12 20v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M1.5 12h2.5M20 12h2.5M4.2 19.8L6 18M18 6l1.8-1.8"/></svg>';
 const MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>';
-function applyTheme(dark){
-  document.body.classList.toggle('dark',dark);
-  const b=document.getElementById('themeBtn'); if(b) b.innerHTML=dark?SUN:MOON;
-  try{ localStorage.setItem('o2c-theme',dark?'dark':'light'); }catch(e){}
+const LEAF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 019.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.5 5-6"/></svg>';
+const THEMES=['light','dark','forest'];                 /* click = agla theme */
+function applyTheme(mode){
+  if(THEMES.indexOf(mode)<0) mode='light';
+  document.body.classList.toggle('dark', mode!=='light');   /* forest bhi dark base par chalta hai */
+  document.body.classList.toggle('forest', mode==='forest');
+  const b=document.getElementById('themeBtn');
+  if(b){ b.innerHTML = mode==='light'?MOON : mode==='dark'?LEAF : SUN;
+         b.title = mode==='light'?'Switch to Dark' : mode==='dark'?'Switch to Forest' : 'Switch to Light'; }
+  try{ localStorage.setItem('o2c-theme',mode); }catch(e){}
 }
-function toggleTheme(){ applyTheme(!document.body.classList.contains('dark')); }
+function toggleTheme(){
+  const cur=document.body.classList.contains('forest')?'forest':document.body.classList.contains('dark')?'dark':'light';
+  applyTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);
+}
 (function initTheme(){
-  let dark=false;
-  try{ dark=localStorage.getItem('o2c-theme')==='dark'; }catch(e){}
-  applyTheme(dark);
+  let m='light';
+  try{ m=localStorage.getItem('o2c-theme')||'light'; }catch(e){}
+  if(m==='dark'||m==='forest'){} else m='light';
+  applyTheme(m);
   const b=document.getElementById('themeBtn'); if(b) b.addEventListener('click',toggleTheme);
 })();
 
@@ -2299,7 +2323,14 @@ async function fpVerifyCode(){
   if(p1!==p2){ err.textContent='Dono passwords same nahi hain.'; return; }
   const btn=document.getElementById('fpVerify'); btn.disabled=true; btn.textContent='Checking…';
   try{
-    await sbAuth('verify',{ type:'email', email:em, token:otp });   // Supabase khud verify karta hai
+    /* Supabase code ke type alag ho sakte hain (naya user = signup, purana = email/magiclink).
+       Isliye teeno try karte hain — jo chale wahi sahi.  */
+    let done=false, lastErr=null;
+    for(const ty of ['email','signup','magiclink','recovery']){
+      try{ await sbAuth('verify',{ type:ty, email:em, token:otp }); done=true; break; }
+      catch(ex){ lastErr=ex; }
+    }
+    if(!done) throw (lastErr||new Error('Code galat ya expire ho gaya.'));
     STATE.user={email:em,name:em,role:'',perms:{}};
     await api('resetPasswordWithOtp',{ email:em, pwHash:await pwHash(p1) });
     ok.textContent='✓ Password badal gaya. Ab naye password se sign in karein.';
