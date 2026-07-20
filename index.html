@@ -443,7 +443,7 @@ body.dark{--nb:#39493F}
 .fnode .fv.zero{color:var(--t3)}
 .fnode .fl{font-size:10.5px;color:var(--t2);margin-top:6px;font-weight:600;line-height:1.3}
 /* sliding green line, one node after another */
-.fnode::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:34px;background:var(--indigo);border-radius:2px;
+.fnode::after{content:'';position:absolute;left:-34px;top:50;transform: translateY(-50%);width:34px;height:3px; background:var(--indigo);border-radius:2px;
   animation:fslide var(--cyc,10.5s) linear infinite;animation-delay:var(--dly,0s);opacity:0}
 @keyframes fslide{0%{transform:translateX(-34px);opacity:0}3%{opacity:1}14%{transform:translateX(150px);opacity:0}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.fnode::after{animation:none}}
