@@ -399,6 +399,8 @@ body.dark .btn-primary:hover{background:#15803D}
 .qc-opt:hover{border-color:var(--indigo)}
 .qc-opt.on{border-color:var(--indigo);background:var(--indigo-50);color:var(--indigo)}
 .upcase{text-transform:uppercase}
+.uomtag{display:inline-block;background:var(--indigo-50);color:var(--indigo-7);border:1px solid var(--indigo-100);
+  border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:700;letter-spacing:.3px}
 .lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
   cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
 .lo-btn:hover{background:rgba(255,255,255,.10);color:#fff;border-color:rgba(255,255,255,.35)}
@@ -461,10 +463,10 @@ body.dark{--nb:#39493F}
 .dv2-bar rect{transition:.15s}
 .dv2-bar:hover rect{opacity:.75}
 .dv2-bar.sel rect{stroke:var(--t1);stroke-width:2}
-.dv2-lbl{font-size:10px;fill:var(--t2);text-anchor:middle}
-.dv2-val{font-size:10px;fill:var(--t1);text-anchor:middle;font-weight:700}
+.dv2-lbl{font-size:8px;fill:var(--t2);text-anchor:middle}
+.dv2-val{font-size:8.5px;fill:var(--t1);text-anchor:middle;font-weight:700}
 .dv2-axis{stroke:var(--line)}
-.dv2-line{fill:none;stroke:var(--indigo);stroke-width:2.5}
+.dv2-line{fill:none;stroke:var(--indigo);stroke-width:2}
 .dv2-dot{fill:var(--indigo)}
 .dv2-donut-lbl{font-size:12px;font-weight:700}
 
@@ -860,28 +862,28 @@ function dv2Flow(nodes){
 }
 function dv2Bars(series, selM){
   const mx=Math.max(1,...series.monthly.map(x=>x.count));
-  const W=560,H=190,bw=28,gap=(W-40-12*bw)/11;
+  const W=560,H=150,bw=22,gap=(W-40-12*bw)/11;
   let bars='';
   series.monthly.forEach((m,i)=>{
-    const h=Math.round((m.count/mx)*120), x=30+i*(bw+gap), y=150-h;
+    const h=Math.round((m.count/mx)*92), x=30+i*(bw+gap), y=116-h;
     bars+=`<g class="dv2-bar ${i===selM?'sel':''}" data-m="${i}">
       <rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="4" fill="${['#3B82F6','#F59E0B','#22C55E','#8B5CF6','#EF4444','#3B82F6','#F97316','#14B8A6','#E11D48','#6366F1','#84CC16','#0EA5E9'][i]}"></rect>
       ${m.count?`<text class="dv2-val" x="${x+bw/2}" y="${y-4}">${m.count}</text>`:''}
-      <text class="dv2-lbl" x="${x+bw/2}" y="168">${DV2_M[i]}</text></g>`;
+      <text class="dv2-lbl" x="${x+bw/2}" y="134">${DV2_M[i]}</text></g>`;
   });
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%"><line class="dv2-axis" x1="26" y1="150" x2="${W-8}" y2="150"/>${bars}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:560px"><line class="dv2-axis" x1="26" y1="116" x2="${W-8}" y2="116"/>${bars}</svg>`;
 }
 function dv2Weekly(series, m){
   const wk=series.weekly[m]||[0,0,0,0,0];
   const mx=Math.max(1,...wk);
-  const W=560,H=170,x0=50,x1=W-20,y0=130,step=(x1-x0)/4;
-  const pts=wk.map((v,i)=>[x0+i*step, y0-Math.round((v/mx)*95)]);
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%">
+  const W=560,H=132,x0=50,x1=W-20,y0=100,step=(x1-x0)/4;
+  const pts=wk.map((v,i)=>[x0+i*step, y0-Math.round((v/mx)*70)]);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px">
     <line class="dv2-axis" x1="${x0-10}" y1="${y0}" x2="${x1}" y2="${y0}"/>
     <polyline class="dv2-line" points="${pts.map(p=>p.join(',')).join(' ')}"/>
-    ${pts.map((p,i)=>`<circle class="dv2-dot" cx="${p[0]}" cy="${p[1]}" r="4"></circle>
-      <text class="dv2-val" x="${p[0]}" y="${p[1]-9}">${wk[i]?('₹'+dv2K(wk[i])):''}</text>
-      <text class="dv2-lbl" x="${p[0]}" y="${y0+16}">${i+1} week</text>`).join('')}
+    ${pts.map((p,i)=>`<circle class="dv2-dot" cx="${p[0]}" cy="${p[1]}" r="3.2"></circle>
+      <text class="dv2-val" x="${p[0]}" y="${p[1]-8}">${wk[i]?('₹'+dv2K(wk[i])):''}</text>
+      <text class="dv2-lbl" x="${p[0]}" y="${y0+14}">${i+1} week</text>`).join('')}
   </svg>`;
 }
 function dv2Donut(d){
@@ -908,12 +910,17 @@ function dv2Render(elId, d, nodes, chartTitle){
       </div>
       <div class="dv2-card" style="margin-top:16px"><h4 id="${elId}_wt">${DV2_M[selM]} — weekly value</h4><div id="${elId}_week">${dv2Weekly(d.series,selM)}</div></div>`;
     el.querySelectorAll('.stsw button').forEach(b=>b.addEventListener('click',()=>setDashStyle(b.dataset.st)));
-    el.querySelectorAll('.dv2-bar').forEach(b=>b.addEventListener('click',()=>{ selM=+b.dataset.m; 
-      document.getElementById(elId+'_bars').innerHTML=dv2Bars(d.series,selM);
-      document.getElementById(elId+'_wt').textContent=DV2_M[selM]+' — weekly value';
-      document.getElementById(elId+'_week').innerHTML=dv2Weekly(d.series,selM);
-      el.querySelectorAll('.dv2-bar').forEach(x=>x.classList.toggle('sel',+x.dataset.m===selM));
-    }));
+    /* Delegation: listener parent par hai, isliye bars redraw hone ke baad bhi click chalta rahega */
+    if(!el._dv2Click){
+      el._dv2Click=true;
+      el.addEventListener('click',ev=>{
+        const b=ev.target.closest('.dv2-bar'); if(!b||!el.contains(b)) return;
+        selM=+b.dataset.m;
+        const bx=document.getElementById(elId+'_bars'); if(bx) bx.innerHTML=dv2Bars(d.series,selM);
+        const wt=document.getElementById(elId+'_wt'); if(wt) wt.textContent=DV2_M[selM]+' — weekly value';
+        const wk=document.getElementById(elId+'_week'); if(wk) wk.innerHTML=dv2Weekly(d.series,selM);
+      });
+    }
   }
   paint();
 }
@@ -1062,10 +1069,10 @@ function renderLi(){
   const wrap=document.getElementById('liWrap'); if(!wrap)return;
   wrap.innerHTML=nItems.map((it,i)=>`
     <div class="li">
-      <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp skuIn" data-sku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}</div></div><button class="li-del" data-del="${i}">${I.trash}</button></div>
+      <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp skuIn" data-sku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}${it.uom?' · <b class="uomtag">'+it.uom+'</b>':''}</div></div><button class="li-del" data-del="${i}">${I.trash}</button></div>
       <div class="li-grid">
-        <div class="f"><label>Qty</label><input type="number" value="${it.qty}" data-f="qty" data-i="${i}"></div>
-        <div class="f"><label>Rate</label><input type="number" value="${it.rate}" data-f="rate" data-i="${i}"></div>
+        <div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-f="qty" data-i="${i}"></div>
+        <div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" value="${it.rate}" data-f="rate" data-i="${i}"></div>
         <div class="f"><label>SGST %</label><input type="number" value="${it.sgst}" data-f="sgst" data-i="${i}"></div>
         <div class="f"><label>CGST %</label><input type="number" value="${it.cgst}" data-f="cgst" data-i="${i}"></div>
       </div>
@@ -1075,7 +1082,7 @@ function renderLi(){
   wrap.querySelectorAll('.skuIn').forEach(inp=>{
     const i=inp.dataset.sku;
     makeCombo(inp, STATE.masters.skus, x=>x.SKUName, m=>{
-      nItems[i].skuName=m.SKUName; nItems[i].skuCode=m.SKUCode; nItems[i].rate=m.Rate;
+      nItems[i].skuName=m.SKUName; nItems[i].skuCode=m.SKUCode; nItems[i].rate=m.Rate; nItems[i].uom=m.UOM||'';
       nItems[i].sgst=m.GSTPercent/2; nItems[i].cgst=m.GSTPercent/2; renderLi();
     });
   });
@@ -1110,8 +1117,8 @@ function loadSchedule(orderNo){
       </div>
       <div class="sec"><h3>Order Items — set scheduled quantity</h3></div>
       <div class="tbl-wrap"><table class="tbl seltbl">
-        <thead><tr><th>SKU</th><th class="num">Ordered</th><th class="num">Pending</th><th class="num">Scheduled Qty</th></tr></thead>
-        <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td class="num">${it.OrderedQty}</td><td class="num">${it.PendingQty}</td><td class="num"><input class="qin" type="number" value="${it.ScheduledQty}" min="0" max="${it.PendingQty}" data-sch="${i}"></td></tr>`).join('')}</tbody>
+        <thead><tr><th>SKU</th><th>UOM</th><th class="num">Ordered</th><th class="num">Pending</th><th class="num">Scheduled Qty</th></tr></thead>
+        <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${it.OrderedQty}</td><td class="num">${it.PendingQty}</td><td class="num"><input class="qin" type="number" value="${it.ScheduledQty}" min="0" max="${it.PendingQty}" data-sch="${i}"></td></tr>`).join('')}</tbody>
       </table></div>
       <div class="field" style="margin-top:12px"><label>Remarks</label><textarea class="inp" id="schRem" placeholder="Commitment notes, customer request…"></textarea></div>
       <button class="btn btn-primary" id="saveSch" style="margin-top:6px">${I.check}Save Schedule</button>`;
@@ -1154,10 +1161,11 @@ function renderDispatch(arg){
         <div class="field"><label>Remarks</label><textarea class="inp" id="pRemarks" placeholder="Route notes, handling…"></textarea></div>
         <div class="sec"><h3>Order Details — tick the SKUs to dispatch</h3></div>
         <div class="tbl-wrap"><table class="tbl seltbl">
-          <thead><tr><th class="chk-col"><input type="checkbox" id="planAll" checked></th><th>SKU</th><th class="num">Ordered</th><th class="num">Loaded</th><th class="num">Remaining</th><th class="num">Plan Qty</th></tr></thead>
+          <thead><tr><th class="chk-col"><input type="checkbox" id="planAll" checked></th><th>SKU</th><th>UOM</th><th class="num">Ordered</th><th class="num">Loaded</th><th class="num">Remaining</th><th class="num">Plan Qty</th></tr></thead>
           <tbody>${items.map((it,i)=>`<tr data-row="${i}">
             <td class="chk-col"><input type="checkbox" class="rowchk" data-plan-chk="${i}" checked></td>
             <td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td>
+            <td><span class="uomtag">${it.UOM||'—'}</span></td>
             <td class="num">${it.OrderedQty}</td>
             <td class="num">${it.LoadedQty||0}</td>
             <td class="num">${it.RemainingQty}</td>
@@ -1217,7 +1225,7 @@ function renderLoading(arg){
         <div class="sec"><h3>Loading Sheet — planned items</h3><span id="ldPct" style="font-weight:700;color:var(--indigo)">0%</span></div>
         <div class="psub" style="margin:-6px 2px 10px">Partial loading is allowed. Any unloaded balance returns to dispatch planning automatically.</div>
         <div class="collbar" style="margin-top:0"><div class="collbar-fill" id="ldBar" style="width:0%;background:linear-gradient(90deg,#4F46E5,#6366F1)"></div></div>
-        ${d.skus.map((s,i)=>`<div class="li" style="margin-top:12px"><div class="li-top"><div><div class="nm">${s.SKUName}</div><div class="cd">${s.SKUCode} · Planned ${s.PlannedQty} · Balance ${s.BalanceQty}</div></div><label style="display:grid;place-items:center"><input type="checkbox" data-ldchk="${i}" style="width:24px;height:24px;accent-color:var(--indigo)"></label></div><div class="li-grid" style="grid-template-columns:1fr"><div class="f"><label>Load Qty (max ${s.BalanceQty})</label><input type="number" value="${s.BalanceQty}" min="0" max="${s.BalanceQty}" data-ldqty="${i}"></div></div></div>`).join('')}
+        ${d.skus.map((s,i)=>`<div class="li" style="margin-top:12px"><div class="li-top"><div><div class="nm">${s.SKUName} ${s.UOM?'<span class="uomtag">'+s.UOM+'</span>':''}</div><div class="cd">${s.SKUCode} · Planned ${s.PlannedQty} · Balance ${s.BalanceQty}</div></div><label style="display:grid;place-items:center"><input type="checkbox" data-ldchk="${i}" style="width:24px;height:24px;accent-color:var(--indigo)"></label></div><div class="li-grid" style="grid-template-columns:1fr"><div class="f"><label>Load Qty${s.UOM?' ('+s.UOM+')':''} — max ${s.BalanceQty}</label><input type="number" value="${s.BalanceQty}" min="0" max="${s.BalanceQty}" data-ldqty="${i}"></div></div></div>`).join('')}
         <button class="btn btn-primary" id="saveLoad" data-gate="${d.gateEntryNo}" data-plan="${d.planNo}" data-order="${d.orderNo}" data-skus='${JSON.stringify(d.skus)}'>${I.check}Complete Loading</button>`;
     });
   });
@@ -1308,7 +1316,7 @@ function renderPOD(arg){
         <div class="card"><div class="card-p"><div class="srow">Vehicle <b>${d.vehicleNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">On this vehicle <b>${d.items.length} SKU · ${totLoaded} qty loaded</b></div></div></div>
         <div class="sec"><h3>Delivered vs Rejected</h3></div>
         <div class="psub" style="margin:-6px 2px 10px">Showing only what <b>this vehicle</b> loaded — not the full order. Rejected qty is returned to the factory and starts the return flow.</div>
-        ${d.items.map((it,i)=>`<div class="li"><div class="li-top"><div><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode} · Loaded ${it.LoadedQty}</div></div></div><div class="li-grid" style="grid-template-columns:1fr 1fr"><div class="f"><label>Rejected (returned)</label><input type="number" value="0" min="0" max="${it.LoadedQty}" data-podr="${i}"></div><div class="f"><label>Delivered = Loaded − Rejected</label><input type="number" value="${it.LoadedQty}" data-podd="${i}" readonly tabindex="-1" style="background:var(--surface-2);color:var(--t2)"></div></div></div>`).join('')}`;
+        ${d.items.map((it,i)=>`<div class="li"><div class="li-top"><div><div class="nm">${it.SKUName} ${it.UOM?'<span class="uomtag">'+it.UOM+'</span>':''}</div><div class="cd">${it.SKUCode} · Loaded ${it.LoadedQty}</div></div></div><div class="li-grid" style="grid-template-columns:1fr 1fr"><div class="f"><label>Rejected (returned)</label><input type="number" value="0" min="0" max="${it.LoadedQty}" data-podr="${i}"></div><div class="f"><label>Delivered = Loaded − Rejected</label><input type="number" value="${it.LoadedQty}" data-podd="${i}" readonly tabindex="-1" style="background:var(--surface-2);color:var(--t2)"></div></div></div>`).join('')}`;
       document.querySelectorAll('[data-podr]').forEach(r=>r.addEventListener('input',()=>{
         const i=r.dataset.podr, loaded=(window._podItems[i]||{}).LoadedQty||0;
         let rej=Math.max(0,Math.min(+r.value||0,loaded)); if(String(rej)!==r.value) r.value=rej;
@@ -1508,11 +1516,11 @@ function renderPOCreate(){
 function renderPOLines(){
   const wrap=document.getElementById('poLiWrap');
   wrap.innerHTML=poLines.map((it,i)=>`<div class="li">
-    <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp poSkuIn" data-posku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}</div></div><button class="li-del" data-podel="${i}">${I.trash}</button></div>
-    <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr"><div class="f"><label>Qty</label><input type="number" value="${it.qty}" data-pof="qty" data-poi="${i}"></div><div class="f"><label>Rate</label><input type="number" value="${it.rate}" data-pof="rate" data-poi="${i}"></div><div class="f"><label>GST %</label><input type="number" value="${it.gst}" data-pof="gst" data-poi="${i}"></div></div>
+    <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp poSkuIn" data-posku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}${it.uom?' · <b class="uomtag">'+it.uom+'</b>':''}</div></div><button class="li-del" data-podel="${i}">${I.trash}</button></div>
+    <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr"><div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-pof="qty" data-poi="${i}"></div><div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" value="${it.rate}" data-pof="rate" data-poi="${i}"></div><div class="f"><label>GST %</label><input type="number" value="${it.gst}" data-pof="gst" data-poi="${i}"></div></div>
     <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)}</span><b>${inr(it.qty*it.rate*(1+it.gst/100))}</b></div></div>`).join('');
   recalcPO();
-  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.skus,x=>x.SKUName,m=>{ poLines[i].skuName=m.SKUName; poLines[i].skuCode=m.SKUCode; poLines[i].rate=m.Rate; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
+  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.skus,x=>x.SKUName,m=>{ poLines[i].skuName=m.SKUName; poLines[i].skuCode=m.SKUCode; poLines[i].rate=m.Rate; poLines[i].uom=m.UOM||''; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
   wrap.querySelectorAll('[data-pof]').forEach(inp=>inp.addEventListener('input',e=>{ poLines[e.target.dataset.poi][e.target.dataset.pof]=+e.target.value||0; recalcPO(); }));
   wrap.querySelectorAll('[data-podel]').forEach(b=>b.addEventListener('click',()=>{ poLines.splice(+b.dataset.podel,1); if(!poLines.length)poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18}); renderPOLines(); }));
 }
@@ -1557,8 +1565,8 @@ function loadGatePO(poNo){
         <div class="field"><label>Supplier Invoice No.</label><input class="inp" id="genInv" placeholder="INV-000000"></div>
       </div>
       <div class="sec"><h3>Received Quantity (partial allowed)</h3></div>
-      <div class="tbl-wrap"><table class="tbl seltbl"><thead><tr><th>SKU</th><th class="num">PO Qty</th><th class="num">Remaining</th><th class="num">Receiving Now</th></tr></thead>
-      <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td class="num">${it.POQty}</td><td class="num">${it.RemainingQty}</td><td class="num"><input class="qin" type="number" value="${it.RemainingQty}" min="0" max="${it.RemainingQty}" data-gen="${i}"></td></tr>`).join('')}</tbody></table></div>
+      <div class="tbl-wrap"><table class="tbl seltbl"><thead><tr><th>SKU</th><th>UOM</th><th class="num">PO Qty</th><th class="num">Remaining</th><th class="num">Receiving Now</th></tr></thead>
+      <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${it.POQty}</td><td class="num">${it.RemainingQty}</td><td class="num"><input class="qin" type="number" value="${it.RemainingQty}" min="0" max="${it.RemainingQty}" data-gen="${i}"></td></tr>`).join('')}</tbody></table></div>
       <button class="btn btn-primary" id="saveGen" style="margin-top:14px">${I.check}Record Gate Entry & Generate SEN</button>`;
     document.getElementById('saveGen').onclick=doSaveGateIn;
   });
@@ -1708,7 +1716,13 @@ function renderMasters(){
   else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
   else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
   view.innerHTML=head('Master Data','Vendors, SKUs and transporters','Master Data')+`
-    <div class="seg">${seg}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div class="seg" style="margin:0">${seg}</div>
+      <div class="btn-row" style="margin:0">
+        <button class="btn btn-primary btn-sm" id="bulkBtn">⬆ Bulk Upload</button>
+        <button class="btn btn-ghost btn-sm" id="addMaster">${I.plus}Add ${masterTab}</button>
+      </div>
+    </div>
     <div id="mFormWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
       <div class="sec" style="margin:0 0 4px"><h3>Add ${masterTab}</h3></div>
       <div id="mFields"></div>
@@ -1732,11 +1746,7 @@ function renderMasters(){
         <button class="btn btn-ghost btn-sm" id="bulkCancel">Close</button>
       </div>
     </div></div></div>
-    ${body||'<div class="empty">No records yet.</div>'}
-    <div class="btn-row" style="margin-top:6px">
-      <button class="btn btn-add" id="addMaster">${I.plus}Add ${masterTab}</button>
-      <button class="btn btn-ghost btn-sm" id="bulkBtn">⬆ Bulk Upload</button>
-    </div>`;
+    ${body||'<div class="empty">No records yet.</div>'}`;
   const wrap=document.getElementById('mFormWrap'), addBtn=document.getElementById('addMaster');
   addBtn.onclick=()=>{ document.getElementById('mFields').innerHTML=masterFields(masterTab); wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
   document.getElementById('cancelMaster').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
@@ -2018,7 +2028,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('input',e=>{
   // SKU name → code autofill
   const sk=e.target.dataset.sku;
-  if(sk!==undefined){const m=STATE.masters.skus.find(x=>x.SKUName===e.target.value);if(m){nItems[sk].skuName=m.SKUName;nItems[sk].skuCode=m.SKUCode;nItems[sk].rate=m.Rate;nItems[sk].sgst=m.GSTPercent/2;nItems[sk].cgst=m.GSTPercent/2;renderLi();}else{nItems[sk].skuName=e.target.value;}return;}
+  if(sk!==undefined){const m=STATE.masters.skus.find(x=>x.SKUName===e.target.value);if(m){nItems[sk].skuName=m.SKUName;nItems[sk].skuCode=m.SKUCode;nItems[sk].rate=m.Rate;nItems[sk].uom=m.UOM||'';nItems[sk].sgst=m.GSTPercent/2;nItems[sk].cgst=m.GSTPercent/2;renderLi();}else{nItems[sk].skuName=e.target.value;}return;}
   const f=e.target.dataset.f,i=e.target.dataset.i;
   if(f!==undefined&&i!==undefined){nItems[i][f]=+e.target.value||0;recalc();
     const li=e.target.closest('.li').querySelector('.li-tot');const it=nItems[i];
