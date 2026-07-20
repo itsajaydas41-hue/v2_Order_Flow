@@ -112,24 +112,24 @@ const SHEETS = {
   TransporterMaster: ['TransporterName','ContactNumber'],
   Users:             ['Email','Name','Role','Password','Permissions','Status'],
   Orders:            ['OrderNo','OrderDate','VendorCode','VendorName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
-  OrderItems:        ['OrderNo','SKUCode','SKUName','Qty','Rate','SGST','CGST','Taxable','TaxAmount','Amount'],
+  OrderItems:        ['OrderNo','SKUCode','SKUName','UOM','Qty','Rate','SGST','CGST','Taxable','TaxAmount','Amount'],
   Planning:          ['PlanNo','OrderNo','PlannedDate','PlannedTime','TransporterName','Remarks','Status','CreatedAt'],
-  PlanItems:         ['PlanNo','OrderNo','SKUCode','SKUName','PlannedQty'],
+  PlanItems:         ['PlanNo','OrderNo','SKUCode','SKUName','UOM','PlannedQty'],
   GateEntry:         ['GateEntryNo','PlanNo','OrderNo','GateDate','GateTime','VehicleNo','DriverName','MobileNo','DLNo','RCNo','TransporterName','Status'],
-  LoadItems:         ['GateEntryNo','PlanNo','OrderNo','SKUCode','SKUName','PlannedQty','DispatchQty'],
+  LoadItems:         ['GateEntryNo','PlanNo','OrderNo','SKUCode','SKUName','UOM','PlannedQty','DispatchQty'],
   Invoice:           ['GateEntryNo','OrderNo','InvoiceNo','InvoiceDate','InvoiceAmount','FileUrl','Status','CreatedAt'],
   GateOut:           ['GateEntryNo','OrderNo','VehicleNo','DriverName','InvoiceNo','InvoiceVerified','LRVerified','VehicleVerified','DocsVerified','WeighmentDone','GateOutDate','GateOutTime','Status'],
   POD:               ['GateEntryNo','OrderNo','DeliveryDate','ReceiverName','ReceiverMobile','GrossWeight','NetWeight','PartyNetWeight','FileUrl','Remarks','HasReturn','Status'],
-  PODItems:          ['GateEntryNo','OrderNo','SKUCode','SKUName','LoadedQty','DeliveredQty','RejectedQty'],
+  PODItems:          ['GateEntryNo','OrderNo','SKUCode','SKUName','UOM','LoadedQty','DeliveredQty','RejectedQty'],
   Returns:           ['ReturnNo','GateEntryNo','OrderNo','ReturnDate','ReturnTime','VehicleNo','DriverName','Status','ReceivedDate','ReceiverName'],
   Collection:        ['CollectionNo','OrderNo','InvoiceNo','VendorName','InvoiceAmount','CollectionDate','CollectionAmount','DeductionAmount','ActualReceived','PaymentMode','RefNo','Remarks','CreatedAt'],
   Schedule:          ['ScheduleNo','OrderNo','VendorName','PromisedDate','PromisedTime','Remarks','CreatedBy','CreatedAt'],
-  ScheduleItems:     ['ScheduleNo','OrderNo','SKUCode','SKUName','OrderedQty','ScheduledQty'],
+  ScheduleItems:     ['ScheduleNo','OrderNo','SKUCode','SKUName','UOM','OrderedQty','ScheduledQty'],
   /* ---- Purchase-to-Payment (P2P) ---- */
   PO:                ['PONo','PODate','SupplierCode','SupplierName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
-  POItems:           ['PONo','SKUCode','SKUName','Qty','Rate','GSTPercent','Amount'],
+  POItems:           ['PONo','SKUCode','SKUName','UOM','Qty','Rate','GSTPercent','Amount'],
   SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','InvoiceNo','Status','CreatedAt'],
-  SENItems:          ['SENNo','PONo','SKUCode','SKUName','POQty','ReceivedQty'],
+  SENItems:          ['SENNo','PONo','SKUCode','SKUName','UOM','POQty','ReceivedQty'],
   QC:                ['SENNo','PONo','QCStatus','DeductionAmount','Inspector','Remarks','QCDate'],
   Receiving:         ['GRNNo','SENNo','PONo','ReceiveDate','ReceiverName','Remarks','Status'],
   PurchaseReturn:    ['PRNo','SENNo','PONo','ReturnDate','Reason','Status'],
@@ -518,6 +518,11 @@ function deleteWhere_(name, matchCol, matchVal){
 function ym_(){ return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMM'); }
 /* Fiscal-year tag: SRFM26 for FY Apr-2025→Mar-2026 style (uses ending year's last two digits;
    Jan–Mar belong to the FY ending that year, Apr–Dec to the FY ending next year). */
+/* SKU ka UOM master se — client kuch bheje ya na bheje, yahi final source hai */
+function uomOf_(skuCode){
+  const s=readAll_('SKUMaster').find(function(x){ return String(x.SKUCode)===String(skuCode); });
+  return s ? (s.UOM||'') : '';
+}
 function fyTag_(){
   const d=new Date(); let y=d.getFullYear(); if(d.getMonth()<3) y=y-1;   // Jan–Mar belong to the previous FY (start-year tag)
   return 'SRFM'+String(y).slice(-2);
@@ -785,7 +790,7 @@ function saveOrder(p){
     const taxPct = (Number(it.sgst)||0)+(Number(it.cgst)||0);
     const taxAmt = taxable*taxPct/100;
     totQty += qty; totVal += taxable+taxAmt;
-    return { OrderNo:orderNo, SKUCode:it.skuCode, SKUName:it.skuName, Qty:qty, Rate:rate,
+    return { OrderNo:orderNo, SKUCode:it.skuCode, SKUName:it.skuName, UOM:uomOf_(it.skuCode), Qty:qty, Rate:rate,
              SGST:Number(it.sgst)||0, CGST:Number(it.cgst)||0, Taxable:taxable, TaxAmount:taxAmt, Amount:taxable+taxAmt };
   });
   append_('Orders', {
@@ -844,7 +849,7 @@ function getScheduleSheet(orderNo){
   const items=readAll_('OrderItems').filter(r=>r.OrderNo===orderNo).map(i=>{
     const ordered=Number(i.Qty)||0;
     const pending=Math.max(ordered-(loaded[i.SKUCode]||0)-(openPlan[i.SKUCode]||0),0);
-    return {SKUCode:i.SKUCode,SKUName:i.SKUName,OrderedQty:ordered,PendingQty:pending,ScheduledQty:(sched[i.SKUCode]!=null?sched[i.SKUCode]:pending)};
+    return {SKUCode:i.SKUCode,SKUName:i.SKUName,UOM:i.UOM||uomOf_(i.SKUCode),OrderedQty:ordered,PendingQty:pending,ScheduledQty:(sched[i.SKUCode]!=null?sched[i.SKUCode]:pending)};
   });
   const existing=readAll_('Schedule').filter(s=>s.OrderNo===orderNo).slice(-1)[0];
   return {orderNo:orderNo, vendorName:o.VendorName, promisedDate: existing?fmtDate_(existing.PromisedDate):'', promisedTime: existing?String(existing.PromisedTime||''):'', items:items};
@@ -852,7 +857,7 @@ function getScheduleSheet(orderNo){
 function saveSchedule(p){
   const schNo=nextNumber_('Schedule','ScheduleNo','SCH');
   append_('Schedule',{ScheduleNo:schNo,OrderNo:p.orderNo,VendorName:p.vendorName||'',PromisedDate:p.promisedDate||'',PromisedTime:p.promisedTime||'',Remarks:p.remarks||'',CreatedBy:currentUser_().email,CreatedAt:new Date()});
-  appendMany_('ScheduleItems',(p.items||[]).filter(it=>Number(it.scheduledQty)>0).map(it=>({ScheduleNo:schNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,OrderedQty:Number(it.orderedQty)||0,ScheduledQty:Number(it.scheduledQty)||0})));
+  appendMany_('ScheduleItems',(p.items||[]).filter(it=>Number(it.scheduledQty)>0).map(it=>({ScheduleNo:schNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),OrderedQty:Number(it.orderedQty)||0,ScheduledQty:Number(it.scheduledQty)||0})));
   try{ const _n=new Date(), _promise=fmsPromise_(p.promisedDate, p.promisedTime);
     const _o=readAll_('Orders').find(function(x){return x.OrderNo===p.orderNo;})||{};
     const _sq=(p.items||[]).reduce(function(s,it){return s+(Number(it.scheduledQty)||0);},0);
@@ -893,7 +898,7 @@ function getOrderItemsFor(orderNo){
       const ordered = Number(i.Qty)||0;
       const base = hasSched ? Math.min(ordered, sched[i.SKUCode]||0) : ordered;   // schedule caps the plannable qty
       const rem = base - (loaded[i.SKUCode]||0) - (openPlan[i.SKUCode]||0);
-      return { SKUCode:i.SKUCode, SKUName:i.SKUName, OrderedQty:ordered, ScheduledQty:hasSched?(sched[i.SKUCode]||0):ordered,
+      return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), OrderedQty:ordered, ScheduledQty:hasSched?(sched[i.SKUCode]||0):ordered,
                LoadedQty:(loaded[i.SKUCode]||0), OpenPlannedQty:(openPlan[i.SKUCode]||0), RemainingQty:Math.max(rem,0) };
     })
     .filter(r => r.RemainingQty > 0);
@@ -922,7 +927,7 @@ function savePlanning(p){
   append_('Planning', { PlanNo:planNo, OrderNo:p.orderNo, PlannedDate:p.plannedDate, PlannedTime:p.plannedTime,
                         TransporterName:p.transporterName, Remarks:p.remarks||'', Status:'Open', CreatedAt:new Date() });
   appendMany_('PlanItems', (p.items||[]).filter(it=>Number(it.plannedQty)>0)
-    .map(it=>({ PlanNo:planNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName, PlannedQty:it.plannedQty })));
+    .map(it=>({ PlanNo:planNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName, UOM:uomOf_(it.skuCode), PlannedQty:it.plannedQty })));
   const remLeft = getOrderItemsFor(p.orderNo).reduce((s,i)=>s+i.RemainingQty,0);
   updateWhere_('Orders','OrderNo',p.orderNo,{ Status: remLeft>0 ? ORDER_STATUS.PARTIAL : ORDER_STATUS.PLANNED });
   try{
@@ -999,7 +1004,7 @@ function getLoadingSheet(gateEntryNo){
   const skuRows = planItems.map(pi=>{
     const plan = Number(pi.PlannedQty)||0;
     const bal  = plan - (loadedThis[pi.SKUCode]||0);
-    return { SKUCode:pi.SKUCode, SKUName:pi.SKUName, PlannedQty:plan, BalanceQty:Math.max(bal,0), DispatchQty:0 };
+    return { SKUCode:pi.SKUCode, SKUName:pi.SKUName, UOM:pi.UOM||uomOf_(pi.SKUCode), PlannedQty:plan, BalanceQty:Math.max(bal,0), DispatchQty:0 };
   }).filter(r => r.BalanceQty > 0);
   const _ord=readAll_('Orders').find(o=>o.OrderNo===ge.OrderNo)||{};
   const _vnd=readAll_('VendorMaster').find(v=>v.VendorName===_ord.VendorName)||{};
@@ -1012,7 +1017,7 @@ function saveLoading(p){
   deleteWhere_('LoadItems','GateEntryNo',p.gateEntryNo);   // clear any prior load rows for this vehicle
   appendMany_('LoadItems', p.items.filter(it=>Number(it.dispatchQty)>0).map(it=>({
     GateEntryNo:p.gateEntryNo, PlanNo:p.planNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName,
-    PlannedQty:it.plannedQty, DispatchQty:it.dispatchQty })));
+    UOM:uomOf_(it.skuCode), PlannedQty:it.plannedQty, DispatchQty:it.dispatchQty })));
   // close the plan → any unloaded planned qty returns to the order's pending pool
   updateWhere_('Planning','PlanNo',p.planNo,{ Status:'Closed' });
   updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Loading Completed' });
@@ -1096,7 +1101,7 @@ function getPODSheet(gateEntryNo){
   if(!ge) return null;
   const items = readAll_('LoadItems').filter(l=>l.GateEntryNo===gateEntryNo).map(l=>{
     const loaded = Number(l.DispatchQty)||0;
-    return { SKUCode:l.SKUCode, SKUName:l.SKUName, LoadedQty:loaded, DeliveredQty:loaded, RejectedQty:0 };
+    return { SKUCode:l.SKUCode, SKUName:l.SKUName, UOM:l.UOM||uomOf_(l.SKUCode), LoadedQty:loaded, DeliveredQty:loaded, RejectedQty:0 };
   });
   return { gateEntryNo:gateEntryNo, orderNo:ge.OrderNo, vehicleNo:ge.VehicleNo, items:items };
 }
@@ -1117,7 +1122,7 @@ function savePOD(p){
   appendMany_('PODItems', items.map(it=>{
     const loaded=Number(it.loadedQty)||0, rej=Number(it.rejectedQty)||0;
     return { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName,
-             LoadedQty:loaded, DeliveredQty:Math.max(loaded-rej,0), RejectedQty:rej };   // delivered = loaded − rejected
+             UOM:uomOf_(it.skuCode), LoadedQty:loaded, DeliveredQty:Math.max(loaded-rej,0), RejectedQty:rej };   // delivered = loaded − rejected
   }));
   // rejected items trigger the conditional return flow; otherwise straight to Delivered
   updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status: hasReturn?'Return Pending':'Delivered' });
@@ -1354,7 +1359,7 @@ function poItemsFor(poNo){
   const acc=poAcceptedBySku_(poNo), pipe=poPipelineBySku_(poNo);
   return readAll_('POItems').filter(i=>i.PONo===poNo).map(i=>{
     const ordered=Number(i.Qty)||0, a=acc[i.SKUCode]||0, p=pipe[i.SKUCode]||0;
-    return { SKUCode:i.SKUCode, SKUName:i.SKUName, POQty:ordered, Rate:Number(i.Rate)||0, GSTPercent:Number(i.GSTPercent)||0,
+    return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), POQty:ordered, Rate:Number(i.Rate)||0, GSTPercent:Number(i.GSTPercent)||0,
              AcceptedQty:a, InPipelineQty:p, RemainingQty:Math.max(ordered-a-p,0) };
   });
 }
@@ -1378,7 +1383,7 @@ function savePO(p){
   const items=(p.items||[]).filter(it=>Number(it.qty)>0).map(it=>{
     const qty=Number(it.qty)||0, rate=Number(it.rate)||0, gst=Number(it.gstPercent)||0, amt=qty*rate*(1+gst/100);
     tq+=qty; tv+=amt;
-    return {PONo:poNo,SKUCode:it.skuCode,SKUName:it.skuName,Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(amt)};
+    return {PONo:poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(amt)};
   });
   const u=currentUser_();
   append_('PO',{PONo:poNo,PODate:p.poDate||fmtDate_(new Date()),SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,TotalQty:tq,TotalValue:Math.round(tv),Status:PO_STATUS.DRAFT,CreatedBy:u.email,CreatedAt:new Date()});
@@ -1415,7 +1420,7 @@ function getPOSheet(poNo){
 function saveGateEntryIn(p){
   const senNo=nextSeqYearly_('SEN','SENNo','SEN-','CreatedAt',4); const now=new Date();
   append_('SEN',{SENNo:senNo,PONo:p.poNo,SupplierName:p.supplierName,GateDate:now,GateTime:fmtTime_(now),VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',InvoiceNo:p.invoiceNo||'',Status:SEN_STATUS.PENDING_QC,CreatedAt:now});
-  appendMany_('SENItems',(p.items||[]).filter(it=>Number(it.receivedQty)>0).map(it=>({SENNo:senNo,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,POQty:Number(it.poQty)||0,ReceivedQty:Number(it.receivedQty)||0})));
+  appendMany_('SENItems',(p.items||[]).filter(it=>Number(it.receivedQty)>0).map(it=>({SENNo:senNo,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),POQty:Number(it.poQty)||0,ReceivedQty:Number(it.receivedQty)||0})));
   recomputePOStatus_(p.poNo);
   try{
     const _n=new Date(), _rq=(p.items||[]).reduce((s,it)=>s+(Number(it.receivedQty)||0),0);
@@ -1439,7 +1444,7 @@ function getSENSheet(senNo){
   const items=readAll_('SENItems').filter(i=>i.SENNo===senNo).map(i=>{
     const r=rate[i.SKUCode]||{rate:0,gst:0}, q=Number(i.ReceivedQty)||0;
     value+=q*r.rate*(1+r.gst/100);
-    return {SKUCode:i.SKUCode,SKUName:i.SKUName,POQty:i.POQty,ReceivedQty:q,Rate:r.rate};
+    return {SKUCode:i.SKUCode,SKUName:i.SKUName,UOM:i.UOM||uomOf_(i.SKUCode),POQty:i.POQty,ReceivedQty:q,Rate:r.rate};
   });
   const qc=readAll_('QC').find(q=>q.SENNo===senNo)||{};
   return {senNo:senNo,poNo:sen.PONo,supplierName:sen.SupplierName,vehicleNo:sen.VehicleNo,invoiceNo:sen.InvoiceNo,status:sen.Status,
