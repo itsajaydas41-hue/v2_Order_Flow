@@ -1259,6 +1259,17 @@ function saveCollection(p){
 
 
 /* ============================== REPORTS ========================= */
+/* Har order ke chaaro dates ek jagah: Created, Order, Delivery (aakhri POD), Collection (aakhri) */
+function rptDates_(){
+  const ord={}, pod={}, coll={};
+  readAll_('Orders').forEach(function(o){ ord[o.OrderNo]={created:o.CreatedAt||'', order:o.OrderDate||''}; });
+  readAll_('POD').forEach(function(p){ const d=p.DeliveryDate||''; if(d && (!pod[p.OrderNo] || new Date(d)>new Date(pod[p.OrderNo]))) pod[p.OrderNo]=d; });
+  readAll_('Collection').forEach(function(cl){ const d=cl.CollectionDate||''; if(d && (!coll[cl.OrderNo] || new Date(d)>new Date(coll[cl.OrderNo]))) coll[cl.OrderNo]=d; });
+  return { created:function(no){ const x=ord[no]; return x?fmtDate_(x.created):''; },
+           order:  function(no){ const x=ord[no]; return x?fmtDate_(x.order):''; },
+           delivery:function(no){ return pod[no]?fmtDate_(pod[no]):''; },
+           collection:function(no){ return coll[no]?fmtDate_(coll[no]):''; } };
+}
 function getReport(type){
   const orders = readAll_('Orders');
   const open   = orders.filter(o=>[ORDER_STATUS.COLLECTED,ORDER_STATUS.CLOSED].indexOf(o.Status)<0);
@@ -1266,7 +1277,7 @@ function getReport(type){
   const partial= orders.filter(o=>[ORDER_STATUS.PARTIAL,ORDER_STATUS.LOADING,ORDER_STATUS.PART_COLL,ORDER_STATUS.PART_DISPATCH].indexOf(o.Status)>-1);
   const loaded = orders.filter(o=>o.Status===ORDER_STATUS.LOADED);
   switch(type){
-    case 'OrderRegister':  return orders.map(o=>({ OrderNo:o.OrderNo, Date:fmtDate_(o.OrderDate), Vendor:o.VendorName, Value:o.TotalValue, Status:o.Status }));
+    case 'OrderRegister':  { const D=rptDates_(); return orders.map(o=>({ OrderNo:o.OrderNo, CreatedDate:fmtDate_(o.CreatedAt), OrderDate:fmtDate_(o.OrderDate), DeliveryDate:D.delivery(o.OrderNo), CollectionDate:D.collection(o.OrderNo), Vendor:o.VendorName, Value:o.TotalValue, Status:o.Status })); }
     case 'SKULedger':      return skuRows_(orders);      // every SKU of every order, full movement
     case 'OpenOrders':     return skuRows_(open);
     case 'ClosedOrders':   return skuRows_(closed);
@@ -1275,9 +1286,9 @@ function getReport(type){
     case 'DispatchPlanning': return readAll_('Planning');
     case 'GateEntry':      return readAll_('GateEntry');
     case 'GateOut':        return readAll_('GateOut');
-    case 'InvoiceRegister':return readAll_('Invoice');
+    case 'InvoiceRegister':{ const D=rptDates_(); return readAll_('Invoice').map(i=>({ InvoiceNo:i.InvoiceNo, OrderNo:i.OrderNo, GateEntryNo:i.GateEntryNo, CreatedDate:fmtDate_(i.CreatedAt), OrderDate:D.order(i.OrderNo), InvoiceDate:fmtDate_(i.InvoiceDate), DeliveryDate:D.delivery(i.OrderNo), CollectionDate:D.collection(i.OrderNo), Amount:Number(i.InvoiceAmount)||0, Status:i.Status||'' })); }
     case 'POD':            return podRows_();            // SKU-level delivered / rejected
-    case 'CollectionRegister': return readAll_('Collection');
+    case 'CollectionRegister':{ const D=rptDates_(); return readAll_('Collection').map(cl=>({ CollectionNo:cl.CollectionNo, OrderNo:cl.OrderNo, InvoiceNo:cl.InvoiceNo, Vendor:cl.VendorName, CreatedDate:fmtDate_(cl.CreatedAt), OrderDate:D.order(cl.OrderNo), DeliveryDate:D.delivery(cl.OrderNo), CollectionDate:fmtDate_(cl.CollectionDate), InvoiceAmount:Number(cl.InvoiceAmount)||0, Collected:Number(cl.CollectionAmount)||0, Deduction:Number(cl.DeductionAmount)||0, ActualReceived:Number(cl.ActualReceived)||0, Mode:cl.PaymentMode||'', RefNo:cl.RefNo||'' })); }
     case 'Outstanding':    return outstandingReport_();
     case 'PartyCollection':return partyCollection_();
     default: return [];
@@ -1286,6 +1297,7 @@ function getReport(type){
 
 /** One row per (order, SKU) with the whole quantity ledger. Pre-indexed for speed. */
 function skuRows_(orders){
+  const D=rptDates_();
   const K=(o,s)=>o+'|'+s;
   const plan={}, load={}, del={}, rej={};
   readAll_('PlanItems').forEach(p=>{ plan[K(p.OrderNo,p.SKUCode)]=(plan[K(p.OrderNo,p.SKUCode)]||0)+(Number(p.PlannedQty)||0); });
@@ -1299,7 +1311,9 @@ function skuRows_(orders){
     const k = K(it.OrderNo,it.SKUCode);
     const ordered=Number(it.Qty)||0, rate=Number(it.Rate)||0, ld=load[k]||0;
     rows.push({
-      OrderNo:it.OrderNo, Vendor:o.VendorName, SKUCode:it.SKUCode, SKU:it.SKUName,
+      OrderNo:it.OrderNo, CreatedDate:fmtDate_(o.CreatedAt), OrderDate:fmtDate_(o.OrderDate),
+      DeliveryDate:D.delivery(it.OrderNo), CollectionDate:D.collection(it.OrderNo),
+      Vendor:o.VendorName, SKUCode:it.SKUCode, SKU:it.SKUName, UOM:it.UOM||'',
       Ordered:ordered, Planned:plan[k]||0, Dispatched:ld, Delivered:del[k]||0, Rejected:rej[k]||0,
       Pending:Math.max(ordered-ld,0), Rate:rate, Value:Math.round(ordered*rate), Status:o.Status
     });
@@ -1323,9 +1337,19 @@ function outstandingReport_(){
   return Object.values(map).map(x=>({ OrderNo:x.OrderNo, Invoiced:x.Invoiced, Collected:x.Collected, Outstanding:Math.max(x.Invoiced-x.Collected,0) }));
 }
 function partyCollection_(){
-  const map = {};
-  readAll_('Collection').forEach(c=>{ map[c.VendorName]=(map[c.VendorName]||0)+(Number(c.CollectionAmount)||0); });
-  return Object.keys(map).map(k=>({ Vendor:k, Collected:map[k] }));
+  const map={};
+  readAll_('Collection').forEach(function(c){
+    const m=map[c.VendorName]=map[c.VendorName]||{amt:0,first:'',last:'',orders:{}};
+    m.amt+=Number(c.CollectionAmount)||0;
+    const d=c.CollectionDate||'';
+    if(d){ if(!m.first||new Date(d)<new Date(m.first)) m.first=d;
+           if(!m.last ||new Date(d)>new Date(m.last))  m.last=d; }
+    if(c.OrderNo) m.orders[c.OrderNo]=1;
+  });
+  return Object.keys(map).map(function(k){ const m=map[k];
+    return { Vendor:k, Orders:Object.keys(m.orders).length,
+             FirstCollectionDate:m.first?fmtDate_(m.first):'', LastCollectionDate:m.last?fmtDate_(m.last):'',
+             Collected:m.amt }; });
 }
 
 /* ============================== UTILS =========================== */
@@ -1532,12 +1556,16 @@ function getP2PDashboard(){
 
 /* ================= DASHBOARD V2 (pipeline + charts) ================= */
 function dashMonthKey_(d){ const t=(d instanceof Date)?d:new Date(d); return isNaN(t)?null:{y:t.getFullYear(),m:t.getMonth(),w:Math.min(Math.floor((t.getDate()-1)/7),4)}; }
-function dashSeries_(rows, dateCol, valCol){
+/* dateCols: pehla bhara hua date use hota hai — reporting Order Date se, CreatedAt sirf fallback */
+function dashSeries_(rows, dateCols, valCol){
+  if(typeof dateCols==='string') dateCols=[dateCols];
   const yr=new Date().getFullYear();
   const monthly=Array.from({length:12},()=>({count:0,value:0}));
   const weekly=Array.from({length:12},()=>[0,0,0,0,0]);
   rows.forEach(function(r){
-    const k=dashMonthKey_(r[dateCol]); if(!k||k.y!==yr) return;
+    let k=null;
+    for(const dc of dateCols){ if(r[dc]){ k=dashMonthKey_(r[dc]); if(k) break; } }
+    if(!k||k.y!==yr) return;
     const v=Number(r[valCol])||0;
     monthly[k.m].count++; monthly[k.m].value+=v; weekly[k.m][k.w]+=v;
   });
@@ -1565,7 +1593,7 @@ function getO2CDashV2(){
   p.collection=orders.filter(function(o){ return o.Status===ORDER_STATUS.DELIVERED || (has(invs,'OrderNo',o.OrderNo) && CLOSED.indexOf(o.Status)<0); }).length;
   p.closed=orders.filter(function(o){ return CLOSED.indexOf(o.Status)>=0; }).length;
   const donutPending=orders.length-p.closed;
-  return { pipeline:p, series:dashSeries_(orders,'CreatedAt','TotalValue'), donut:{pending:donutPending, closed:p.closed} };
+  return { pipeline:p, series:dashSeries_(orders,['OrderDate','CreatedAt'],'TotalValue'), donut:{pending:donutPending, closed:p.closed} };
 }
 function getP2PDashV2(){
   const pos=readAll_('PO'), sens=readAll_('SEN'), pays=readAll_('Payment'), prs=readAll_('PurchaseReturn');
@@ -1580,7 +1608,7 @@ function getP2PDashV2(){
   p.returned=prs.length;
   p.payment=sens.filter(function(s){ return s.Status===SEN_STATUS.RECEIVED; }).length;
   p.closed=pos.filter(function(x){ return x.Status===PO_STATUS.RECEIVED || x.Status===PO_STATUS.CLOSED; }).length;
-  return { pipeline:p, series:dashSeries_(pos,'CreatedAt','TotalValue'), donut:{pending:p.total-p.closed, closed:p.closed} };
+  return { pipeline:p, series:dashSeries_(pos,['PODate','CreatedAt'],'TotalValue'), donut:{pending:p.total-p.closed, closed:p.closed} };
 }
 
 /* ---- Storage layer overrides (replace Sheets I/O; domain logic below is untouched) ---- */
