@@ -1260,6 +1260,26 @@ function saveCollection(p){
 
 
 /* ============================== REPORTS ========================= */
+/* Har report ke SAARE possible columns (data khaali ho tab bhi customise me dikhein).
+   Frontend inhe default order+visibility ke liye use karta hai.                       */
+var REPORT_COLS = {
+  SKULedger: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  OrderRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  OpenOrders: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  ClosedOrders: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  PartialOrders: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  InvoicePending: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  POD: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  DispatchPlanning: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  GateEntry: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  GateOut: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  InvoiceRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  CollectionRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  Outstanding: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  PartyCollection: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+};
+function getReportColumns(type){ return REPORT_COLS[type] || []; }
+
 /* Har order ke chaaro dates ek jagah: Created, Order, Delivery (aakhri POD), Collection (aakhri) */
 function rptDates_(){
   const ord={}, pod={}, coll={};
@@ -1271,7 +1291,7 @@ function rptDates_(){
            delivery:function(no){ return pod[no]?fmtDate_(pod[no]):''; },
            collection:function(no){ return coll[no]?fmtDate_(coll[no]):''; } };
 }
-function getReport(type){
+function getReportRaw(type){
   const orders = readAll_('Orders');
   const open   = orders.filter(o=>[ORDER_STATUS.COLLECTED,ORDER_STATUS.CLOSED].indexOf(o.Status)<0);
   const closed = orders.filter(o=>[ORDER_STATUS.COLLECTED,ORDER_STATUS.CLOSED].indexOf(o.Status)>-1);
@@ -1294,6 +1314,43 @@ function getReport(type){
     case 'PartyCollection':return partyCollection_();
     default: return [];
   }
+}
+
+
+/* Sabhi reports ko same 18-column shape me dhaalta hai.
+   Jo value report me hai wo sahi column me, baaki blank. */
+var REPORT_STD=['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'];
+function getReport(type){
+  const rows=getReportRaw(type)||[];
+  const D=rptDates_();
+  return rows.map(function(r){
+    const no=r.OrderNo||'';
+    const out={};
+    REPORT_STD.forEach(function(k){ out[k]=''; });               // default sab blank
+    // seedha available fields copy karo (jinke naam std list me hain)
+    REPORT_STD.forEach(function(k){ if(r[k]!==undefined && r[k]!==null) out[k]=r[k]; });
+    // report-specific values ko standard columns me le aao (taaki blank na rahein)
+    if(out.Vendor==='' && r.Vendor!==undefined) out.Vendor=r.Vendor;
+    if(out.SKU==='' && r.SKU!==undefined) out.SKU=r.SKU;
+    if(out.Value===''){                                            // Value: order value / invoice amt / collected / outstanding
+      if(r.Value!==undefined) out.Value=r.Value;
+      else if(r.Amount!==undefined) out.Value=r.Amount;
+      else if(r.Collected!==undefined) out.Value=r.Collected;
+      else if(r.Outstanding!==undefined) out.Value=r.Outstanding;
+      else if(r.InvoiceAmount!==undefined) out.Value=r.InvoiceAmount;
+    }
+    if(out.Delivered==='' && r.Loaded!==undefined) out.Delivered=r.Delivered!==undefined?r.Delivered:'';
+    if(out.CollectionDate==='' && r.LastCollectionDate) out.CollectionDate=r.LastCollectionDate;
+    if(out.Status==='' && r.Mode) out.Status=r.Mode;               // collection: mode as status hint
+    // agar OrderNo hai to teeno/chaaro dates + vendor bhar do (jaha khaali hain)
+    if(no){
+      if(out.CreatedDate==='') out.CreatedDate=D.created(no);
+      if(out.OrderDate==='') out.OrderDate=D.order(no);
+      if(out.DeliveryDate==='') out.DeliveryDate=D.delivery(no);
+      if(out.CollectionDate==='') out.CollectionDate=D.collection(no);
+    }
+    return out;
+  });
 }
 
 /** One row per (order, SKU) with the whole quantity ledger. Pre-indexed for speed. */
@@ -1648,7 +1705,7 @@ function fmsLog_(where,err){ try{ console.error('[FMS]',where,err); }catch(e){} 
 
 
 /* ---- API dispatcher used by the app ---- */
-var SB_FNS={emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
+var SB_FNS={getReportColumns:getReportColumns,emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
 
 var SBAPI={
   ready:null,
