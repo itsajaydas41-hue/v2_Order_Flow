@@ -128,7 +128,7 @@ const SHEETS = {
   Schedule:          ['ScheduleNo','OrderNo','VendorName','PromisedDate','PromisedTime','Remarks','CreatedBy','CreatedAt'],
   ScheduleItems:     ['ScheduleNo','OrderNo','SKUCode','SKUName','UOM','OrderedQty','ScheduledQty'],
   /* ---- Purchase-to-Payment (P2P) ---- */
-  PO:                ['PONo','PODate','SupplierCode','SupplierName','BrokerName','SupplierEmail','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
+  PO:                ['PONo','PODate','SupplierCode','SupplierName','BrokerName','SupplierEmail','TransportType','NumVehicles','DeductionCondition','PackingTerms','Remarks','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
   POItems:           ['PONo','SKUCode','SKUName','UOM','Qty','Rate','GSTPercent','Amount'],
   SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','InvoiceNo','Status','CreatedAt'],
   SENItems:          ['SENNo','PONo','SKUCode','SKUName','UOM','POQty','ReceivedQty'],
@@ -1484,7 +1484,7 @@ function savePO(p){
     return {PONo:poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(amt)};
   });
   const u=currentUser_();
-  append_('PO',{PONo:poNo,PODate:p.poDate||fmtDate_(new Date()),SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,BrokerName:p.brokerName||'',SupplierEmail:p.supplierEmail||'',TotalQty:tq,TotalValue:Math.round(tv),Status:PO_STATUS.DRAFT,CreatedBy:u.email,CreatedAt:new Date()});
+  append_('PO',{PONo:poNo,PODate:p.poDate||fmtDate_(new Date()),SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,BrokerName:p.brokerName||'',SupplierEmail:p.supplierEmail||'',TransportType:p.transportType||'',NumVehicles:Number(p.numVehicles)||0,DeductionCondition:p.deductionCondition||'',PackingTerms:p.packingTerms||'',Remarks:p.remarks||'',TotalQty:tq,TotalValue:Math.round(tv),Status:PO_STATUS.DRAFT,CreatedBy:u.email,CreatedAt:new Date()});
   appendMany_('POItems',items);
   try{ const _n=new Date();
     fmsInit_('FMS_P2P_PO',{ Timestamp:_n, PONo:poNo, SupplierName:p.supplierName||'',
@@ -1506,6 +1506,7 @@ function getPODetail(poNo){
   return {po:{PONo:po.PONo,PODate:fmtDate_(po.PODate),SupplierName:po.SupplierName,SupplierCode:po.SupplierCode,
               BrokerName:po.BrokerName||'',SupplierEmail:po.SupplierEmail||sup.Email||'',
               SupplierGST:sup.GST||'',SupplierAddress:sup.Address||'',SupplierContact:sup.ContactPerson||'',SupplierMobile:sup.Mobile||'',
+              TransportType:po.TransportType||'',NumVehicles:po.NumVehicles||0,DeductionCondition:po.DeductionCondition||'',PackingTerms:po.PackingTerms||'',Remarks:po.Remarks||'',
               Status:po.Status,TotalQty:po.TotalQty,TotalValue:po.TotalValue}, items:poItemsFor(poNo)};
 }
 
