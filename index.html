@@ -1490,18 +1490,30 @@ function readCustList(){
 function redrawCustList(cols){
   document.getElementById('custList').innerHTML=cols.map((c,i)=>custRow(c,i,cols.length)).join('');
 }
+function applyCust(){
+  /* current tick/order ko turant layout me daalo + report dobara draw karo (live preview) */
+  const cols=readCustList();
+  if(!cols.some(c=>c.show)){ toast('Kam se kam ek column on rakhein',true); return; }   // sab off allowed nahi
+  saveLayout(curReport,{cols});     // yaad rakho, taaki dobara khulne par wahi rahe
+  paintReport();                    // niche report format turant update
+}
 function wireCustomise(allCols){
   const list=document.getElementById('custList');
+  /* CHECKBOX tick/untick → turant column add/remove */
+  list.addEventListener('change',e=>{
+    if(e.target.matches('[data-cshow]')) applyCust();
+  });
+  /* ↑ ↓ order badlo → turant update */
   list.addEventListener('click',e=>{
     const item=e.target.closest('.cust-item'); if(!item) return;
     const cols=readCustList(); const i=+item.dataset.ci;
-    if(e.target.closest('[data-cup]') && i>0){ [cols[i-1],cols[i]]=[cols[i],cols[i-1]]; redrawCustList(cols); }
-    else if(e.target.closest('[data-cdn]') && i<cols.length-1){ [cols[i+1],cols[i]]=[cols[i],cols[i+1]]; redrawCustList(cols); }
+    if(e.target.closest('[data-cup]') && i>0){ [cols[i-1],cols[i]]=[cols[i],cols[i-1]]; redrawCustList(cols); applyCust(); }
+    else if(e.target.closest('[data-cdn]') && i<cols.length-1){ [cols[i+1],cols[i]]=[cols[i],cols[i+1]]; redrawCustList(cols); applyCust(); }
   });
   document.getElementById('custSave').addEventListener('click',()=>{
     const cols=readCustList();
     if(!cols.some(c=>c.show)){ toast('Kam se kam ek column dikhana zaroori hai',true); return; }
-    saveLayout(curReport,{cols}); toast('Layout saved'); paintReport();
+    saveLayout(curReport,{cols}); toast('Layout saved ✓'); paintReport();
   });
   document.getElementById('custReset').addEventListener('click',()=>{ clearLayout(curReport); redrawCustList(allCols.map(c=>({name:c,show:true}))); toast('Reset to default'); paintReport(); });
   document.getElementById('custClose').addEventListener('click',()=>{ document.getElementById('custPanel').style.display='none'; });
