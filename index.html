@@ -401,6 +401,11 @@ body.dark .btn-primary:hover{background:#15803D}
 .upcase{text-transform:uppercase}
 .uomtag{display:inline-block;background:var(--indigo-50);color:var(--indigo-7);border:1px solid var(--indigo-100);
   border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:700;letter-spacing:.3px}
+.cust-list{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto}
+.cust-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.cust-chk{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;flex:1}
+.cust-chk input{width:16px;height:16px}
+.cust-mv{display:flex;gap:4px}
 .lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
   cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
 .lo-btn:hover{background:rgba(255,255,255,.10);color:#fff;border-color:rgba(255,255,255,.35)}
@@ -1039,7 +1044,7 @@ function renderCreate(){
       <div class="card"><div class="card-p">
         <div class="grid2">
           <div class="field"><label>Order Number</label><input class="inp" value="Auto (ORD-${ym()}-###)" readonly style="background:#F6F7FB;color:var(--t2)"></div>
-          <div class="field"><label>Order Date</label><input class="inp" type="date" id="oDate" value="${today()}"></div>
+          <div class="field"><label>Order Date</label><input class="inp" type="date" min="${today()}" id="oDate" value="${today()}"></div>
         </div>
         <div class="field"><label>Vendor <span class="rq">*</span></label>
           <div class="cmb"><input class="inp" id="vendIn" placeholder="Search vendor…" autocomplete="off"><div class="cmb-list"></div></div>
@@ -1112,7 +1117,7 @@ function loadSchedule(orderNo){
     document.getElementById('schForm').innerHTML=`
       <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">Vendor <b>${d.vendorName}</b></div>${d.promisedDate?`<div class="srow">Current promised date <b>${d.promisedDate}</b></div>`:''}</div></div>
       <div class="grid2">
-        <div class="field"><label>Promised / Scheduled Delivery Date <span class="rq">*</span></label><input class="inp" type="date" id="schDate" value="${today()}"></div>
+        <div class="field"><label>Promised / Scheduled Delivery Date <span class="rq">*</span></label><input class="inp" type="date" min="${today()}" id="schDate" value="${today()}"></div>
         <div class="field"><label>Promised Time <span class="rq">*</span></label><input class="inp" type="time" id="schTime" value="${d.promisedTime||'09:00'}"></div>
       </div>
       <div class="sec"><h3>Order Items — set scheduled quantity</h3></div>
@@ -1128,6 +1133,7 @@ function loadSchedule(orderNo){
 function doSaveSchedule(){
   const d=window._schData; if(!d)return;
   const date=pval('schDate'); if(!date)return toast('Choose a promised delivery date',true);
+  if(!notPast('schDate','Promised delivery date',true)) return;
   const items=d.items.map((it,i)=>{const inp=document.querySelector(`[data-sch="${i}"]`);return {skuCode:it.SKUCode,skuName:it.SKUName,orderedQty:it.OrderedQty,scheduledQty:inp?Math.min(+inp.value||0,it.PendingQty):0};}).filter(x=>x.scheduledQty>0);
   if(!items.length)return toast('Enter a scheduled quantity for at least one SKU',true);
   busy('saveSch');
@@ -1154,7 +1160,7 @@ function renderDispatch(arg){
       }
       document.getElementById('planForm').innerHTML=`
         <div class="grid2">
-          <div class="field"><label>Planned Date <span class="rq">*</span></label><input class="inp" type="date" id="pDate" value="${today()}"></div>
+          <div class="field"><label>Planned Date <span class="rq">*</span></label><input class="inp" type="date" min="${today()}" id="pDate" value="${today()}"></div>
           <div class="field"><label>Planned Time</label><input class="inp" type="time" id="pTime" value="09:00"></div>
         </div>
         <div class="field"><label>Transporter <span class="rq">*</span></label><select class="sel" id="pTrans">${STATE.masters.transporters.map(t=>`<option>${t.TransporterName}</option>`).join('')}</select></div>
@@ -1190,7 +1196,7 @@ function renderGate(arg){
     <div class="grid2">
       <div class="field"><label>Vehicle Number <span class="rq">*</span></label><input class="inp upcase" id="geVeh" placeholder="MH-00-XX-0000"></div>
       <div class="field"><label>Driver Name <span class="rq">*</span></label><input class="inp upcase" id="geDrv" placeholder="FULL NAME"></div>
-      <div class="field"><label>Mobile No.</label><input class="inp" id="geMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit number"></div>
+      <div class="field"><label>Mobile No.</label><input class="inp mob10" id="geMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
       <div class="field"><label>Driving License</label><input class="inp upcase" id="geDL" placeholder="DL-0000000000"></div>
       <div class="field"><label>RC Number</label><input class="inp upcase" id="geRC" placeholder="RC-000000"></div>
     </div>
@@ -1225,7 +1231,7 @@ function renderLoading(arg){
         <div class="sec"><h3>Loading Sheet — planned items</h3><span id="ldPct" style="font-weight:700;color:var(--indigo)">0%</span></div>
         <div class="psub" style="margin:-6px 2px 10px">Partial loading is allowed. Any unloaded balance returns to dispatch planning automatically.</div>
         <div class="collbar" style="margin-top:0"><div class="collbar-fill" id="ldBar" style="width:0%;background:linear-gradient(90deg,#4F46E5,#6366F1)"></div></div>
-        ${d.skus.map((s,i)=>`<div class="li" style="margin-top:12px"><div class="li-top"><div><div class="nm">${s.SKUName} ${s.UOM?'<span class="uomtag">'+s.UOM+'</span>':''}</div><div class="cd">${s.SKUCode} · Planned ${s.PlannedQty} · Balance ${s.BalanceQty}</div></div><label style="display:grid;place-items:center"><input type="checkbox" data-ldchk="${i}" style="width:24px;height:24px;accent-color:var(--indigo)"></label></div><div class="li-grid" style="grid-template-columns:1fr"><div class="f"><label>Load Qty${s.UOM?' ('+s.UOM+')':''} — max ${s.BalanceQty}</label><input type="number" value="${s.BalanceQty}" min="0" max="${s.BalanceQty}" data-ldqty="${i}"></div></div></div>`).join('')}
+        ${d.skus.map((s,i)=>`<div class="li" style="margin-top:12px"><div class="li-top" style="display:flex;align-items:center;gap:10px"><label style="display:grid;place-items:center;flex:0 0 auto"><input type="checkbox" data-ldchk="${i}" style="width:24px;height:24px;accent-color:var(--indigo)"></label><div style="flex:1"><div class="nm">${s.SKUName} ${s.UOM?'<span class="uomtag">'+s.UOM+'</span>':''}</div><div class="cd">${s.SKUCode} · Planned ${s.PlannedQty} · Balance ${s.BalanceQty}</div></div></div><div class="li-grid" style="grid-template-columns:1fr"><div class="f"><label>Load Qty${s.UOM?' ('+s.UOM+')':''} — max ${s.BalanceQty}</label><input type="number" value="${s.BalanceQty}" min="0" max="${s.BalanceQty}" data-ldqty="${i}"></div></div></div>`).join('')}
         <button class="btn btn-primary" id="saveLoad" data-gate="${d.gateEntryNo}" data-plan="${d.planNo}" data-order="${d.orderNo}" data-skus='${JSON.stringify(d.skus)}'>${I.check}Complete Loading</button>`;
     });
   });
@@ -1240,9 +1246,12 @@ function renderInvoice(arg){
     <div id="invInfo"></div>
     <div class="grid2">
       <div class="field"><label>Invoice Number <span class="rq">*</span></label><input class="inp" id="invNo" placeholder="INV-000000"></div>
-      <div class="field"><label>Invoice Date</label><input class="inp" type="date" id="invDate" value="${today()}"></div>
+      <div class="field"><label>Invoice Date</label><input class="inp" type="date" min="${today()}" id="invDate" value="${today()}"></div>
     </div>
-    <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="invAmt" type="number" placeholder="0"></div>
+    <div class="grid2">
+      <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="invAmt" type="number" placeholder="0"></div>
+      <div class="field"><label>Invoice Weight</label><input class="inp tnum" id="invWt" type="number" step="0.001" placeholder="0.000"></div>
+    </div>
     <div class="sec"><h3>Upload Invoice (PDF / JPG / PNG)</h3></div>
     <label class="upl" for="invUp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg><div class="t">Tap to upload</div><div class="s">PDF, JPG, PNG · max 10 MB</div></label>
     <input type="file" id="invUp" accept=".pdf,.jpg,.jpeg,.png" hidden>
@@ -1287,13 +1296,13 @@ function renderPOD(arg){
     <div class="field"><label>Gate Entry (Dispatched) <span class="rq">*</span></label><select class="sel" id="podGate"><option value="">Select gate entry…</option></select></div>
     <div id="podItems"></div>
     <div class="grid2">
-      <div class="field"><label>Delivery Date</label><input class="inp" type="date" id="podDate" value="${today()}"></div>
-      <div class="field"><label>Receiver Mobile</label><input class="inp" id="podMob" placeholder="Mobile number"></div>
+      <div class="field"><label>Delivery Date</label><input class="inp" type="date" min="${today()}" id="podDate" value="${today()}"></div>
+      <div class="field"><label>Receiver Mobile</label><input class="inp mob10" id="podMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
     </div>
     <div class="field"><label>Receiver Name <span class="rq">*</span></label><input class="inp" id="podRcv" placeholder="Who received the goods"></div>
     <div class="grid3">
       <div class="field"><label>Gross Weight</label><input class="inp tnum" id="podGW" type="number" step="0.001" placeholder="0.000"></div>
-      <div class="field"><label>Net Weight</label><input class="inp tnum" id="podNW" type="number" step="0.001" placeholder="0.000"></div>
+      <div class="field"><label>Invoice Weight</label><input class="inp tnum" id="podNW" type="number" step="0.001" placeholder="0.000"></div>
       <div class="field"><label>Party Net Weight</label><input class="inp tnum" id="podPNW" type="number" step="0.001" placeholder="0.000"></div>
     </div>
     <div class="field"><label>Remarks</label><textarea class="inp" id="podRem" placeholder="Delivery notes…"></textarea></div>
@@ -1419,16 +1428,85 @@ function renderReports(){
       <div class="field"><label>Filter (SKU, order, vendor, status…)</label><input class="inp" id="repFilter" placeholder="Type to filter rows…" value="${repFilter}"></div>
     </div>
     <div class="btn-row" style="margin-bottom:14px">
+      <button class="btn btn-primary btn-sm" id="custBtn">⚙ Customise layout</button>
       <button class="btn btn-ghost btn-sm" id="expCsv">Export CSV</button>
       <button class="btn btn-ghost btn-sm" id="expXls">Export Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="window.print()">Export PDF</button>
     </div>
+    <div id="custPanel" style="display:none"></div>
     <div id="repTable"><div class="loading"><div class="spin"></div></div></div>`;
   loadReport(curReport);
   document.getElementById('repSel').addEventListener('change',e=>{curReport=e.target.value;repFilter='';document.getElementById('repFilter').value='';loadReport(curReport);});
   document.getElementById('repFilter').addEventListener('input',e=>{repFilter=e.target.value;paintReport();});
+  document.getElementById('custBtn').addEventListener('click',toggleCustomise);
 }
 let reportData=[];
+/* ======= REPORT LAYOUT CUSTOMISATION (per report, saved in browser) ======= */
+function layoutKey(type){ return 'o2c-replayout-'+type; }
+function loadLayout(type){ try{ return JSON.parse(localStorage.getItem(layoutKey(type))||'null'); }catch(e){ return null; } }
+function saveLayout(type,layout){ try{ localStorage.setItem(layoutKey(type),JSON.stringify(layout)); }catch(e){} }
+function clearLayout(type){ try{ localStorage.removeItem(layoutKey(type)); }catch(e){} }
+/* effective columns for current report: saved order/visibility, ya default (sabhi) */
+function effectiveCols(allCols){
+  const lay=loadLayout(curReport);
+  if(!lay||!Array.isArray(lay.cols)) return allCols.map(c=>({name:c,show:true}));
+  const known=lay.cols.filter(x=>allCols.indexOf(x.name)>-1);
+  const missing=allCols.filter(c=>!known.some(x=>x.name===c)).map(c=>({name:c,show:true}));  // naye columns default dikhein
+  return known.concat(missing);
+}
+function toggleCustomise(){
+  const p=document.getElementById('custPanel'); if(!p) return;
+  if(p.style.display==='block'){ p.style.display='none'; return; }
+  if(!reportData.length){ toast('Pehle report load hone dein',true); return; }
+  const allCols=Object.keys(reportData[0]);
+  const cur=effectiveCols(allCols);
+  p.style.display='block';
+  p.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="card-p">
+    <div class="sec" style="margin:0 0 6px"><h3>Customise layout</h3>
+      <span style="font-size:11.5px;color:var(--t3)">Column on/off karein, ↑↓ se order badlein. Aapke browser me save rehta hai.</span></div>
+    <div id="custList" class="cust-list">${cur.map((c,i)=>custRow(c,i,cur.length)).join('')}</div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn btn-primary btn-sm" id="custSave">${I.check}Save layout</button>
+      <button class="btn btn-ghost btn-sm" id="custReset">Reset to default</button>
+      <button class="btn btn-ghost btn-sm" id="custClose">Close</button>
+    </div></div></div>`;
+  wireCustomise(allCols);
+}
+function custRow(c,i,total){
+  return `<div class="cust-item" data-ci="${i}">
+    <label class="cust-chk"><input type="checkbox" data-cshow ${c.show?'checked':''}> <span>${c.name}</span></label>
+    <div class="cust-mv">
+      <button class="qbtn" data-cup ${i===0?'disabled':''}>↑</button>
+      <button class="qbtn" data-cdn ${i===total-1?'disabled':''}>↓</button>
+    </div></div>`;
+}
+function readCustList(){
+  return [...document.querySelectorAll('#custList .cust-item')].map(el=>({
+    name:el.querySelector('.cust-chk span').textContent,
+    show:el.querySelector('[data-cshow]').checked
+  }));
+}
+function redrawCustList(cols){
+  document.getElementById('custList').innerHTML=cols.map((c,i)=>custRow(c,i,cols.length)).join('');
+}
+function wireCustomise(allCols){
+  const list=document.getElementById('custList');
+  list.addEventListener('click',e=>{
+    const item=e.target.closest('.cust-item'); if(!item) return;
+    const cols=readCustList(); const i=+item.dataset.ci;
+    if(e.target.closest('[data-cup]') && i>0){ [cols[i-1],cols[i]]=[cols[i],cols[i-1]]; redrawCustList(cols); }
+    else if(e.target.closest('[data-cdn]') && i<cols.length-1){ [cols[i+1],cols[i]]=[cols[i],cols[i+1]]; redrawCustList(cols); }
+  });
+  document.getElementById('custSave').addEventListener('click',()=>{
+    const cols=readCustList();
+    if(!cols.some(c=>c.show)){ toast('Kam se kam ek column dikhana zaroori hai',true); return; }
+    saveLayout(curReport,{cols}); toast('Layout saved'); paintReport();
+  });
+  document.getElementById('custReset').addEventListener('click',()=>{ clearLayout(curReport); redrawCustList(allCols.map(c=>({name:c,show:true}))); toast('Reset to default'); paintReport(); });
+  document.getElementById('custClose').addEventListener('click',()=>{ document.getElementById('custPanel').style.display='none'; });
+}
+/* filtered+ordered columns jo actually dikhte hain (table + export dono yahi use karte hain) */
+function visibleCols(allCols){ return effectiveCols(allCols).filter(c=>c.show).map(c=>c.name); }
 function loadReport(type){
   document.getElementById('repTable').innerHTML='<div class="loading"><div class="spin"></div></div>';
   api('getReport',type).then(rows=>{ reportData=rows||[]; paintReport(); });
@@ -1439,7 +1517,7 @@ function paintReport(){
   const q=(repFilter||'').toLowerCase().trim();
   const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
   if(!rows.length){host.innerHTML='<div class="empty">No rows match “'+repFilter+'”.</div>';return;}
-  const cols=Object.keys(rows[0]);
+  const cols=visibleCols(Object.keys(rows[0]));
   const fmt=(c,v)=>typeof v==='number'?(MONEY.test(c)?inr(v):v.toLocaleString('en-IN')):v;
   const isNum=c=>MONEY.test(c)||QTY.test(c);
   // totals for numeric columns
@@ -1492,7 +1570,7 @@ function renderPOCreate(){
     <div class="two-col"><div>
       <div class="card"><div class="card-p">
         <div class="grid2">
-          <div class="field"><label>PO Date</label><input class="inp" type="date" id="poDate" value="${today()}"></div>
+          <div class="field"><label>PO Date</label><input class="inp" type="date" min="${today()}" id="poDate" value="${today()}"></div>
           <div class="field"><label>PO Number</label><input class="inp" value="Auto (PO-${ym()}-###)" disabled></div>
         </div>
         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
@@ -1526,6 +1604,7 @@ function renderPOLines(){
 }
 function recalcPO(){ let q=0,g=0; poLines.forEach(it=>{q+=+it.qty||0;g+=(+it.qty||0)*(+it.rate||0)*(1+(+it.gst||0)/100);}); const a=document.getElementById('poSQty'),b=document.getElementById('poSGrand'); if(a)a.textContent=q; if(b)b.textContent=inr(Math.round(g)); }
 function doSavePO(){
+  if(document.getElementById('poDate') && !notPast('poDate','PO date',true)) return;
   if(!window._poSup)return toast('Select a supplier',true);
   const items=poLines.filter(it=>it.skuCode&&(+it.qty>0));
   if(!items.length)return toast('Add at least one SKU with quantity',true);
@@ -1690,7 +1769,7 @@ function masterFields(tab){
     <div class="field"><label>Vendor Code <span class="rq">*</span></label><input class="inp" id="mf_VendorCode" placeholder="VND-0000"></div>
     <div class="field"><label>Vendor Name <span class="rq">*</span></label><input class="inp" id="mf_VendorName" placeholder="Company name"></div>
     <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
-    <div class="field"><label>Mobile</label><input class="inp" id="mf_Mobile" placeholder="98xxxxxxxx"></div>
+    <div class="field"><label>Mobile</label><input class="inp mob10" id="mf_Mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
     <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
     <div class="field"><label>Payment Terms (Credit Days)</label><input class="inp" type="number" id="mf_CreditDays" placeholder="e.g. 30"></div>
     </div><div class="field"><label>Address</label><textarea class="inp" id="mf_Address" placeholder="Street, city"></textarea></div>`;
@@ -1705,7 +1784,7 @@ function masterFields(tab){
     </div>`;
   return `<div class="grid2">
     <div class="field"><label>Transporter Name <span class="rq">*</span></label><input class="inp" id="mf_TransporterName"></div>
-    <div class="field"><label>Contact Number</label><input class="inp" id="mf_ContactNumber" placeholder="98xxxxxxxx"></div>
+    <div class="field"><label>Contact Number</label><input class="inp mob10" id="mf_ContactNumber" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
     </div>`;
 }
 function renderMasters(){
@@ -1836,6 +1915,7 @@ function doSaveMaster(){
   const cfg=MASTER_CFG[masterTab], obj={};
   cfg.cols.forEach(c=>{ const el=document.getElementById('mf_'+c); if(el) obj[c]= el.type==='number' ? (+el.value||0) : el.value.trim(); });
   for(const r of cfg.req){ if(!obj[r]){ toast(r.replace(/([A-Z])/g,' $1').trim()+' is required',true); return; } }
+  for(const mc of ['Mobile','ContactNumber']){ if(cfg.cols.indexOf(mc)>-1 && !checkMobileField('mf_'+mc, mc.replace(/([A-Z])/g,' $1').trim(), false)) return; }
   busy('saveMaster');
   api(cfg.fn,obj).then(list=>{
     STATE.masters[cfg.key]=list;
@@ -1983,7 +2063,7 @@ document.addEventListener('change',e=>{
 document.addEventListener('input',e=>{
   const t=e.target; if(!t) return;
   if(t.classList&&t.classList.contains('upcase')&&t.value){ const p=t.selectionStart; t.value=t.value.toUpperCase(); try{t.setSelectionRange(p,p);}catch(_){}}
-  if(t.id==='geMob'){ t.value=t.value.replace(/\D/g,'').slice(0,10); }
+  if(t.classList&&t.classList.contains('mob10')){ t.value=t.value.replace(/\D/g,'').slice(0,10); }
   if(t.id==='payAmt'||t.id==='payDed'){                    // Actual Received = Invoice Amount − Deduction
     const a=+(document.getElementById('payAmt')||{}).value||0, d=+(document.getElementById('payDed')||{}).value||0;
     const act=document.getElementById('payAct'); if(act) act.value=Math.max(a-d,0);
@@ -2048,6 +2128,7 @@ function doSaveOrder(){
   const vend=document.getElementById('vendIn').value;
   const vd=STATE.masters.vendors.find(x=>x.VendorName===vend);
   if(!vd) return toast('Select a valid vendor',true);
+  if(!notPast('oDate','Order date',true)) return;
   if(!nItems.some(it=>it.skuCode&&it.qty>0)) return toast('Add at least one SKU',true);
   busy('saveOrder');
   api('saveOrder',{vendorCode:vd.VendorCode,vendorName:vd.VendorName,orderDate:document.getElementById('oDate').value,items:nItems.filter(it=>it.skuCode)})
@@ -2059,6 +2140,7 @@ function doSavePlan(btn){
   items.forEach((it,i)=>{const chk=document.querySelector(`[data-plan-chk="${i}"]`);const inp=document.querySelector(`[data-plan="${i}"]`);const on=chk?chk.checked:true;it.plannedQty=on?Math.min(+inp.value||0,it.RemainingQty):0;it.skuCode=it.SKUCode;it.skuName=it.SKUName;});
   const sel=items.filter(it=>it.plannedQty>0);
   if(!sel.length)return toast('Tick at least one SKU with a quantity to plan',true);
+  if(!notPast('pDate','Planned date',true)) return;
   busy('savePlan');
   api('savePlanning',{orderNo:btn.dataset.order,plannedDate:document.getElementById('pDate').value,plannedTime:document.getElementById('pTime').value,transporterName:document.getElementById('pTrans').value,remarks:document.getElementById('pRemarks').value,items:sel})
     .then(r=>{toast('Dispatch planned ('+r.planNo+')');go('gate');refreshDash();})
@@ -2069,6 +2151,7 @@ function doSaveGate(){
   const plan=(window._gePlans||[]).find(x=>x.PlanNo===planNo);
   if(!plan)return toast('Select a dispatch plan',true);
   if(!document.getElementById('geVeh').value)return toast('Vehicle number required',true);
+  if(!checkMobileField('geMob','Mobile No.',false)) return;
   busy('saveGate');
   api('saveGateEntry',{planNo:planNo,orderNo:plan.OrderNo,vehicleNo:document.getElementById('geVeh').value,driverName:document.getElementById('geDrv').value,dlNo:document.getElementById('geDL').value,rcNo:document.getElementById('geRC').value})
     .then(r=>{toast('Gate entry '+r.gateEntryNo+' recorded');go('loading');refreshDash();})
@@ -2086,9 +2169,10 @@ function doSaveLoad(btn){
 function doSaveInvoice(){
   const sel=document.getElementById('invGate');const opt=sel.selectedOptions[0];
   if(!sel.value)return toast('Select a gate entry',true);
+  if(!notPast('invDate','Invoice date',true)) return;
   if(!document.getElementById('invNo').value)return toast('Invoice number required',true);
   busy('saveInv');
-  api('saveInvoice',{gateEntryNo:sel.value,orderNo:opt.dataset.order,invoiceNo:document.getElementById('invNo').value,invoiceDate:document.getElementById('invDate').value,invoiceAmount:document.getElementById('invAmt').value,file:invFile})
+  api('saveInvoice',{gateEntryNo:sel.value,orderNo:opt.dataset.order,invoiceNo:document.getElementById('invNo').value,invoiceDate:document.getElementById('invDate').value,invoiceAmount:document.getElementById('invAmt').value,invoiceWeight:+(document.getElementById('invWt')||{}).value||0,file:invFile})
     .then(()=>{toast('Invoice saved');go('gateout');refreshDash();})
     .catch(err=>toast(err.message||'Failed',true));
 }
@@ -2106,6 +2190,7 @@ function doSavePOD(){
   const sel=document.getElementById('podGate');const opt=sel.selectedOptions[0];
   if(!sel.value)return toast('Select a gate entry',true);
   if(!document.getElementById('podRcv').value)return toast('Receiver name required',true);
+  if(!checkMobileField('podMob','Receiver mobile',false)) return;
   const its=(window._podItems||[]).map((it,i)=>{
     const rEl=document.querySelector(`[data-podr="${i}"]`);
     const loaded=it.LoadedQty||0;
@@ -2179,7 +2264,7 @@ document.addEventListener('click',e=>{
     const q=(repFilter||'').toLowerCase().trim();
     const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
     if(!rows.length)return;
-    const cols=Object.keys(rows[0]);
+    const cols=visibleCols(Object.keys(rows[0]));
     const csv=[cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]).replace(/"/g,'""')}"`).join(','))].join('\n');
     const blob=new Blob([csv],{type:'text/csv'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=curReport+(e.target.id==='expXls'?'.xls':'.csv');a.click();
@@ -2201,6 +2286,24 @@ function refreshDash(){return api('getDashboard').then(d=>{STATE.dashboard=d;});
 let toastT;
 function toast(msg,isErr){const t=document.getElementById('toast');document.getElementById('toastMsg').textContent=msg;t.classList.toggle('err',!!isErr);document.getElementById('toastIc').innerHTML=isErr?'<path d="M18 6L6 18M6 6l12 12"/>':'<path d="M20 6L9 17l-5-5"/>';t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
 function today(){return new Date().toISOString().slice(0,10);}
+/* Mobile: exactly 10 digits, Indian mobiles start 6-9. '' allowed (optional field). */
+function validMobile(v){ v=String(v||'').trim(); return v==='' || /^[6-9]\d{9}$/.test(v); }
+function checkMobileField(id,label,required){
+  const el=document.getElementById(id); if(!el) return true;
+  const v=String(el.value||'').trim();
+  if(!v){ if(required){ toast((label||'Mobile')+' is required',true); el.focus(); return false; } return true; }
+  if(!/^\d{10}$/.test(v)){ toast((label||'Mobile')+': exactly 10 digits chahiye (abhi '+v.replace(/\D/g,'').length+')',true); el.focus(); return false; }
+  if(!/^[6-9]/.test(v)){ toast((label||'Mobile')+': valid mobile 6-9 se shuru hota hai',true); el.focus(); return false; }
+  return true;
+}
+/* Past-date guard: date >= today. '' allowed unless required. */
+function notPast(id,label,required){
+  const el=document.getElementById(id); if(!el) return true;
+  const v=el.value;
+  if(!v){ if(required){ toast((label||'Date')+' is required',true); el.focus(); return false; } return true; }
+  if(v<today()){ toast((label||'Date')+' past me nahi ho sakti — aaj ya aage ki date chunein',true); el.focus(); return false; }
+  return true;
+}
 function ym(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
 
 /* sidebar mobile */
