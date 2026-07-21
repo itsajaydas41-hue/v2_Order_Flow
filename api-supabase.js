@@ -1341,7 +1341,11 @@ function getReport(type){
     }
     if(out.Delivered==='' && r.Loaded!==undefined) out.Delivered=r.Delivered!==undefined?r.Delivered:'';
     if(out.CollectionDate==='' && r.LastCollectionDate) out.CollectionDate=r.LastCollectionDate;
+    if(out.OrderDate==='' && r.FirstCollectionDate) out.OrderDate=r.FirstCollectionDate;   // party-wise: pehli collection
+    if(out.Ordered==='' && r.Orders!==undefined) out.Ordered=r.Orders;                     // party-wise: kitne orders
     if(out.Status==='' && r.Mode) out.Status=r.Mode;               // collection: mode as status hint
+    if(out.OrderNo==='' && r.InvoiceNo) out.OrderNo=r.InvoiceNo;   // invoice/collection register me invoice no dikhe
+    if(out.Rate==='' && r.Rate!==undefined) out.Rate=r.Rate;
     // agar OrderNo hai to teeno/chaaro dates + vendor bhar do (jaha khaali hain)
     if(no){
       if(out.CreatedDate==='') out.CreatedDate=D.created(no);
