@@ -20,7 +20,7 @@ var SpreadsheetApp={ getActive:function(){ return { toast:function(){} }; }, get
 var DriveApp={}; var ContentService={}; var HtmlService={};
 
 /* ---- Supabase in-memory store ---- */
-var SB_TABLES = ["VendorMaster", "SKUMaster", "TransporterMaster", "Users", "Orders", "OrderItems", "Planning", "PlanItems", "GateEntry", "LoadItems", "Invoice", "GateOut", "POD", "PODItems", "Returns", "Collection", "Schedule", "ScheduleItems", "PO", "POItems", "SEN", "SENItems", "QC", "Receiving", "PurchaseReturn", "Payment", "Holidays", "FMS_O2C_Order", "FMS_O2C_Dispatch", "FMS_P2P_PO", "FMS_P2P_Inbound"];
+var SB_TABLES = ["VendorMaster", "SKUMaster", "TransporterMaster", "SupplierMaster", "RawMaterialMaster", "Users", "Orders", "OrderItems", "Planning", "PlanItems", "GateEntry", "LoadItems", "Invoice", "GateOut", "POD", "PODItems", "Returns", "Collection", "Schedule", "ScheduleItems", "PO", "POItems", "SEN", "SENItems", "QC", "Receiving", "PurchaseReturn", "Payment", "Holidays", "FMS_O2C_Order", "FMS_O2C_Dispatch", "FMS_P2P_PO", "FMS_P2P_Inbound"];
 var SBStore = (function(){
   var mem={}, loaded=false, queue=[];
   function hdrs(){ return { 'apikey':window.SUPABASE_KEY, 'Authorization':'Bearer '+window.SUPABASE_KEY, 'Content-Type':'application/json', 'Prefer':'return=minimal' }; }
@@ -110,6 +110,8 @@ const SHEETS = {
   VendorMaster:      ['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
   SKUMaster:         ['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate'],
   TransporterMaster: ['TransporterName','ContactNumber'],
+  SupplierMaster:    ['SupplierCode','SupplierName','Address','ContactPerson','Mobile','GST','CreditDays'],
+  RawMaterialMaster: ['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate'],
   Users:             ['Email','Name','Role','Password','Permissions','Status'],
   Orders:            ['OrderNo','OrderDate','VendorCode','VendorName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
   OrderItems:        ['OrderNo','SKUCode','SKUName','UOM','Qty','Rate','SGST','CGST','Taxable','TaxAmount','Amount'],
@@ -521,7 +523,9 @@ function ym_(){ return Utilities.formatDate(new Date(), Session.getScriptTimeZon
 /* SKU ka UOM master se — client kuch bheje ya na bheje, yahi final source hai */
 function uomOf_(skuCode){
   const s=readAll_('SKUMaster').find(function(x){ return String(x.SKUCode)===String(skuCode); });
-  return s ? (s.UOM||'') : '';
+  if(s) return s.UOM||'';
+  const r=readAll_('RawMaterialMaster').find(function(x){ return String(x.RMCode)===String(skuCode); });   // P2P raw material
+  return r ? (r.UOM||'') : '';
 }
 function fyTag_(){
   const d=new Date(); let y=d.getFullYear(); if(d.getMonth()<3) y=y-1;   // Jan–Mar belong to the previous FY (start-year tag)
@@ -600,12 +604,16 @@ function getMasters(){
   return {
     vendors:      readAll_('VendorMaster'),
     skus:         readAll_('SKUMaster'),
-    transporters: readAll_('TransporterMaster')
+    transporters: readAll_('TransporterMaster'),
+    suppliers:    readAll_('SupplierMaster'),
+    rawmaterials: readAll_('RawMaterialMaster')
   };
 }
 function saveVendor(v){ append_('VendorMaster', v); return getMasters().vendors; }
 function saveSKU(s){ append_('SKUMaster', s); return getMasters().skus; }
 function saveTransporter(t){ append_('TransporterMaster', t); return getMasters().transporters; }
+function saveSupplier(s){ append_('SupplierMaster', s); return getMasters().suppliers; }
+function saveRawMaterial(r){ append_('RawMaterialMaster', r); return getMasters().rawmaterials; }
 /* ================= USERS · AUTH · PERMISSIONS =================
  * Permissions ek JSON string me store hote hain: {"moduleId":"edit|view|none", ...}
  * Password frontend par SHA-256 hash hokar aata hai (plain password kabhi store nahi hota).
@@ -682,7 +690,9 @@ function deleteUser(email){
 const BULK_CFG = {
   VendorMaster:      { key:'VendorCode', required:['VendorCode','VendorName'] },
   SKUMaster:         { key:'SKUCode',    required:['SKUCode','SKUName'] },
-  TransporterMaster: { key:'TransporterCode', required:['TransporterCode','TransporterName'] }
+  TransporterMaster: { key:'TransporterCode', required:['TransporterCode','TransporterName'] },
+  SupplierMaster:    { key:'SupplierCode', required:['SupplierCode','SupplierName'] },
+  RawMaterialMaster: { key:'RMCode',       required:['RMCode','RMName'] }
 };
 /* rows = [{ColumnName:value, ...}]. Duplicates skip ho jate hain, baaki import. */
 function bulkImport(p){
@@ -709,6 +719,8 @@ function getBulkTemplate(table){ const cfg=BULK_CFG[table]; if(!cfg) throw new E
 function deleteVendor(code){ deleteWhere_('VendorMaster','VendorCode',code); return getMasters().vendors; }
 function deleteSKU(code){ deleteWhere_('SKUMaster','SKUCode',code); return getMasters().skus; }
 function deleteTransporter(name){ deleteWhere_('TransporterMaster','TransporterName',name); return getMasters().transporters; }
+function deleteSupplier(code){ deleteWhere_('SupplierMaster','SupplierCode',code); return getMasters().suppliers; }
+function deleteRawMaterial(code){ deleteWhere_('RawMaterialMaster','RMCode',code); return getMasters().rawmaterials; }
 
 
 /* ============================ DASHBOARD ========================== */
@@ -1709,7 +1721,7 @@ function fmsLog_(where,err){ try{ console.error('[FMS]',where,err); }catch(e){} 
 
 
 /* ---- API dispatcher used by the app ---- */
-var SB_FNS={getReportColumns:getReportColumns,emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
+var SB_FNS={saveSupplier:saveSupplier,saveRawMaterial:saveRawMaterial,deleteSupplier:deleteSupplier,deleteRawMaterial:deleteRawMaterial,getReportColumns:getReportColumns,emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
 
 var SBAPI={
   ready:null,
