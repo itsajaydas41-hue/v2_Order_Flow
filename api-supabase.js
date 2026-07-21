@@ -1511,6 +1511,44 @@ function getPODetail(poNo){
               TransportType:po.TransportType||'',NumVehicles:po.NumVehicles||0,DeductionCondition:po.DeductionCondition||'',PackingTerms:po.PackingTerms||'',Remarks:po.Remarks||'',
               Status:po.Status,TotalQty:po.TotalQty,TotalValue:po.TotalValue}, items:poItemsFor(poNo)};
 }
+/* PO ka poora safar: Created → Sent → har SEN (Gate In → QC → Received → Paid) */
+function getPOLifecycle(poNo){
+  const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return null;
+  const sens=readAll_('SEN').filter(s=>s.PONo===poNo).sort((a,b)=>new Date(a.CreatedAt||a.GateDate)-new Date(b.CreatedAt||b.GateDate));
+  const qcs=readAll_('QC').filter(q=>q.PONo===poNo);
+  const recv=readAll_('Receiving').filter(r=>r.PONo===poNo);
+  const pays=readAll_('Payment').filter(p=>p.PONo===poNo);
+  const senBlocks=sens.map(function(s){
+    const qc=qcs.find(q=>q.SENNo===s.SENNo);
+    const rc=recv.find(r=>r.SENNo===s.SENNo);
+    const py=pays.find(p=>p.SENNo===s.SENNo);
+    const items=readAll_('SENItems').filter(i=>i.SENNo===s.SENNo)
+      .map(i=>({SKU:i.SKUName,UOM:i.UOM||'',Qty:Number(i.ReceivedQty)||0}));
+    return {
+      senNo:s.SENNo, gateDate:fmtDate_(s.GateDate), gateTime:s.GateTime||'',
+      vehicleNo:s.VehicleNo||'', driver:s.DriverName||'', invoiceNo:s.InvoiceNo||'', status:s.Status,
+      items:items,
+      qc: qc?{status:qc.QCStatus, deduction:Number(qc.DeductionAmount)||0, inspector:qc.Inspector||'', date:fmtDate_(qc.QCDate), remarks:qc.Remarks||''}:null,
+      received: rc?{grnNo:rc.GRNNo, date:fmtDate_(rc.ReceiveDate), receiver:rc.ReceiverName||''}:null,
+      payment: py?{amount:Number(py.Amount)||0, date:fmtDate_(py.PayDate||py.PaymentDate), mode:py.PaymentMode||'', ref:py.RefNo||''}:null
+    };
+  });
+  // top-level stage progress
+  const stages=[
+    {key:'created', label:'PO Created', done:true, date:fmtDate_(po.PODate), sub:'By '+(po.CreatedBy||'—')},
+    {key:'sent',    label:'Sent to Supplier', done:po.Status!==PO_STATUS.DRAFT, date:'', sub:po.Status===PO_STATUS.DRAFT?'Not sent yet':''},
+    {key:'gate',    label:'Gate Entry (SEN)', done:sens.length>0, date:sens.length?fmtDate_(sens[0].GateDate):'', sub:sens.length?sens.length+' inward(s)':'Awaiting material'},
+    {key:'qc',      label:'QC Check', done:qcs.length>0, date:qcs.length?fmtDate_(qcs[0].QCDate):'', sub:qcs.length?qcs.length+' checked':''},
+    {key:'received',label:'Material Received', done:recv.length>0, date:recv.length?fmtDate_(recv[0].ReceiveDate):'', sub:recv.length?recv.length+' GRN(s)':''},
+    {key:'closed',  label:po.Status===PO_STATUS.CLOSED?'Closed':(po.Status===PO_STATUS.RECEIVED?'Fully Received':'In Progress'), done:[PO_STATUS.RECEIVED,PO_STATUS.CLOSED].indexOf(po.Status)>-1, date:'', sub:''}
+  ];
+  const totalRecv=poItemsFor(poNo).reduce((s,i)=>s+(i.AcceptedQty||0),0);
+  return {
+    poNo:po.PONo, supplier:po.SupplierName, broker:po.BrokerName||'', poDate:fmtDate_(po.PODate),
+    status:po.Status, totalQty:po.TotalQty, totalValue:po.TotalValue, receivedQty:totalRecv,
+    stages:stages, sens:senBlocks
+  };
+}
 
 /* ---- Gate Entry (SEN) ---- */
 function getPOsForGate(){
@@ -1728,7 +1766,7 @@ function fmsLog_(where,err){ try{ console.error('[FMS]',where,err); }catch(e){} 
 
 
 /* ---- API dispatcher used by the app ---- */
-var SB_FNS={saveSupplier:saveSupplier,saveRawMaterial:saveRawMaterial,deleteSupplier:deleteSupplier,deleteRawMaterial:deleteRawMaterial,getReportColumns:getReportColumns,emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
+var SB_FNS={getPOLifecycle:getPOLifecycle,saveSupplier:saveSupplier,saveRawMaterial:saveRawMaterial,deleteSupplier:deleteSupplier,deleteRawMaterial:deleteRawMaterial,getReportColumns:getReportColumns,emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
 
 var SBAPI={
   ready:null,
