@@ -1699,7 +1699,7 @@ function doSavePO(){
 function renderPOList(){
   view.innerHTML=head('Purchase Orders','Send POs to suppliers and track receipt','Purchases')+`<div id="poList"><div class="loading"><div class="spin"></div></div></div>`;
   api('getPOs').then(list=>{
-    document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard" data-polife="${p.PONo}"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+    document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard" data-polife="${p.PONo}"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div style="display:flex;gap:6px">
       <button class="btn btn-ghost btn-sm" data-popdf="${p.PONo}">📄 View PDF</button>
       ${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send →</button>`:''}
     </div></div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
@@ -2475,9 +2475,9 @@ document.addEventListener('click',e=>{
   const ual=e.target.closest('[data-uall]'); if(ual){ const v=ual.dataset.uall, em=ual.dataset.e;
     document.querySelectorAll(`.psel[data-e="${em}"]`).forEach(s=>{ if(s.disabled) return; s.value=v; s.className='psel p-'+v; });
     markDirty(em); return; }
-  const ppdf=e.target.closest('[data-popdf]'); if(ppdf){ event.stopPropagation(); viewPOPdf(ppdf.dataset.popdf); return; }
+  const sp=e.target.closest('[data-sendpo]'); if(sp){ doSendPO(sp.dataset.sendpo); return; }
+  const ppdf=e.target.closest('[data-popdf]'); if(ppdf){ viewPOPdf(ppdf.dataset.popdf); return; }
   const plife=e.target.closest('[data-polife]'); if(plife){ showPOLifecycle(plife.dataset.polife); return; }
-  const sp=e.target.closest('[data-sendpo]'); if(sp){ event.stopPropagation(); doSendPO(sp.dataset.sendpo);return;}
   const del=e.target.closest('[data-del]'); if(del){nItems.splice(+del.dataset.del,1);if(!nItems.length)nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
   if(e.target.closest('#addLi')){nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
 
