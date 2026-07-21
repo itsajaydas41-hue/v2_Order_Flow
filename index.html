@@ -406,6 +406,14 @@ body.dark .btn-primary:hover{background:#15803D}
 .cust-chk{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;flex:1}
 .cust-chk input{width:16px;height:16px}
 .cust-mv{display:flex;gap:4px}
+.modal-bg{position:fixed;inset:0;background:rgba(8,20,14,.55);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;backdrop-filter:blur(2px)}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:520px;box-shadow:0 24px 60px rgba(0,0,0,.35);max-height:90vh;overflow:auto}
+.modal-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
+.modal-h h3{font-size:15px;margin:0}
+.modal-x{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer;color:var(--t3);padding:0 4px}
+.modal-x:hover{color:var(--t1)}
+.modal-b{padding:16px 18px}
+
 .lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
   cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
 .lo-btn:hover{background:rgba(255,255,255,.10);color:#fff;border-color:rgba(255,255,255,.35)}
@@ -1596,6 +1604,10 @@ function renderPOCreate(){
           <div class="field"><label>PO Number</label><input class="inp" value="Auto (PO-${ym()}-###)" disabled></div>
         </div>
         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+        <div class="grid2">
+          <div class="field"><label>Broker Name</label><input class="inp" id="poBroker" placeholder="Auto from supplier (editable)"></div>
+          <div class="field"><label>Supplier Email</label><input class="inp" id="poEmail" type="email" placeholder="Auto from supplier (editable)"></div>
+        </div>
         <div id="poSupCard"></div>
       </div></div>
       <div class="sec"><h3>Raw Material Details</h3></div>
@@ -1610,7 +1622,10 @@ function renderPOCreate(){
     </div></div></div>`;
   renderPOLines();
   if(!v.length){ document.getElementById('poSupCard').innerHTML='<div class="empty" style="margin-top:8px">Koi supplier nahi mila — pehle Master Data → Supplier me add karein.</div>'; }
-  makeCombo(document.getElementById('poSup'),v,x=>x.SupplierName,vd=>{ window._poSup=vd; document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(vd.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.SupplierName}</div><div class="sub">${vd.SupplierCode} · ${vd.GST||'—'}</div></div></div>`; });
+  makeCombo(document.getElementById('poSup'),v,x=>x.SupplierName,vd=>{ window._poSup=vd;
+    const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
+    if(bk) bk.value=vd.BrokerName||''; if(em) em.value=vd.Email||'';
+    document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(vd.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.SupplierName}</div><div class="sub">${vd.SupplierCode} · ${vd.GST||'—'}${vd.BrokerName?' · Broker: '+vd.BrokerName:''}</div></div></div>`; });
   document.getElementById('poAddLi').onclick=()=>{poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18});renderPOLines();};
   document.getElementById('savePO').onclick=doSavePO;
 }
@@ -1632,7 +1647,7 @@ function doSavePO(){
   const items=poLines.filter(it=>it.skuCode&&(+it.qty>0));
   if(!items.length)return toast('Add at least one SKU with quantity',true);
   busy('savePO');
-  api('savePO',{supplierCode:window._poSup.SupplierCode,supplierName:window._poSup.SupplierName,poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
+  api('savePO',{supplierCode:window._poSup.SupplierCode,supplierName:window._poSup.SupplierName,brokerName:pval('poBroker'),supplierEmail:pval('poEmail'),poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
     .then(r=>{toast('PO created — '+r.poNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true));
 }
 
@@ -1643,7 +1658,127 @@ function renderPOList(){
     document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div>${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send to Supplier →</button>`:'<div class="arrow">'+I.chev+'</div>'}</div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
   });
 }
-function doSendPO(poNo){ api('sendPO',poNo).then(()=>{toast('PO sent to supplier');renderPOList();}).catch(err=>toast(err.message||'Failed',true)); }
+function doSendPO(poNo){
+  /* pehle PO ka poora detail lao, phir preview + PDF + email options dikhao */
+  api('getPODetail',poNo).then(d=>{ if(!d){toast('PO not found',true);return;} showPOSendModal(d); })
+    .catch(err=>toast(err.message||'Failed',true));
+}
+const COMPANY={ name:'Swastik Mills', addr:'Assam, India', gst:'', phone:'' };
+function poPdfHtml(d){
+  const p=d.po, items=d.items||[];
+  const rows=items.map((it,i)=>`<tr>
+    <td style="text-align:center">${i+1}</td>
+    <td>${it.SKUName||''}<div style="font-size:10px;color:#777">${it.SKUCode||''}</div></td>
+    <td style="text-align:center">${it.UOM||''}</td>
+    <td style="text-align:right">${it.POQty||it.Qty||0}</td>
+    <td style="text-align:right">₹${(Number(it.Rate)||0).toLocaleString('en-IN')}</td>
+    <td style="text-align:right">${it.GSTPercent||0}%</td>
+    <td style="text-align:right">₹${(Number(it.Amount)||0).toLocaleString('en-IN')}</td></tr>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${p.PONo}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+    body{padding:32px;color:#1a1a1a;font-size:13px}
+    .hd{display:flex;justify-content:space-between;border-bottom:3px solid #16A34A;padding-bottom:14px;margin-bottom:18px}
+    .hd h1{font-size:22px;color:#16A34A}.hd .sub{font-size:11px;color:#666;margin-top:3px}
+    .potag{text-align:right}.potag h2{font-size:18px}.potag .d{font-size:11px;color:#666;margin-top:4px}
+    .parties{display:flex;gap:20px;margin-bottom:18px}
+    .box{flex:1;border:1px solid #ddd;border-radius:6px;padding:12px}
+    .box h3{font-size:11px;text-transform:uppercase;color:#16A34A;margin-bottom:6px;letter-spacing:.5px}
+    .box .nm{font-weight:bold;font-size:14px;margin-bottom:3px}.box .ln{font-size:11px;color:#555;line-height:1.5}
+    table{width:100%;border-collapse:collapse;margin-bottom:16px}
+    th{background:#16A34A;color:#fff;padding:8px 6px;font-size:11px;text-align:left}
+    th.num,td[style*="right"]{text-align:right}
+    td{padding:7px 6px;border-bottom:1px solid #eee;font-size:12px}
+    .tot{display:flex;justify-content:flex-end}.tot table{width:280px}
+    .tot td{padding:5px 8px}.tot .g{font-weight:bold;font-size:15px;color:#16A34A;border-top:2px solid #16A34A}
+    .foot{margin-top:30px;border-top:1px solid #ddd;padding-top:12px;font-size:11px;color:#666}
+    .sign{margin-top:40px;display:flex;justify-content:space-between}
+    .sign div{width:200px;border-top:1px solid #333;padding-top:6px;font-size:11px;text-align:center}
+  </style></head><body>
+  <div class="hd">
+    <div><h1>${COMPANY.name}</h1><div class="sub">${COMPANY.addr}</div></div>
+    <div class="potag"><h2>PURCHASE ORDER</h2><div class="d"><b>${p.PONo}</b><br>Date: ${p.PODate}</div></div>
+  </div>
+  <div class="parties">
+    <div class="box"><h3>Supplier</h3>
+      <div class="nm">${p.SupplierName||''}</div>
+      <div class="ln">${p.SupplierAddress||''}${p.SupplierGST?'<br>GST: '+p.SupplierGST:''}${p.SupplierContact?'<br>Contact: '+p.SupplierContact:''}${p.SupplierMobile?' · '+p.SupplierMobile:''}${p.SupplierEmail?'<br>'+p.SupplierEmail:''}</div>
+    </div>
+    <div class="box"><h3>Order Info</h3>
+      <div class="ln"><b>PO No:</b> ${p.PONo}<br><b>Date:</b> ${p.PODate}${p.BrokerName?'<br><b>Broker:</b> '+p.BrokerName:''}<br><b>Status:</b> ${p.Status}</div>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th style="width:32px;text-align:center">#</th><th>Item</th><th style="text-align:center">UOM</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">GST</th><th style="text-align:right">Amount</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="tot"><table>
+    <tr><td>Total Quantity</td><td style="text-align:right">${p.TotalQty||0}</td></tr>
+    <tr class="g"><td>Grand Total (incl. GST)</td><td style="text-align:right">₹${(Number(p.TotalValue)||0).toLocaleString('en-IN')}</td></tr>
+  </table></div>
+  <div class="sign"><div>Prepared By</div><div>Authorised Signatory<br>${COMPANY.name}</div></div>
+  <div class="foot">This is a computer-generated purchase order. Please confirm receipt and expected delivery date.</div>
+  </body></html>`;
+}
+function openPOPdf(d){
+  const w=window.open('','_blank');
+  if(!w){ toast('Popup blocked — allow popups to open the PDF',true); return; }
+  w.document.write(poPdfHtml(d)); w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); }, 400);   // print dialog → "Save as PDF"
+}
+function poEmailBody(d){
+  const p=d.po;
+  const lines=(d.items||[]).map(it=>`  • ${it.SKUName} — ${it.POQty||it.Qty} ${it.UOM||''} @ ₹${(Number(it.Rate)||0).toLocaleString('en-IN')}`).join('\n');
+  return `Dear ${p.SupplierName},\n\n`+
+    `Please find our Purchase Order ${p.PONo} dated ${p.PODate}.\n\n`+
+    `Items:\n${lines}\n\n`+
+    `Total Quantity: ${p.TotalQty}\nGrand Total (incl. GST): ₹${(Number(p.TotalValue)||0).toLocaleString('en-IN')}\n\n`+
+    `${p.BrokerName?'Broker: '+p.BrokerName+'\n\n':''}`+
+    `Kindly confirm receipt and expected delivery date. The detailed PO (PDF) is attached.\n\n`+
+    `Regards,\n${COMPANY.name}`;
+}
+function showPOSendModal(d){
+  const p=d.po;
+  const email=p.SupplierEmail||'';
+  const subject=`Purchase Order ${p.PONo} — ${COMPANY.name}`;
+  const mailto=`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(poEmailBody(d).replace(/\\n/g,'\n'))}`;
+  const html=`<div class="modal-bg" id="poSendBg"><div class="modal" style="max-width:520px">
+    <div class="modal-h"><h3>Send PO — ${p.PONo}</h3><button class="modal-x" id="poSendX">&times;</button></div>
+    <div class="modal-b">
+      <div class="srow">Supplier <b>${p.SupplierName}</b></div>
+      ${p.BrokerName?`<div class="srow">Broker <b>${p.BrokerName}</b></div>`:''}
+      <div class="srow">Total <b class="tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</b></div>
+      <div class="field" style="margin-top:10px"><label>Supplier Email</label>
+        <input class="inp" id="poSendEmail" type="email" value="${email}" placeholder="supplier@company.com"></div>
+      <div style="font-size:12px;color:var(--t3);margin-top:6px">
+        1) <b>PDF banao</b> → print window khulega → "Save as PDF" chuno.<br>
+        2) <b>Email kholo</b> → aapke mail app me draft ban jayega → PDF attach karke bhej dein.
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-primary btn-sm" id="poGenPdf">📄 PDF banao</button>
+        <button class="btn btn-primary btn-sm" id="poOpenMail">✉ Email kholo</button>
+      </div>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <button class="btn btn-ok btn-sm" id="poMarkSent" style="width:100%">${I.check}Mark as Sent to Supplier</button>
+      </div>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const close=()=>{ const b=document.getElementById('poSendBg'); if(b) b.remove(); };
+  document.getElementById('poSendX').onclick=close;
+  document.getElementById('poSendBg').onclick=e=>{ if(e.target.id==='poSendBg') close(); };
+  document.getElementById('poGenPdf').onclick=()=>openPOPdf(d);
+  document.getElementById('poOpenMail').onclick=()=>{
+    const em=(document.getElementById('poSendEmail').value||'').trim();
+    if(!em){ toast('Email address daaliye',true); return; }
+    d.po.SupplierEmail=em;
+    const sub=`Purchase Order ${p.PONo} — ${COMPANY.name}`;
+    window.location.href=`mailto:${encodeURIComponent(em)}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(poEmailBody(d).replace(/\\n/g,'\n'))}`;
+  };
+  document.getElementById('poMarkSent').onclick=()=>{
+    api('sendPO',p.PONo).then(()=>{ toast('PO marked as sent'); close(); renderPOList(); })
+      .catch(err=>toast(err.message||'Failed',true));
+  };
+}
 
 /* ---- Gate Entry (SEN) ---- */
 function renderGateIn(arg){
@@ -1786,7 +1921,7 @@ const MASTER_CFG={
   Vendor:{fn:'saveVendor',delFn:'deleteVendor',key:'vendors',idCol:'VendorCode',req:['VendorCode','VendorName'],cols:['VendorCode','VendorName','ContactPerson','Mobile','GST','CreditDays','Address']},
   SKU:{fn:'saveSKU',delFn:'deleteSKU',key:'skus',idCol:'SKUCode',req:['SKUCode','SKUName'],cols:['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate']},
   Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']},
-  Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','ContactPerson','Mobile','GST','CreditDays','Address']},
+  Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','BrokerName','Email','ContactPerson','Mobile','GST','CreditDays','Address']},
   'Raw Material':{fn:'saveRawMaterial',delFn:'deleteRawMaterial',key:'rawmaterials',idCol:'RMCode',req:['RMCode','RMName'],cols:['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate']}
 };
 function masterFields(tab){
@@ -1810,6 +1945,8 @@ function masterFields(tab){
   if(tab==='Supplier') return `<div class="grid2">
     <div class="field"><label>Supplier Code <span class="rq">*</span></label><input class="inp" id="mf_SupplierCode" placeholder="SUP-0000"></div>
     <div class="field"><label>Supplier Name <span class="rq">*</span></label><input class="inp" id="mf_SupplierName" placeholder="Company name"></div>
+    <div class="field"><label>Broker Name</label><input class="inp" id="mf_BrokerName" placeholder="Broker / agent (optional)"></div>
+    <div class="field"><label>Email ID</label><input class="inp" id="mf_Email" type="email" placeholder="supplier@company.com"></div>
     <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
     <div class="field"><label>Mobile</label><input class="inp mob10" id="mf_Mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
     <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
@@ -1835,7 +1972,7 @@ function renderMasters(){
   let body='';
   if(masterTab==='Vendor') body=m.vendors.map(v=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#16A34A,#22C55E)">${(v.VendorName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${v.VendorName}</div><div class="b">${v.VendorCode} · ${v.GST||'—'}</div></div><button class="row-del" data-mdel="${v.VendorCode}" title="Remove vendor">${I.trash}</button></div>`).join('');
   else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%${s.UOM?' · '+s.UOM:''}</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
-  else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName}${s.BrokerName?' <span class="uomtag" style="background:rgba(124,58,237,.12);color:#7C3AED;border-color:rgba(124,58,237,.25)">Broker: '+s.BrokerName+'</span>':''}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.Email?' · '+s.Email:''}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
   else if(masterTab==='Raw Material') body=(m.rawmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#EA580C,#FB923C)">${I.box}</div><div class="um"><div class="a">${r.RMName}</div><div class="b">${r.RMCode} · ${r.Brand||'—'} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''}</div></div><button class="row-del" data-mdel="${r.RMCode}" title="Remove raw material">${I.trash}</button></div>`).join('');
   else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
   view.innerHTML=head('Master Data','Vendors, SKUs and transporters','Master Data')+`
