@@ -1441,6 +1441,7 @@ function renderReports(){
   document.getElementById('custBtn').addEventListener('click',toggleCustomise);
 }
 let reportData=[];
+let reportAllCols=[];   /* har report ke SAARE possible columns (backend se), data khaali ho tab bhi */
 /* ======= REPORT LAYOUT CUSTOMISATION (per report, saved in browser) ======= */
 function layoutKey(type){ return 'o2c-replayout-'+type; }
 function loadLayout(type){ try{ return JSON.parse(localStorage.getItem(layoutKey(type))||'null'); }catch(e){ return null; } }
@@ -1457,8 +1458,8 @@ function effectiveCols(allCols){
 function toggleCustomise(){
   const p=document.getElementById('custPanel'); if(!p) return;
   if(p.style.display==='block'){ p.style.display='none'; return; }
-  if(!reportData.length){ toast('Pehle report load hone dein',true); return; }
-  const allCols=Object.keys(reportData[0]);
+  const allCols=allReportCols();
+  if(!allCols.length){ toast('Pehle report load hone dein',true); return; }
   const cur=effectiveCols(allCols);
   p.style.display='block';
   p.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="card-p">
@@ -1509,7 +1510,16 @@ function wireCustomise(allCols){
 function visibleCols(allCols){ return effectiveCols(allCols).filter(c=>c.show).map(c=>c.name); }
 function loadReport(type){
   document.getElementById('repTable').innerHTML='<div class="loading"><div class="spin"></div></div>';
-  api('getReport',type).then(rows=>{ reportData=rows||[]; paintReport(); });
+  const p=document.getElementById('custPanel'); if(p){ p.style.display='none'; p.innerHTML=''; }
+  Promise.all([ api('getReport',type), api('getReportColumns',type).catch(()=>[]) ])
+    .then(([rows,cols])=>{ reportData=rows||[]; reportAllCols=(cols&&cols.length)?cols:(reportData[0]?Object.keys(reportData[0]):[]); paintReport(); });
+}
+/* saare possible columns — backend list + agar data me koi extra ho to wo bhi */
+function allReportCols(){
+  const fromData=reportData[0]?Object.keys(reportData[0]):[];
+  const base=(reportAllCols&&reportAllCols.length)?reportAllCols.slice():fromData.slice();
+  fromData.forEach(c=>{ if(base.indexOf(c)<0) base.push(c); });
+  return base;
 }
 function paintReport(){
   const host=document.getElementById('repTable'); if(!host) return;
@@ -1517,8 +1527,8 @@ function paintReport(){
   const q=(repFilter||'').toLowerCase().trim();
   const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
   if(!rows.length){host.innerHTML='<div class="empty">No rows match “'+repFilter+'”.</div>';return;}
-  const cols=visibleCols(Object.keys(rows[0]));
-  const fmt=(c,v)=>typeof v==='number'?(MONEY.test(c)?inr(v):v.toLocaleString('en-IN')):v;
+  const cols=visibleCols(allReportCols());
+  const fmt=(c,v)=>{ if(v===undefined||v===null||v==='') return ''; return typeof v==='number'?(MONEY.test(c)?inr(v):v.toLocaleString('en-IN')):v; };
   const isNum=c=>MONEY.test(c)||QTY.test(c);
   // totals for numeric columns
   const totals={}; cols.forEach(c=>{ if(isNum(c)) totals[c]=rows.reduce((s,r)=>s+(Number(r[c])||0),0); });
@@ -2264,8 +2274,8 @@ document.addEventListener('click',e=>{
     const q=(repFilter||'').toLowerCase().trim();
     const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
     if(!rows.length)return;
-    const cols=visibleCols(Object.keys(rows[0]));
-    const csv=[cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]).replace(/"/g,'""')}"`).join(','))].join('\n');
+    const cols=visibleCols(allReportCols());
+    const csv=[cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]==null?'':r[c]).replace(/"/g,'""')}"`).join(','))].join('\n');
     const blob=new Blob([csv],{type:'text/csv'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=curReport+(e.target.id==='expXls'?'.xls':'.csv');a.click();
     toast('Exported '+a.download);
