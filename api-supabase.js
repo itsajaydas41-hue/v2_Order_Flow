@@ -110,7 +110,7 @@ const SHEETS = {
   VendorMaster:      ['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
   SKUMaster:         ['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate'],
   TransporterMaster: ['TransporterName','ContactNumber'],
-  SupplierMaster:    ['SupplierCode','SupplierName','Address','ContactPerson','Mobile','GST','CreditDays'],
+  SupplierMaster:    ['SupplierCode','SupplierName','BrokerName','Email','Address','ContactPerson','Mobile','GST','CreditDays'],
   RawMaterialMaster: ['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate'],
   Users:             ['Email','Name','Role','Password','Permissions','Status'],
   Orders:            ['OrderNo','OrderDate','VendorCode','VendorName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
@@ -128,7 +128,7 @@ const SHEETS = {
   Schedule:          ['ScheduleNo','OrderNo','VendorName','PromisedDate','PromisedTime','Remarks','CreatedBy','CreatedAt'],
   ScheduleItems:     ['ScheduleNo','OrderNo','SKUCode','SKUName','UOM','OrderedQty','ScheduledQty'],
   /* ---- Purchase-to-Payment (P2P) ---- */
-  PO:                ['PONo','PODate','SupplierCode','SupplierName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
+  PO:                ['PONo','PODate','SupplierCode','SupplierName','BrokerName','SupplierEmail','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
   POItems:           ['PONo','SKUCode','SKUName','UOM','Qty','Rate','GSTPercent','Amount'],
   SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','InvoiceNo','Status','CreatedAt'],
   SENItems:          ['SENNo','PONo','SKUCode','SKUName','UOM','POQty','ReceivedQty'],
@@ -1484,7 +1484,7 @@ function savePO(p){
     return {PONo:poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(amt)};
   });
   const u=currentUser_();
-  append_('PO',{PONo:poNo,PODate:p.poDate||fmtDate_(new Date()),SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,TotalQty:tq,TotalValue:Math.round(tv),Status:PO_STATUS.DRAFT,CreatedBy:u.email,CreatedAt:new Date()});
+  append_('PO',{PONo:poNo,PODate:p.poDate||fmtDate_(new Date()),SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,BrokerName:p.brokerName||'',SupplierEmail:p.supplierEmail||'',TotalQty:tq,TotalValue:Math.round(tv),Status:PO_STATUS.DRAFT,CreatedBy:u.email,CreatedAt:new Date()});
   appendMany_('POItems',items);
   try{ const _n=new Date();
     fmsInit_('FMS_P2P_PO',{ Timestamp:_n, PONo:poNo, SupplierName:p.supplierName||'',
@@ -1492,8 +1492,8 @@ function savePO(p){
   }catch(fe){ fmsLog_('savePO FMS hook', fe); }
   return {poNo:poNo,totalValue:Math.round(tv)};
 }
-function getPOs(){ return readAll_('PO').reverse().map(p=>({PONo:p.PONo,PODate:fmtDate_(p.PODate),SupplierName:p.SupplierName,TotalQty:p.TotalQty,TotalValue:p.TotalValue,Status:p.Status})); }
-function sendPO(poNo){ const po=readAll_('PO').find(p=>p.PONo===poNo); if(po && po.Status===PO_STATUS.DRAFT) updateWhere_('PO','PONo',poNo,{Status:PO_STATUS.SENT});
+function getPOs(){ return readAll_('PO').reverse().map(p=>({PONo:p.PONo,PODate:fmtDate_(p.PODate),SupplierName:p.SupplierName,BrokerName:p.BrokerName||'',SupplierEmail:p.SupplierEmail||'',TotalQty:p.TotalQty,TotalValue:p.TotalValue,Status:p.Status})); }
+function sendPO(poNo){ const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) throw new Error('PO not found'); if(po.Status===PO_STATUS.DRAFT) updateWhere_('PO','PONo',poNo,{Status:PO_STATUS.SENT});
   try{ const _n=new Date();
     fmsStep_('FMS_P2P_PO','PONo',poNo,'Send',_n,null);
     const _r=fmsRow_('FMS_P2P_PO','PONo',poNo);
@@ -1502,7 +1502,11 @@ function sendPO(poNo){ const po=readAll_('PO').find(p=>p.PONo===poNo); if(po && 
   return getPOs(); }
 function getPODetail(poNo){
   const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return null;
-  return {po:{PONo:po.PONo,PODate:fmtDate_(po.PODate),SupplierName:po.SupplierName,Status:po.Status,TotalValue:po.TotalValue}, items:poItemsFor(poNo)};
+  const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode)) || {};
+  return {po:{PONo:po.PONo,PODate:fmtDate_(po.PODate),SupplierName:po.SupplierName,SupplierCode:po.SupplierCode,
+              BrokerName:po.BrokerName||'',SupplierEmail:po.SupplierEmail||sup.Email||'',
+              SupplierGST:sup.GST||'',SupplierAddress:sup.Address||'',SupplierContact:sup.ContactPerson||'',SupplierMobile:sup.Mobile||'',
+              Status:po.Status,TotalQty:po.TotalQty,TotalValue:po.TotalValue}, items:poItemsFor(poNo)};
 }
 
 /* ---- Gate Entry (SEN) ---- */
