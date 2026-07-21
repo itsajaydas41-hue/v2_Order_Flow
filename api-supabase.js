@@ -1457,7 +1457,9 @@ function poItemsFor(poNo){
   const acc=poAcceptedBySku_(poNo), pipe=poPipelineBySku_(poNo);
   return readAll_('POItems').filter(i=>i.PONo===poNo).map(i=>{
     const ordered=Number(i.Qty)||0, a=acc[i.SKUCode]||0, p=pipe[i.SKUCode]||0;
-    return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), POQty:ordered, Rate:Number(i.Rate)||0, GSTPercent:Number(i.GSTPercent)||0,
+    const rate=Number(i.Rate)||0, gst=Number(i.GSTPercent)||0;
+    const amount=(i.Amount!==undefined&&i.Amount!==null&&i.Amount!=='')?Number(i.Amount):Math.round(ordered*rate*(1+gst/100));
+    return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), POQty:ordered, Rate:rate, GSTPercent:gst, Amount:amount,
              AcceptedQty:a, InPipelineQty:p, RemainingQty:Math.max(ordered-a-p,0) };
   });
 }
