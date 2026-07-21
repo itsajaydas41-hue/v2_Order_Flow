@@ -413,6 +413,23 @@ body.dark .btn-primary:hover{background:#15803D}
 .modal-x{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer;color:var(--t3);padding:0 4px}
 .modal-x:hover{color:var(--t1)}
 .modal-b{padding:16px 18px}
+.lc-wrap{margin:14px 0 6px;padding:4px 0}
+.lc-stage{display:flex;gap:12px;align-items:flex-start}
+.lc-dot{width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:2px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;font-weight:800}
+.lc-dot.on{background:var(--indigo);border-color:var(--indigo)}
+.lc-line{width:2px;height:16px;background:var(--line);margin-left:12px}
+.lc-line.on{background:var(--indigo)}
+.lc-body{padding-top:2px;padding-bottom:2px}
+.lc-lbl{font-size:13px;font-weight:700;color:var(--t1)}
+.lc-lbl.pend{color:var(--t3);font-weight:600}
+.lc-sub{font-size:11.5px;color:var(--t2);margin-top:1px}
+.lc-sen{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.lc-sen-h{background:var(--surface-2);padding:9px 12px;display:flex;align-items:center;gap:8px}
+.lc-sen-b{padding:10px 12px}
+.lc-step{font-size:11.5px;margin-top:6px;padding:5px 9px;border-radius:6px;background:var(--surface-2);color:var(--t2);font-weight:600}
+.lc-step.ok{background:var(--ok-bg);color:var(--ok)}
+.lc-step.bad{background:var(--err-bg,rgba(220,38,38,.12));color:var(--err,#DC2626)}
+.lc-step.pend{opacity:.7}
 
 .lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
   cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
@@ -1682,7 +1699,10 @@ function doSavePO(){
 function renderPOList(){
   view.innerHTML=head('Purchase Orders','Send POs to suppliers and track receipt','Purchases')+`<div id="poList"><div class="loading"><div class="spin"></div></div></div>`;
   api('getPOs').then(list=>{
-    document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div>${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send to Supplier →</button>`:'<div class="arrow">'+I.chev+'</div>'}</div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
+    document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard" data-polife="${p.PONo}"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+      <button class="btn btn-ghost btn-sm" data-popdf="${p.PONo}">📄 View PDF</button>
+      ${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send →</button>`:''}
+    </div></div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
   });
 }
 function doSendPO(poNo){
@@ -1849,6 +1869,67 @@ function openPOPdf(d){
   if(!w){ toast('Popup blocked — allow popups to open the PDF',true); return; }
   w.document.write(poPdfHtml(d)); w.document.close();
   setTimeout(()=>{ w.focus(); w.print(); }, 400);   // print dialog → "Save as PDF"
+}
+/* PDF sirf VIEW karo (print dialog nahi) — ek button "Print / Save PDF" ke saath */
+function viewPOPdf(poNo){
+  api('getPODetail',poNo).then(d=>{
+    if(!d){ toast('PO not found',true); return; }
+    const w=window.open('','_blank');
+    if(!w){ toast('Popup blocked — allow popups to view the PDF',true); return; }
+    const bar=`<div style="position:sticky;top:0;background:#14532D;padding:10px 16px;display:flex;gap:10px;justify-content:flex-end;z-index:99">
+      <button onclick="window.print()" style="background:#fff;color:#14532D;border:0;border-radius:6px;padding:8px 16px;font-weight:700;cursor:pointer;font-family:Arial">🖨 Print / Save as PDF</button>
+      <button onclick="window.close()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:6px;padding:8px 16px;cursor:pointer;font-family:Arial">Close</button>
+    </div>`;
+    const htmlDoc=poPdfHtml(d).replace('<body>','<body><style>@media print{.viewbar{display:none}}</style><div class="viewbar">'+bar+'</div>');
+    w.document.write(htmlDoc); w.document.close(); w.focus();
+  }).catch(err=>toast(err.message||'Failed',true));
+}
+/* PO lifecycle timeline modal */
+function showPOLifecycle(poNo){
+  api('getPOLifecycle',poNo).then(L=>{
+    if(!L){ toast('PO not found',true); return; }
+    const dot=(done)=>`<div class="lc-dot ${done?'on':''}">${done?'✓':''}</div>`;
+    const stages=L.stages.map((s,i)=>`<div class="lc-stage">
+      ${dot(s.done)}
+      <div class="lc-body">
+        <div class="lc-lbl ${s.done?'':'pend'}">${s.label}</div>
+        ${s.date?`<div class="lc-sub">${s.date}${s.sub?' · '+s.sub:''}</div>`:(s.sub?`<div class="lc-sub">${s.sub}</div>`:'')}
+      </div>
+    </div>${i<L.stages.length-1?`<div class="lc-line ${s.done?'on':''}"></div>`:''}`).join('');
+    const senBlocks=L.sens.length?L.sens.map(s=>`
+      <div class="lc-sen">
+        <div class="lc-sen-h"><b>${s.senNo}</b> <span class="badge ${poBadge(s.status)}" style="font-size:10px">${s.status}</span></div>
+        <div class="lc-sen-b">
+          <div class="srow">Gate In <b>${s.gateDate} ${s.gateTime}</b></div>
+          ${s.vehicleNo?`<div class="srow">Vehicle <b>${s.vehicleNo}</b>${s.driver?' · '+s.driver:''}</div>`:''}
+          ${s.invoiceNo?`<div class="srow">Supplier Invoice <b>${s.invoiceNo}</b></div>`:''}
+          ${s.items.map(it=>`<div class="srow" style="color:var(--t2)">• ${it.SKU} — ${it.Qty} ${it.UOM}</div>`).join('')}
+          ${s.qc?`<div class="lc-step ${s.qc.status==='QC Passed'?'ok':(s.qc.status==='QC Rejected'?'bad':'')}">QC: ${s.qc.status}${s.qc.deduction?' · Deduction ₹'+s.qc.deduction.toLocaleString('en-IN'):''}${s.qc.date?' · '+s.qc.date:''}</div>`:'<div class="lc-step pend">QC pending</div>'}
+          ${s.received?`<div class="lc-step ok">Received: ${s.received.grnNo} · ${s.received.date}${s.received.receiver?' · '+s.received.receiver:''}</div>`:''}
+          ${s.payment?`<div class="lc-step ok">Paid: ₹${s.payment.amount.toLocaleString('en-IN')} · ${s.payment.mode}${s.payment.date?' · '+s.payment.date:''}</div>`:''}
+        </div>
+      </div>`).join(''):'<div class="empty" style="padding:14px">Abhi tak koi material inward nahi hua.</div>';
+    const html=`<div class="modal-bg" id="lcBg"><div class="modal" style="max-width:600px">
+      <div class="modal-h"><h3>PO Lifecycle — ${L.poNo}</h3><button class="modal-x" id="lcX">&times;</button></div>
+      <div class="modal-b">
+        <div class="srow">Supplier <b>${L.supplier}</b>${L.broker?' · Broker: '+L.broker:''}</div>
+        <div class="srow">PO Date <b>${L.poDate}</b> · Status <span class="badge ${poBadge(L.status)}">${L.status}</span></div>
+        <div class="srow">Value <b class="tnum">${inr(L.totalValue)}</b> · Ordered ${L.totalQty} · Received ${L.receivedQty}</div>
+        <div class="lc-wrap">${stages}</div>
+        <div class="sec" style="margin:6px 0 8px"><h3>Inward Details</h3></div>
+        ${senBlocks}
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-primary btn-sm" id="lcPdf">📄 View PO PDF</button>
+          <button class="btn btn-ghost btn-sm" id="lcClose">Close</button>
+        </div>
+      </div></div></div>`;
+    document.body.insertAdjacentHTML('beforeend',html);
+    const close=()=>{ const b=document.getElementById('lcBg'); if(b) b.remove(); };
+    document.getElementById('lcX').onclick=close;
+    document.getElementById('lcClose').onclick=close;
+    document.getElementById('lcBg').onclick=e=>{ if(e.target.id==='lcBg') close(); };
+    document.getElementById('lcPdf').onclick=()=>viewPOPdf(poNo);
+  }).catch(err=>toast(err.message||'Failed',true));
 }
 function poEmailBody(d){
   const p=d.po;
@@ -2394,7 +2475,9 @@ document.addEventListener('click',e=>{
   const ual=e.target.closest('[data-uall]'); if(ual){ const v=ual.dataset.uall, em=ual.dataset.e;
     document.querySelectorAll(`.psel[data-e="${em}"]`).forEach(s=>{ if(s.disabled) return; s.value=v; s.className='psel p-'+v; });
     markDirty(em); return; }
-  const sp=e.target.closest('[data-sendpo]'); if(sp){doSendPO(sp.dataset.sendpo);return;}
+  const ppdf=e.target.closest('[data-popdf]'); if(ppdf){ event.stopPropagation(); viewPOPdf(ppdf.dataset.popdf); return; }
+  const plife=e.target.closest('[data-polife]'); if(plife){ showPOLifecycle(plife.dataset.polife); return; }
+  const sp=e.target.closest('[data-sendpo]'); if(sp){ event.stopPropagation(); doSendPO(sp.dataset.sendpo);return;}
   const del=e.target.closest('[data-del]'); if(del){nItems.splice(+del.dataset.del,1);if(!nItems.length)nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
   if(e.target.closest('#addLi')){nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
 
