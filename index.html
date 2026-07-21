@@ -443,8 +443,8 @@ body.dark{--nb:#39493F}
 .fnode .fv.zero{color:var(--t3)}
 .fnode .fl{font-size:10.5px;color:var(--t2);margin-top:6px;font-weight:600;line-height:1.3}
 /* sliding green line, one node after another */
-.fnode::after{content:'';position:absolute;left:-34px;top:50;transform: translateY(-50%);width:34px;height:3px; background:var(--indigo);border-radius:2px;
-  animation:fslide var(--cyc,10.5s) linear infinite;animation-delay:var(--dly,0s);opacity:0}
+.fnode::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:34px;background:var(--indigo);border-radius:2px;
+  animation:fslide var(--cyc,6.5s) linear infinite;animation-delay:var(--dly,0s);opacity:0}
 @keyframes fslide{0%{transform:translateX(-34px);opacity:0}3%{opacity:1}14%{transform:translateX(150px);opacity:0}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.fnode::after{animation:none}}
 /* style D1 — neutral border, green on hover */
@@ -463,8 +463,8 @@ body.dark{--nb:#39493F}
 .dv2-bar rect{transition:.15s}
 .dv2-bar:hover rect{opacity:.75}
 .dv2-bar.sel rect{stroke:var(--t1);stroke-width:2}
-.dv2-lbl{font-size:8px;fill:var(--t2);text-anchor:middle}
-.dv2-val{font-size:8.5px;fill:var(--t1);text-anchor:middle;font-weight:700}
+.dv2-lbl{font-size:9px;fill:var(--t2);text-anchor:middle}
+.dv2-val{font-size:9.5px;fill:var(--t1);text-anchor:middle;font-weight:700}
 .dv2-axis{stroke:var(--line)}
 .dv2-line{fill:none;stroke:var(--indigo);stroke-width:2}
 .dv2-dot{fill:var(--indigo)}
@@ -862,28 +862,28 @@ function dv2Flow(nodes){
 }
 function dv2Bars(series, selM){
   const mx=Math.max(1,...series.monthly.map(x=>x.count));
-  const W=560,H=150,bw=22,gap=(W-40-12*bw)/11;
+  const W=560,H=172,bw=25,gap=(W-40-12*bw)/11;
   let bars='';
   series.monthly.forEach((m,i)=>{
-    const h=Math.round((m.count/mx)*92), x=30+i*(bw+gap), y=116-h;
+    const h=Math.round((m.count/mx)*106), x=30+i*(bw+gap), y=134-h;
     bars+=`<g class="dv2-bar ${i===selM?'sel':''}" data-m="${i}">
       <rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="4" fill="${['#3B82F6','#F59E0B','#22C55E','#8B5CF6','#EF4444','#3B82F6','#F97316','#14B8A6','#E11D48','#6366F1','#84CC16','#0EA5E9'][i]}"></rect>
       ${m.count?`<text class="dv2-val" x="${x+bw/2}" y="${y-4}">${m.count}</text>`:''}
-      <text class="dv2-lbl" x="${x+bw/2}" y="134">${DV2_M[i]}</text></g>`;
+      <text class="dv2-lbl" x="${x+bw/2}" y="153">${DV2_M[i]}</text></g>`;
   });
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:560px"><line class="dv2-axis" x1="26" y1="116" x2="${W-8}" y2="116"/>${bars}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:620px"><line class="dv2-axis" x1="26" y1="134" x2="${W-8}" y2="134"/>${bars}</svg>`;
 }
 function dv2Weekly(series, m){
   const wk=series.weekly[m]||[0,0,0,0,0];
   const mx=Math.max(1,...wk);
-  const W=560,H=132,x0=50,x1=W-20,y0=100,step=(x1-x0)/4;
-  const pts=wk.map((v,i)=>[x0+i*step, y0-Math.round((v/mx)*70)]);
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px">
+  const W=560,H=152,x0=50,x1=W-20,y0=118,step=(x1-x0)/4;
+  const pts=wk.map((v,i)=>[x0+i*step, y0-Math.round((v/mx)*84)]);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:680px">
     <line class="dv2-axis" x1="${x0-10}" y1="${y0}" x2="${x1}" y2="${y0}"/>
     <polyline class="dv2-line" points="${pts.map(p=>p.join(',')).join(' ')}"/>
-    ${pts.map((p,i)=>`<circle class="dv2-dot" cx="${p[0]}" cy="${p[1]}" r="3.2"></circle>
-      <text class="dv2-val" x="${p[0]}" y="${p[1]-8}">${wk[i]?('₹'+dv2K(wk[i])):''}</text>
-      <text class="dv2-lbl" x="${p[0]}" y="${y0+14}">${i+1} week</text>`).join('')}
+    ${pts.map((p,i)=>`<circle class="dv2-dot" cx="${p[0]}" cy="${p[1]}" r="3.6"></circle>
+      <text class="dv2-val" x="${p[0]}" y="${p[1]-9}">${wk[i]?('₹'+dv2K(wk[i])):''}</text>
+      <text class="dv2-lbl" x="${p[0]}" y="${y0+15}">${i+1} week</text>`).join('')}
   </svg>`;
 }
 function dv2Donut(d){
