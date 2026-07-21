@@ -117,7 +117,7 @@ const SHEETS = {
   PlanItems:         ['PlanNo','OrderNo','SKUCode','SKUName','UOM','PlannedQty'],
   GateEntry:         ['GateEntryNo','PlanNo','OrderNo','GateDate','GateTime','VehicleNo','DriverName','MobileNo','DLNo','RCNo','TransporterName','Status'],
   LoadItems:         ['GateEntryNo','PlanNo','OrderNo','SKUCode','SKUName','UOM','PlannedQty','DispatchQty'],
-  Invoice:           ['GateEntryNo','OrderNo','InvoiceNo','InvoiceDate','InvoiceAmount','FileUrl','Status','CreatedAt'],
+  Invoice:           ['GateEntryNo','OrderNo','InvoiceNo','InvoiceDate','InvoiceAmount','InvoiceWeight','FileUrl','Status','CreatedAt'],
   GateOut:           ['GateEntryNo','OrderNo','VehicleNo','DriverName','InvoiceNo','InvoiceVerified','LRVerified','VehicleVerified','DocsVerified','WeighmentDone','GateOutDate','GateOutTime','Status'],
   POD:               ['GateEntryNo','OrderNo','DeliveryDate','ReceiverName','ReceiverMobile','GrossWeight','NetWeight','PartyNetWeight','FileUrl','Remarks','HasReturn','Status'],
   PODItems:          ['GateEntryNo','OrderNo','SKUCode','SKUName','UOM','LoadedQty','DeliveredQty','RejectedQty'],
@@ -1066,6 +1066,7 @@ function saveInvoice(p){
   if (p.file && p.file.base64) url = uploadFile_(p.file.base64, p.file.name, p.file.mime);
   append_('Invoice', { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, InvoiceNo:p.invoiceNo,
                        InvoiceDate:p.invoiceDate, InvoiceAmount:Number(p.invoiceAmount)||0,
+                       InvoiceWeight:Number(p.invoiceWeight)||0,
                        FileUrl:url, Status:'Invoice Generated', CreatedAt:new Date() });
   // advance this gate entry so it drops out of the Invoice list and becomes eligible for Gate Out
   updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Invoice Generated' });
@@ -1286,7 +1287,7 @@ function getReport(type){
     case 'DispatchPlanning': return readAll_('Planning');
     case 'GateEntry':      return readAll_('GateEntry');
     case 'GateOut':        return readAll_('GateOut');
-    case 'InvoiceRegister':{ const D=rptDates_(); return readAll_('Invoice').map(i=>({ InvoiceNo:i.InvoiceNo, OrderNo:i.OrderNo, GateEntryNo:i.GateEntryNo, CreatedDate:fmtDate_(i.CreatedAt), OrderDate:D.order(i.OrderNo), InvoiceDate:fmtDate_(i.InvoiceDate), DeliveryDate:D.delivery(i.OrderNo), CollectionDate:D.collection(i.OrderNo), Amount:Number(i.InvoiceAmount)||0, Status:i.Status||'' })); }
+    case 'InvoiceRegister':{ const D=rptDates_(); return readAll_('Invoice').map(i=>({ InvoiceNo:i.InvoiceNo, OrderNo:i.OrderNo, GateEntryNo:i.GateEntryNo, CreatedDate:fmtDate_(i.CreatedAt), OrderDate:D.order(i.OrderNo), InvoiceDate:fmtDate_(i.InvoiceDate), DeliveryDate:D.delivery(i.OrderNo), CollectionDate:D.collection(i.OrderNo), Amount:Number(i.InvoiceAmount)||0, InvoiceWeight:Number(i.InvoiceWeight)||0, Status:i.Status||'' })); }
     case 'POD':            return podRows_();            // SKU-level delivered / rejected
     case 'CollectionRegister':{ const D=rptDates_(); return readAll_('Collection').map(cl=>({ CollectionNo:cl.CollectionNo, OrderNo:cl.OrderNo, InvoiceNo:cl.InvoiceNo, Vendor:cl.VendorName, CreatedDate:fmtDate_(cl.CreatedAt), OrderDate:D.order(cl.OrderNo), DeliveryDate:D.delivery(cl.OrderNo), CollectionDate:fmtDate_(cl.CollectionDate), InvoiceAmount:Number(cl.InvoiceAmount)||0, Collected:Number(cl.CollectionAmount)||0, Deduction:Number(cl.DeductionAmount)||0, ActualReceived:Number(cl.ActualReceived)||0, Mode:cl.PaymentMode||'', RefNo:cl.RefNo||'' })); }
     case 'Outstanding':    return outstandingReport_();
