@@ -1587,7 +1587,7 @@ function renderP2PDashboard(){
 let poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}];
 function renderPOCreate(){
   poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; window._poSup=null;
-  const v=STATE.masters.vendors;
+  const v=STATE.masters.suppliers||[];
   view.innerHTML=head('Purchase Order','Raise a PO to a supplier','Purchases')+`
     <div class="two-col"><div>
       <div class="card"><div class="card-p">
@@ -1598,7 +1598,7 @@ function renderPOCreate(){
         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
         <div id="poSupCard"></div>
       </div></div>
-      <div class="sec"><h3>SKU Details</h3></div>
+      <div class="sec"><h3>Raw Material Details</h3></div>
       <div id="poLiWrap"></div>
       <button class="btn btn-add" id="poAddLi">${I.plus}Add Row</button>
     </div>
@@ -1609,18 +1609,19 @@ function renderPOCreate(){
       <button class="btn btn-primary" id="savePO" style="margin-top:14px">${I.check}Create PO</button>
     </div></div></div>`;
   renderPOLines();
-  makeCombo(document.getElementById('poSup'),v,x=>x.VendorName,vd=>{ window._poSup=vd; document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${vd.VendorName.slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.VendorName}</div><div class="sub">${vd.VendorCode} · ${vd.GST||'—'}</div></div></div>`; });
+  if(!v.length){ document.getElementById('poSupCard').innerHTML='<div class="empty" style="margin-top:8px">Koi supplier nahi mila — pehle Master Data → Supplier me add karein.</div>'; }
+  makeCombo(document.getElementById('poSup'),v,x=>x.SupplierName,vd=>{ window._poSup=vd; document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(vd.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.SupplierName}</div><div class="sub">${vd.SupplierCode} · ${vd.GST||'—'}</div></div></div>`; });
   document.getElementById('poAddLi').onclick=()=>{poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18});renderPOLines();};
   document.getElementById('savePO').onclick=doSavePO;
 }
 function renderPOLines(){
   const wrap=document.getElementById('poLiWrap');
   wrap.innerHTML=poLines.map((it,i)=>`<div class="li">
-    <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp poSkuIn" data-posku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}${it.uom?' · <b class="uomtag">'+it.uom+'</b>':''}</div></div><button class="li-del" data-podel="${i}">${I.trash}</button></div>
+    <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp poSkuIn" data-posku="${i}" placeholder="Search raw material…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}${it.uom?' · <b class="uomtag">'+it.uom+'</b>':''}</div></div><button class="li-del" data-podel="${i}">${I.trash}</button></div>
     <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr"><div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-pof="qty" data-poi="${i}"></div><div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" value="${it.rate}" data-pof="rate" data-poi="${i}"></div><div class="f"><label>GST %</label><input type="number" value="${it.gst}" data-pof="gst" data-poi="${i}"></div></div>
     <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)}</span><b>${inr(it.qty*it.rate*(1+it.gst/100))}</b></div></div>`).join('');
   recalcPO();
-  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.skus,x=>x.SKUName,m=>{ poLines[i].skuName=m.SKUName; poLines[i].skuCode=m.SKUCode; poLines[i].rate=m.Rate; poLines[i].uom=m.UOM||''; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
+  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.rawmaterials||[],x=>x.RMName,m=>{ poLines[i].skuName=m.RMName; poLines[i].skuCode=m.RMCode; poLines[i].rate=m.Rate; poLines[i].uom=m.UOM||''; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
   wrap.querySelectorAll('[data-pof]').forEach(inp=>inp.addEventListener('input',e=>{ poLines[e.target.dataset.poi][e.target.dataset.pof]=+e.target.value||0; recalcPO(); }));
   wrap.querySelectorAll('[data-podel]').forEach(b=>b.addEventListener('click',()=>{ poLines.splice(+b.dataset.podel,1); if(!poLines.length)poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18}); renderPOLines(); }));
 }
@@ -1631,7 +1632,7 @@ function doSavePO(){
   const items=poLines.filter(it=>it.skuCode&&(+it.qty>0));
   if(!items.length)return toast('Add at least one SKU with quantity',true);
   busy('savePO');
-  api('savePO',{supplierCode:window._poSup.VendorCode,supplierName:window._poSup.VendorName,poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
+  api('savePO',{supplierCode:window._poSup.SupplierCode,supplierName:window._poSup.SupplierName,poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
     .then(r=>{toast('PO created — '+r.poNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true));
 }
 
@@ -1784,7 +1785,9 @@ let masterTab='Vendor';
 const MASTER_CFG={
   Vendor:{fn:'saveVendor',delFn:'deleteVendor',key:'vendors',idCol:'VendorCode',req:['VendorCode','VendorName'],cols:['VendorCode','VendorName','ContactPerson','Mobile','GST','CreditDays','Address']},
   SKU:{fn:'saveSKU',delFn:'deleteSKU',key:'skus',idCol:'SKUCode',req:['SKUCode','SKUName'],cols:['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate']},
-  Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']}
+  Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']},
+  Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','ContactPerson','Mobile','GST','CreditDays','Address']},
+  'Raw Material':{fn:'saveRawMaterial',delFn:'deleteRawMaterial',key:'rawmaterials',idCol:'RMCode',req:['RMCode','RMName'],cols:['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate']}
 };
 function masterFields(tab){
   if(tab==='Vendor') return `<div class="grid2">
@@ -1804,6 +1807,23 @@ function masterFields(tab){
     <div class="field"><label>GST %</label><input class="inp" type="number" id="mf_GSTPercent" value="18"></div>
     <div class="field"><label>Rate</label><input class="inp" type="number" id="mf_Rate" placeholder="0"></div>
     </div>`;
+  if(tab==='Supplier') return `<div class="grid2">
+    <div class="field"><label>Supplier Code <span class="rq">*</span></label><input class="inp" id="mf_SupplierCode" placeholder="SUP-0000"></div>
+    <div class="field"><label>Supplier Name <span class="rq">*</span></label><input class="inp" id="mf_SupplierName" placeholder="Company name"></div>
+    <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
+    <div class="field"><label>Mobile</label><input class="inp mob10" id="mf_Mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+    <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
+    <div class="field"><label>Payment Terms (Credit Days)</label><input class="inp" type="number" id="mf_CreditDays" placeholder="e.g. 30"></div>
+    </div><div class="field"><label>Address</label><textarea class="inp" id="mf_Address" placeholder="Street, city"></textarea></div>`;
+  if(tab==='Raw Material') return `<div class="grid2">
+    <div class="field"><label>Raw Material Code <span class="rq">*</span></label><input class="inp" id="mf_RMCode" placeholder="RM-0000"></div>
+    <div class="field"><label>Raw Material Name <span class="rq">*</span></label><input class="inp" id="mf_RMName"></div>
+    <div class="field"><label>Brand</label><input class="inp" id="mf_Brand"></div>
+    <div class="field"><label>Category</label><input class="inp" id="mf_Category"></div>
+    <div class="field"><label>UOM</label><input class="inp" id="mf_UOM" placeholder="Kg / Nos / Ton"></div>
+    <div class="field"><label>GST %</label><input class="inp" type="number" id="mf_GSTPercent" value="18"></div>
+    <div class="field"><label>Rate</label><input class="inp" type="number" id="mf_Rate" placeholder="0"></div>
+    </div>`;
   return `<div class="grid2">
     <div class="field"><label>Transporter Name <span class="rq">*</span></label><input class="inp" id="mf_TransporterName"></div>
     <div class="field"><label>Contact Number</label><input class="inp mob10" id="mf_ContactNumber" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
@@ -1811,10 +1831,12 @@ function masterFields(tab){
 }
 function renderMasters(){
   const m=STATE.masters;
-  const seg=['Vendor','SKU','Transporter'].map(t=>`<button class="${t===masterTab?'on':''}" data-mtab="${t}">${t}</button>`).join('');
+  const seg=['Vendor','SKU','Transporter','Supplier','Raw Material'].map(t=>`<button class="${t===masterTab?'on':''}" data-mtab="${t}">${t}</button>`).join('');
   let body='';
   if(masterTab==='Vendor') body=m.vendors.map(v=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#16A34A,#22C55E)">${(v.VendorName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${v.VendorName}</div><div class="b">${v.VendorCode} · ${v.GST||'—'}</div></div><button class="row-del" data-mdel="${v.VendorCode}" title="Remove vendor">${I.trash}</button></div>`).join('');
-  else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
+  else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%${s.UOM?' · '+s.UOM:''}</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Raw Material') body=(m.rawmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#EA580C,#FB923C)">${I.box}</div><div class="um"><div class="a">${r.RMName}</div><div class="b">${r.RMCode} · ${r.Brand||'—'} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''}</div></div><button class="row-del" data-mdel="${r.RMCode}" title="Remove raw material">${I.trash}</button></div>`).join('');
   else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
   view.innerHTML=head('Master Data','Vendors, SKUs and transporters','Master Data')+`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
@@ -1862,13 +1884,15 @@ function renderMasters(){
   document.getElementById('dlTemplate').onclick=e=>{ e.preventDefault(); downloadTemplate(); };
 }
 /* ================= BULK UPLOAD ================= */
-const BULK_TABLE={Vendor:'VendorMaster',SKU:'SKUMaster',Transporter:'TransporterMaster'};
+const BULK_TABLE={Vendor:'VendorMaster',SKU:'SKUMaster',Transporter:'TransporterMaster',Supplier:'SupplierMaster','Raw Material':'RawMaterialMaster'};
 const BULK_COLS={
   VendorMaster:['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
   SKUMaster:['SKUCode','SKUName','Brand','Category','UOM','Rate','GSTPercent'],
-  TransporterMaster:['TransporterCode','TransporterName','ContactPerson','ContactNumber','Address']
+  TransporterMaster:['TransporterCode','TransporterName','ContactPerson','ContactNumber','Address'],
+  SupplierMaster:['SupplierCode','SupplierName','Address','ContactPerson','Mobile','GST','CreditDays'],
+  RawMaterialMaster:['RMCode','RMName','Brand','Category','UOM','Rate','GSTPercent']
 };
-const BULK_REQ={VendorMaster:['VendorCode','VendorName'],SKUMaster:['SKUCode','SKUName'],TransporterMaster:['TransporterCode','TransporterName']};
+const BULK_REQ={VendorMaster:['VendorCode','VendorName'],SKUMaster:['SKUCode','SKUName'],TransporterMaster:['TransporterCode','TransporterName'],SupplierMaster:['SupplierCode','SupplierName'],RawMaterialMaster:['RMCode','RMName']};
 let BULK_ROWS=[];
 function downloadTemplate(){
   const t=BULK_TABLE[masterTab], cols=BULK_COLS[t];
