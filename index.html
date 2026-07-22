@@ -430,6 +430,11 @@ body.dark .btn-primary:hover{background:#15803D}
 .lc-step.ok{background:var(--ok-bg);color:var(--ok)}
 .lc-step.bad{background:var(--err-bg,rgba(220,38,38,.12));color:var(--err,#DC2626)}
 .lc-step.pend{opacity:.7}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
+.dgrid>div{display:flex;flex-direction:column;padding:4px 0;border-bottom:1px solid var(--line)}
+.dgrid .dk{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
+.dgrid .dv{font-size:13px;font-weight:600;color:var(--t1);margin-top:1px}
+@media(max-width:640px){.dgrid{grid-template-columns:1fr}}
 
 .lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
   cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
@@ -2067,16 +2072,57 @@ function renderReceiving(arg){
     if(arg)loadRc(arg);
   });
 }
+function rcDetailCard(d){
+  return `<div class="card" style="margin-bottom:12px"><div class="card-p">
+    <div class="sec" style="margin:0 0 8px"><h3>${d.senNo} · Purchase Details</h3>
+      <span class="badge ${poBadge(d.status)}" style="font-size:11px">${d.status}</span></div>
+    <div class="dgrid">
+      <div><span class="dk">PO Number</span><span class="dv">${d.poNo}</span></div>
+      <div><span class="dk">PO Date</span><span class="dv">${d.poDate||'—'}</span></div>
+      <div><span class="dk">SEN Number</span><span class="dv">${d.senNo}</span></div>
+      <div><span class="dk">Gate In</span><span class="dv">${d.gateDate||'—'} ${d.gateTime||''}</span></div>
+      <div><span class="dk">Supplier</span><span class="dv">${d.supplierName}</span></div>
+      <div><span class="dk">Broker</span><span class="dv">${d.brokerName||'—'}</span></div>
+      <div><span class="dk">Supplier Code</span><span class="dv">${d.supplierCode||'—'}</span></div>
+      <div><span class="dk">GST</span><span class="dv">${d.supplierGST||'—'}</span></div>
+      <div><span class="dk">Contact</span><span class="dv">${d.supplierContact||'—'}${d.supplierMobile?' · '+d.supplierMobile:''}</span></div>
+      <div><span class="dk">Total PO Qty</span><span class="dv">${(d.totalPOQty||0).toLocaleString('en-IN')}</span></div>
+      <div><span class="dk">Vehicle</span><span class="dv">${d.vehicleNo||'—'}${d.driverName?' · '+d.driverName:''}</span></div>
+      <div><span class="dk">Supplier Invoice</span><span class="dv">${d.invoiceNo||'—'}</span></div>
+      ${d.transportType?`<div><span class="dk">Transport</span><span class="dv">${d.transportType}${d.numVehicles?' · '+d.numVehicles+' veh':''}</span></div>`:''}
+      ${d.deductionCondition?`<div><span class="dk">Deduction Cond.</span><span class="dv">${d.deductionCondition}</span></div>`:''}
+      ${d.packingTerms?`<div><span class="dk">Packing</span><span class="dv">${d.packingTerms}</span></div>`:''}
+    </div>
+    <div style="border-top:1px solid var(--line);margin:10px 0 6px"></div>
+    <table class="tbl" style="width:100%"><thead><tr><th>Item</th><th>UOM</th><th class="num">Received Qty</th><th class="num">PO Rate</th></tr></thead>
+    <tbody>${d.items.map(it=>`<tr><td>${it.SKUName}<div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${(it.ReceivedQty||0).toLocaleString('en-IN')}</td><td class="num">${inr(it.Rate)}</td></tr>`).join('')}</tbody></table>
+    <div class="srow" style="border-top:1px solid var(--line);margin-top:8px;padding-top:9px">Value (incl. GST) <b class="tnum" style="color:var(--indigo)">${inr(d.value)}</b>${d.qcStatus?` · QC: <b>${d.qcStatus}</b>${d.deduction?' · Deduction '+inr(d.deduction):''}`:''}</div>
+  </div></div>`;
+}
 function loadRc(senNo){
   api('getSENSheet',senNo).then(d=>{ if(!d)return; window._rcData=d;
-    document.getElementById('rcForm').innerHTML=`${senCard(d)}${d.qcStatus?`<div class="psub" style="margin:-4px 2px 10px">QC result: <b>${d.qcStatus}</b>${d.deduction?` · Deduction ${inr(d.deduction)}`:''}</div>`:''}
+    document.getElementById('rcForm').innerHTML=`${rcDetailCard(d)}
+      <div class="sec"><h3>Weighment (KG)</h3></div>
+      <div class="grid2">
+        <div class="field"><label>Factory Gross Weight (KG)</label><input class="inp tnum" id="rcGross" type="number" step="0.001" placeholder="0.000"></div>
+        <div class="field"><label>Factory Tare Weight (KG)</label><input class="inp tnum" id="rcTare" type="number" step="0.001" placeholder="0.000"></div>
+        <div class="field"><label>Factory Net Weight (KG)</label><input class="inp tnum" id="rcNet" type="number" step="0.001" placeholder="Auto = Gross − Tare"></div>
+        <div class="field"><label>Party Net Weight (KG)</label><input class="inp tnum" id="rcPartyNet" type="number" step="0.001" placeholder="0.000"></div>
+      </div>
       <div class="grid2"><div class="field"><label>Received By</label><input class="inp" id="rcBy" placeholder="Store keeper"></div><div class="field"><label>Date</label><input class="inp" type="date" id="rcDate" value="${today()}"></div></div>
       <div class="field"><label>Remarks</label><textarea class="inp" id="rcRem"></textarea></div>
       <button class="btn btn-primary" id="saveRc">${I.check}Confirm Material Received</button>`;
     document.getElementById('saveRc').onclick=doSaveReceiving;
+    /* Net = Gross − Tare auto */
+    const recalc=()=>{ const g=+pval('rcGross')||0, t=+pval('rcTare')||0, net=document.getElementById('rcNet'); if(net && !net.dataset.touched) net.value=Math.max(g-t,0).toFixed(3); };
+    ['rcGross','rcTare'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',recalc); });
+    const netEl=document.getElementById('rcNet'); if(netEl) netEl.addEventListener('input',()=>{ netEl.dataset.touched='1'; });
   });
 }
-function doSaveReceiving(){ if(!window._rcData)return; busy('saveRc'); api('saveReceiving',{senNo:window._rcData.senNo,receiverName:pval('rcBy'),remarks:pval('rcRem')}).then(r=>{toast('Material received — '+r.grnNo);go('p2p_payment');}).catch(err=>toast(err.message||'Failed',true)); }
+function doSaveReceiving(){ if(!window._rcData)return; busy('saveRc');
+  api('saveReceiving',{senNo:window._rcData.senNo,receiverName:pval('rcBy'),
+    factoryGross:+pval('rcGross')||0,factoryTare:+pval('rcTare')||0,factoryNet:+pval('rcNet')||0,partyNet:+pval('rcPartyNet')||0,
+    remarks:pval('rcRem')}).then(r=>{toast('Material received — '+r.grnNo);go('p2p_payment');}).catch(err=>toast(err.message||'Failed',true)); }
 
 /* ---- Material Return ---- */
 function renderMatReturn(arg){
