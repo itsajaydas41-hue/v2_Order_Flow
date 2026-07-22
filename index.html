@@ -1921,7 +1921,8 @@ function showPOLifecycle(poNo){
       <div class="modal-b">
         <div class="srow">Supplier <b>${L.supplier}</b>${L.broker?' · Broker: '+L.broker:''}</div>
         <div class="srow">PO Date <b>${L.poDate}</b> · Status <span class="badge ${poBadge(L.status)}">${L.status}</span></div>
-        <div class="srow">Value <b class="tnum">${inr(L.totalValue)}</b> · Ordered ${L.totalQty} · Received ${L.receivedQty}</div>
+        <div class="srow">Value <b class="tnum">${inr(L.totalValue)}</b> · Ordered ${(L.totalQty||0).toLocaleString('en-IN')}</div>
+        <div class="srow">Received (net) <b class="tnum">${(L.receivedQty||0).toLocaleString('en-IN')}</b> · Pending ${Math.max((L.totalQty||0)-(L.receivedQty||0),0).toLocaleString('en-IN')} · Vehicles in ${L.vehiclesReceived||0}</div>
         <div class="lc-wrap">${stages}</div>
         <div class="sec" style="margin:6px 0 8px"><h3>Inward Details</h3></div>
         ${senBlocks}
