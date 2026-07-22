@@ -791,6 +791,7 @@ const NAV_TREE=[
       {route:'returnentry',label:'Return Gate Entry'},{route:'returnreceived',label:'Return Received'}
     ]},
     {label:'P2P',children:[
+      {route:'p2p_stock',label:'PM Stock Report'},{route:'p2p_pr',label:'Purchase Requisition'},{route:'p2p_quote',label:'Quotations'},
       {route:'p2p_po',label:'Purchase Order'},{route:'p2p_polist',label:'PO List / Send'},{route:'p2p_gate',label:'Gate Entry (SEN)'},
       {route:'p2p_qc',label:'QC Check'},{route:'p2p_receiving',label:'Material Received'},{route:'p2p_return',label:'Material Return'}
     ]}
@@ -1659,10 +1660,11 @@ function renderPOCreate(){
           <div class="psub" id="poQuoteHint" style="margin-top:4px">Quotations page par select ki hui quotation yahan aayegi.</div></div>
         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
         <div class="grid2">
-          <div class="field"><label>Broker Name</label><input class="inp" id="poBroker" placeholder="Auto from supplier (editable)"></div>
+          <div class="field" id="poBrokerWrap"><label>Broker Name</label><input class="inp" id="poBroker" placeholder="Auto from supplier (editable)"></div>
           <div class="field"><label>Supplier Email</label><input class="inp" id="poEmail" type="email" placeholder="Auto from supplier (editable)"></div>
         </div>
         <div id="poSupCard"></div>
+        <div id="poRMBlock">
         <div style="border-top:1px solid var(--line);margin:12px 0"></div>
         <div class="grid2">
           <div class="field"><label>Transport Type</label>
@@ -1689,9 +1691,10 @@ function renderPOCreate(){
               <option>Others</option>
             </select></div>
         </div>
+        </div>
         <div class="field"><label>Remarks</label><input class="inp" id="poRemarks" placeholder="Optional"></div>
       </div></div>
-      <div class="sec"><h3>Raw Material Details</h3></div>
+      <div class="sec"><h3 id="poItemsTitle">Raw Material Details</h3></div>
       <div id="poLiWrap"></div>
       <button class="btn btn-add" id="poAddLi">${I.plus}Add Row</button>
     </div>
@@ -1706,6 +1709,10 @@ function renderPOCreate(){
   document.getElementById('poMatType').addEventListener('change',e=>{
     const isPM=e.target.value==='Packing Material';
     document.getElementById('poQuoteWrap').style.display=isPM?'block':'none';
+    /* Packing material me broker/transport/deduction/packing terms ki zaroorat nahi */
+    const bw=document.getElementById('poBrokerWrap'); if(bw) bw.style.display=isPM?'none':'';
+    const rb=document.getElementById('poRMBlock');    if(rb) rb.style.display=isPM?'none':'';
+    const ti=document.getElementById('poItemsTitle'); if(ti) ti.textContent=isPM?'Packing Material Details':'Raw Material Details';
     /* supplier dropdown usi type ka */
     const list=suppliersOfType(isPM?'Packing Material':'Raw Material');
     window._poSup=null;
@@ -1719,7 +1726,8 @@ function renderPOCreate(){
         window._selQuotes=list;
         if(!list.length) document.getElementById('poQuoteHint').textContent='Koi selected quotation nahi mili — pehle Quotations page par ek quotation select karein.';
       });
-    } else { window._poQuote=null; poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; renderPOLines(); }
+    } else { window._poQuote=null; }
+    poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; renderPOLines(); recalcPO();
   });
   document.getElementById('poQuote').addEventListener('change',e=>{
     const q=(window._selQuotes||[]).find(x=>x.QuoteNo===e.target.value);
@@ -1755,7 +1763,13 @@ function renderPOLines(){
     <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr"><div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-pof="qty" data-poi="${i}"></div><div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" value="${it.rate}" data-pof="rate" data-poi="${i}"></div><div class="f"><label>GST %</label><input type="number" value="${it.gst}" data-pof="gst" data-poi="${i}"></div></div>
     <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)}</span><b>${inr(it.qty*it.rate*(1+it.gst/100))}</b></div></div>`).join('');
   recalcPO();
-  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.rawmaterials||[],x=>x.RMName,m=>{ poLines[i].skuName=m.RMName; poLines[i].skuCode=m.RMCode; poLines[i].rate=m.Rate; poLines[i].uom=m.UOM||''; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
+  /* Material type ke hisaab se item list: PM → packing materials, warna raw materials */
+  const isPM=(document.getElementById('poMatType')||{}).value==='Packing Material';
+  const list=isPM?(STATE.masters.packingmaterials||[]):(STATE.masters.rawmaterials||[]);
+  const NM=x=>isPM?x.PMName:x.RMName, CD=x=>isPM?x.PMCode:x.RMCode;
+  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku;
+    inp.placeholder = isPM?'Search packing material…':'Search raw material…';
+    makeCombo(inp,list,NM,m=>{ poLines[i].skuName=NM(m); poLines[i].skuCode=CD(m); poLines[i].rate=m.Rate; poLines[i].uom=m.UOM||''; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
   wrap.querySelectorAll('[data-pof]').forEach(inp=>inp.addEventListener('input',e=>{ poLines[e.target.dataset.poi][e.target.dataset.pof]=+e.target.value||0; recalcPO(); }));
   wrap.querySelectorAll('[data-podel]').forEach(b=>b.addEventListener('click',()=>{ poLines.splice(+b.dataset.podel,1); if(!poLines.length)poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18}); renderPOLines(); }));
 }
