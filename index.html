@@ -1447,7 +1447,7 @@ function loadCollection(orderNo){
 }
 
 /* ---------- REPORTS ---------- */
-const REPORTS=[['SKULedger','SKU Ledger (all)'],['OrderRegister','Order Register'],['OpenOrders','Open Orders (SKU)'],['ClosedOrders','Closed Orders (SKU)'],['PartialOrders','Partial Orders (SKU)'],['InvoicePending','Invoice Pending (SKU)'],['POD','POD Report (SKU)'],['DispatchPlanning','Dispatch Planning'],['GateEntry','Gate Entry'],['GateOut','Gate Out'],['InvoiceRegister','Invoice Register'],['CollectionRegister','Collection Register'],['Outstanding','Outstanding'],['PartyCollection','Party-wise Collection']];
+const REPORTS=[['SKULedger','SKU Ledger (all)'],['OrderRegister','Order Register'],['OpenOrders','Open Orders (SKU)'],['ClosedOrders','Closed Orders (SKU)'],['PartialOrders','Partial Orders (SKU)'],['InvoicePending','Invoice Pending (SKU)'],['POD','POD Report (SKU)'],['DispatchPlanning','Dispatch Planning'],['GateEntry','Gate Entry'],['GateOut','Gate Out'],['InvoiceRegister','Invoice Register'],['CollectionRegister','Collection Register'],['Outstanding','Outstanding'],['PartyCollection','Party-wise Collection'],['POReport','PO Report'],['QCStatusReport','QC Status Report'],['GRNReport','GRN / Receiving Report'],['ReturnReport','Return / Rejected Report'],['POStatusReport','PO Status Report']];
 let curReport='SKULedger', repFilter='';
 const MONEY=/^(Value|Amount|Invoiced|Collected|Outstanding|Rate|InvoiceAmount|CollectionAmount|TotalValue)$/;
 const QTY=/^(Ordered|Planned|Dispatched|Delivered|Rejected|Pending|Loaded|Qty|PlannedQty|DispatchQty)$/;
@@ -1938,22 +1938,23 @@ function showPOLifecycle(poNo){
 }
 function poEmailBody(d){
   const p=d.po;
-  const lines=(d.items||[]).map(it=>`  • ${it.SKUName} — ${it.POQty||it.Qty} ${it.UOM||''} @ ₹${(Number(it.Rate)||0).toLocaleString('en-IN')}`).join('\n');
-  return `Dear ${p.SupplierName},\n\n`+
-    `Please find our Purchase Order ${p.PONo} dated ${p.PODate}.\n\n`+
-    `Items:\n${lines}\n\n`+
-    `Transport: ${p.TransportType||'-'} · Vehicles/Wagons: ${p.NumVehicles||'-'}\n`+
-    `Deduction: ${p.DeductionCondition||'-'} · Packing: ${p.PackingTerms||'-'}\n`+
-    `${p.BrokerName?'Broker: '+p.BrokerName+'\n':''}\n`+
-    `Total Quantity: ${p.TotalQty}\nNet Payable: Rs. ${(Number(p.TotalValue)||0).toLocaleString('en-IN')}\n\n`+
-    `Kindly confirm receipt and expected delivery date. The detailed PO (PDF) is attached.\n\n`+
-    `Regards,\n${COMPANY.name}`;
+  const NL='\n';
+  const lines=(d.items||[]).map(it=>'  - '+(it.SKUName||'')+' - '+(it.POQty||it.Qty||0)+' '+(it.UOM||'')+' @ Rs.'+(Number(it.Rate)||0).toLocaleString('en-IN')).join(NL);
+  return 'Dear '+(p.SupplierName||'')+','+NL+NL+
+    'Please find our Purchase Order '+p.PONo+' dated '+p.PODate+'.'+NL+NL+
+    'Items:'+NL+lines+NL+NL+
+    'Transport: '+(p.TransportType||'-')+' | Vehicles/Wagons: '+(p.NumVehicles||'-')+NL+
+    'Deduction: '+(p.DeductionCondition||'-')+' | Packing: '+(p.PackingTerms||'-')+NL+
+    (p.BrokerName?('Broker: '+p.BrokerName+NL):'')+NL+
+    'Total Quantity: '+(p.TotalQty||0)+NL+
+    'Net Payable: Rs. '+(Number(p.TotalValue)||0).toLocaleString('en-IN')+NL+NL+
+    'Kindly confirm receipt and expected delivery date. The detailed PO (PDF) is attached.'+NL+NL+
+    'Regards,'+NL+COMPANY.name;
 }
 function showPOSendModal(d){
   const p=d.po;
   const email=p.SupplierEmail||'';
   const subject=`Purchase Order ${p.PONo} — ${COMPANY.name}`;
-  const mailto=`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(poEmailBody(d).replace(/\\n/g,'\n'))}`;
   const html=`<div class="modal-bg" id="poSendBg"><div class="modal" style="max-width:520px">
     <div class="modal-h"><h3>Send PO — ${p.PONo}</h3><button class="modal-x" id="poSendX">&times;</button></div>
     <div class="modal-b">
@@ -1963,12 +1964,12 @@ function showPOSendModal(d){
       <div class="field" style="margin-top:10px"><label>Supplier Email</label>
         <input class="inp" id="poSendEmail" type="email" value="${email}" placeholder="supplier@company.com"></div>
       <div style="font-size:12px;color:var(--t3);margin-top:6px">
-        1) <b>PDF banao</b> → print window khulega → "Save as PDF" chuno.<br>
-        2) <b>Email kholo</b> → aapke mail app me draft ban jayega → PDF attach karke bhej dein.
+        1) <b>PDF</b> → print window khulega → "Save as PDF" chuno.<br>
+        2) <b>Email</b> → aapke mail app me draft ban jayega → PDF attach karke bhej dein.
       </div>
       <div class="btn-row" style="margin-top:14px">
-        <button class="btn btn-primary btn-sm" id="poGenPdf">📄 PDF banao</button>
-        <button class="btn btn-primary btn-sm" id="poOpenMail">✉ Email kholo</button>
+        <button class="btn btn-primary btn-sm" id="poGenPdf">📄 PDF</button>
+        <button class="btn btn-primary btn-sm" id="poOpenMail">✉ Email</button>
       </div>
       <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
         <button class="btn btn-ok btn-sm" id="poMarkSent" style="width:100%">${I.check}Mark as Sent to Supplier</button>
@@ -1982,9 +1983,16 @@ function showPOSendModal(d){
   document.getElementById('poOpenMail').onclick=()=>{
     const em=(document.getElementById('poSendEmail').value||'').trim();
     if(!em){ toast('Email address daaliye',true); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ toast('Valid email address daaliye',true); return; }
     d.po.SupplierEmail=em;
-    const sub=`Purchase Order ${p.PONo} — ${COMPANY.name}`;
-    window.location.href=`mailto:${encodeURIComponent(em)}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(poEmailBody(d).replace(/\\n/g,'\n'))}`;
+    const sub='Purchase Order '+p.PONo+' - '+COMPANY.name;
+    /* anchor click sabse bharosemand hai — window.location.href kayi browsers me block ho jata hai */
+    const url='mailto:'+em+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(poEmailBody(d));
+    const a=document.createElement('a');
+    a.href=url; a.style.display='none'; document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ a.remove(); }, 500);
+    toast('Mail app khul raha hai — na khule to email copy karke bhej dein');
   };
   document.getElementById('poMarkSent').onclick=()=>{
     api('sendPO',p.PONo).then(()=>{ toast('PO marked as sent'); close(); renderPOList(); })
@@ -2011,21 +2019,24 @@ function loadGatePO(poNo){
       <div class="grid2">
         <div class="field"><label>Vehicle Number</label><input class="inp" id="genVeh" placeholder="MH-00-XX-0000"></div>
         <div class="field"><label>Driver Name</label><input class="inp" id="genDrv"></div>
+        <div class="field"><label>Driver Mobile No.</label><input class="inp mob10" id="genMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
         <div class="field"><label>Supplier Invoice No.</label><input class="inp" id="genInv" placeholder="INV-000000"></div>
       </div>
-      <div class="sec"><h3>Received Quantity (partial allowed)</h3></div>
-      <div class="tbl-wrap"><table class="tbl seltbl"><thead><tr><th>SKU</th><th>UOM</th><th class="num">PO Qty</th><th class="num">Remaining</th><th class="num">Receiving Now</th></tr></thead>
-      <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${it.POQty}</td><td class="num">${it.RemainingQty}</td><td class="num"><input class="qin" type="number" value="${it.RemainingQty}" min="0" max="${it.RemainingQty}" data-gen="${i}"></td></tr>`).join('')}</tbody></table></div>
+      <div class="sec"><h3>Material Details</h3><span style="font-size:11.5px;color:var(--t3)">Actual weighment Receiving page par hoga</span></div>
+      <div class="tbl-wrap"><table class="tbl seltbl"><thead><tr><th>SKU</th><th>UOM</th><th class="num">PO Qty</th></tr></thead>
+      <tbody>${d.items.map(it=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${(it.POQty||0).toLocaleString('en-IN')}</td></tr>`).join('')}</tbody></table></div>
       <button class="btn btn-primary" id="saveGen" style="margin-top:14px">${I.check}Record Gate Entry & Generate SEN</button>`;
     document.getElementById('saveGen').onclick=doSaveGateIn;
   });
 }
 function doSaveGateIn(){
   const d=window._genData; if(!d)return;
-  const items=d.items.map((it,i)=>{const inp=document.querySelector(`[data-gen="${i}"]`);return {skuCode:it.SKUCode,skuName:it.SKUName,poQty:it.POQty,receivedQty:inp?Math.min(+inp.value||0,it.RemainingQty):0};}).filter(x=>x.receivedQty>0);
-  if(!items.length)return toast('Enter received quantity for at least one SKU',true);
+  /* qty ab gate par nahi li jaati — poori remaining qty inward maani jaati hai, actual weighment Receiving par */
+  const items=d.items.map(it=>({skuCode:it.SKUCode,skuName:it.SKUName,poQty:it.POQty,receivedQty:it.RemainingQty})).filter(x=>x.receivedQty>0);
+  if(!items.length)return toast('Is PO par koi pending quantity nahi hai',true);
+  if(!checkMobileField('genMob','Driver mobile',false)) return;
   busy('saveGen');
-  api('saveGateEntryIn',{poNo:d.poNo,supplierName:d.supplierName,vehicleNo:pval('genVeh'),driverName:pval('genDrv'),invoiceNo:pval('genInv'),items:items})
+  api('saveGateEntryIn',{poNo:d.poNo,supplierName:d.supplierName,vehicleNo:pval('genVeh'),driverName:pval('genDrv'),driverMobile:pval('genMob'),invoiceNo:pval('genInv'),items:items})
     .then(r=>{toast('Gate entry recorded — '+r.senNo);go('p2p_qc');}).catch(err=>toast(err.message||'Failed',true));
 }
 
@@ -2047,17 +2058,35 @@ function loadQC(senNo){
     document.getElementById('qcForm').innerHTML=`${senCard(d)}
       <div class="sec"><h3>QC Result</h3></div>
       <div class="qc-opts">${['Accept','Accept with Deduction','Reject'].map(o=>`<button class="qc-opt" data-qc="${o}">${o}</button>`).join('')}</div>
+      <div id="qcParams" style="display:none">
+        <div class="sec"><h3>Quality Parameters</h3></div>
+        <div class="grid3">
+          <div class="field"><label>HL (Hectoliter Weight)</label><input class="inp tnum" id="qcHL" type="number" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Moisture (%)</label><input class="inp tnum" id="qcMoist" type="number" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Infestation</label><input class="inp" id="qcInfest" placeholder="Nil / Low / High"></div>
+          <div class="field"><label>Gluten (%)</label><input class="inp tnum" id="qcGluten" type="number" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Foreign Matter</label><input class="inp" id="qcFM" placeholder="e.g. 0.5%"></div>
+          <div class="field"><label>KB</label><input class="inp" id="qcKB" placeholder="KB value"></div>
+        </div>
+      </div>
       <div id="qcDeduct" style="display:none"><div class="field"><label>Deduction Amount (₹)</label><input class="inp tnum" type="number" id="qcDed" placeholder="0"></div></div>
       <div class="field"><label>Remarks</label><textarea class="inp" id="qcRem" placeholder="Inspection notes…"></textarea></div>
       <button class="btn btn-primary" id="saveQC">${I.check}Submit QC</button>`;
-    document.querySelectorAll('[data-qc]').forEach(b=>b.onclick=()=>{ qcChoice=b.dataset.qc; document.querySelectorAll('.qc-opt').forEach(x=>x.classList.toggle('on',x===b)); document.getElementById('qcDeduct').style.display=qcChoice==='Accept with Deduction'?'block':'none'; });
+    document.querySelectorAll('[data-qc]').forEach(b=>b.onclick=()=>{ qcChoice=b.dataset.qc;
+      document.querySelectorAll('.qc-opt').forEach(x=>x.classList.toggle('on',x===b));
+      document.getElementById('qcDeduct').style.display=qcChoice==='Accept with Deduction'?'block':'none';
+      /* Accept ya Accept with Deduction par quality parameters dikhao */
+      document.getElementById('qcParams').style.display=(qcChoice==='Accept'||qcChoice==='Accept with Deduction')?'block':'none';
+    });
     document.getElementById('saveQC').onclick=doSaveQC;
   });
 }
 function doSaveQC(){
   if(!window._qcData)return; if(!qcChoice)return toast('Select a QC result',true);
   busy('saveQC');
-  api('saveQC',{senNo:window._qcData.senNo,qcStatus:qcChoice,deductionAmount:qcChoice==='Accept with Deduction'?(+pval('qcDed')||0):0,remarks:pval('qcRem')})
+  api('saveQC',{senNo:window._qcData.senNo,qcStatus:qcChoice,deductionAmount:qcChoice==='Accept with Deduction'?(+pval('qcDed')||0):0,
+    hl:pval('qcHL'),moisture:pval('qcMoist'),infestation:pval('qcInfest'),gluten:pval('qcGluten'),foreignMatter:pval('qcFM'),kb:pval('qcKB'),
+    remarks:pval('qcRem')})
     .then(()=>{toast('QC saved — '+qcChoice);go(qcChoice==='Reject'?'p2p_return':'p2p_receiving');}).catch(err=>toast(err.message||'Failed',true));
 }
 
