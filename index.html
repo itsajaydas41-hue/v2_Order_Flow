@@ -1822,12 +1822,27 @@ function amtWords(n){
 function poPdfHtml(d){
   const p=d.po, items=d.items||[];
   const GREEN='#1F7A3D', GREENDK='#14532D', CREAM='#F7F5EF', INK='#1a1a1a';
-  const rows=items.map((it,i)=>`<tr>
+  const isPM = (p.MaterialType==='Packing Material');
+  const money=v=>(Number(v)||0).toLocaleString('en-IN',{minimumFractionDigits:2});
+  let sumTaxable=0, sumTax=0, gstSet={};
+  items.forEach(function(it){
+    const q=Number(it.POQty||it.Qty||0), r=Number(it.Rate)||0, g=Number(it.GSTPercent)||0;
+    const tx=q*r; sumTaxable+=tx; sumTax+=tx*g/100; if(g) gstSet[g]=1;
+  });
+  const gstLabel=Object.keys(gstSet).length===1?Object.keys(gstSet)[0]+'%':'Mixed';
+  const rows=items.map(function(it,i){
+    const q=Number(it.POQty||it.Qty||0), r=Number(it.Rate)||0, g=Number(it.GSTPercent)||0;
+    const tx=q*r, tax=tx*g/100;
+    return `<tr>
     <td style="text-align:center">${i+1}</td>
     <td><b>${it.SKUName||''}</b>${it.SKUCode?'<div style="font-size:9.5px;color:#888">'+it.SKUCode+'</div>':''}</td>
-    <td style="text-align:right">${(Number(it.POQty||it.Qty||0)).toLocaleString('en-IN')} ${it.UOM||''}</td>
-    <td style="text-align:right">Rs. ${(Number(it.Rate)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
-    <td style="text-align:right">${(Number(it.Amount)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('');
+    <td style="text-align:right">${q.toLocaleString('en-IN')} ${it.UOM||''}</td>
+    <td style="text-align:right">Rs. ${money(r)}</td>`+
+    (isPM?`<td style="text-align:right">${g}%</td>
+    <td style="text-align:right">${money(tx)}</td>
+    <td style="text-align:right">${money(tax)}</td>`:'')+
+    `<td style="text-align:right">${money(it.Amount)}</td></tr>`;
+  }).join('');
   const infoRow=(k,v)=>`<tr><td class="k">${k}</td><td class="v">${v||'-'}</td></tr>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${p.PONo}</title>
   <style>
@@ -1900,8 +1915,10 @@ function poPdfHtml(d){
     <div class="strip">
       <div class="c"><div class="l">PO Number</div><div class="v">${p.PONo}</div></div>
       <div class="c"><div class="l">PO Date</div><div class="v">${p.PODate}</div></div>
-      <div class="c"><div class="l">Transport Type</div><div class="v">${p.TransportType||'-'}</div></div>
-      <div class="c"><div class="l">No. of Vehicles</div><div class="v">${p.NumVehicles||'-'}</div></div>
+      ${isPM?`<div class="c"><div class="l">PR Number</div><div class="v">${p.PRNo||'-'}</div></div>
+      <div class="c"><div class="l">Expected Delivery</div><div class="v">${p.ExpectedDeliveryDate||'-'}</div></div>`
+      :`<div class="c"><div class="l">Transport Type</div><div class="v">${p.TransportType||'-'}</div></div>
+      <div class="c"><div class="l">No. of Vehicles</div><div class="v">${p.NumVehicles||'-'}</div></div>`}
     </div>
     <div class="body">
       <div class="parties">
@@ -1909,42 +1926,60 @@ function poPdfHtml(d){
           <div class="nm">${p.SupplierName||''}</div>
           <div class="ln">${p.SupplierAddress||''}${p.SupplierGST?'<br>GST: '+p.SupplierGST:''}${p.SupplierContact?'<br>'+p.SupplierContact:''}${p.SupplierMobile?' · '+p.SupplierMobile:''}${p.SupplierEmail?'<br>'+p.SupplierEmail:''}</div>
         </div>
-        <div class="pbox"><h3>Broker</h3>
+        ${isPM?`<div class="pbox"><h3>Order Reference</h3>
+          <div class="nm">${p.PRNo||'-'}</div>
+          <div class="ln">${p.QuoteNo?'Quotation: '+p.QuoteNo:''}${p.ExpectedDeliveryDate?'<br>Expected delivery: '+p.ExpectedDeliveryDate:''}</div>
+        </div>`:`<div class="pbox"><h3>Broker</h3>
           <div class="nm">${p.BrokerName||'-'}</div>
           <div class="ln">${p.BrokerName?'Through broker for this order':'Direct purchase'}</div>
-        </div>
+        </div>`}
       </div>
       <table class="items">
-        <thead><tr><th style="width:34px">#</th><th>Commodity Description</th><th>Quantity</th><th>Rate</th><th>Amount (Rs.)</th></tr></thead>
+        <thead><tr><th style="width:34px">#</th><th>${isPM?'Item Description':'Commodity Description'}</th><th>Quantity</th><th>Rate</th>${isPM?'<th>GST %</th><th>Taxable Value</th><th>Tax Amount</th>':''}<th>Amount (Rs.)</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="split">
         <div class="info">
-          <table class="info">
+          ${isPM?`<table class="info">
+            ${infoRow('Total Quantity', (Number(p.TotalQty)||0).toLocaleString('en-IN'))}
+            ${infoRow('PR Number', p.PRNo)}
+            ${infoRow('Quotation Number', p.QuoteNo)}
+            ${infoRow('Expected Delivery', p.ExpectedDeliveryDate)}
+          </table>`:`<table class="info">
             ${infoRow('Deduction Condition', p.DeductionCondition)}
             ${infoRow('Terms &amp; Condition (Packing)', p.PackingTerms)}
             ${infoRow('Transport Mode', p.TransportType)}
             ${infoRow('No. of Vehicles / Wagons', p.NumVehicles)}
             ${infoRow('Remarks', p.Remarks)}
-          </table>
+          </table>`}
         </div>
         <div class="money">
           <div class="mbox">
-            <div class="r"><span>Gross Amount</span><b>Rs. ${(Number(p.TotalValue)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</b></div>
-            <div class="r net"><span>NET PAYABLE</span><span>Rs. ${(Number(p.TotalValue)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+            ${isPM?`<div class="r"><span>Gross Amount (Taxable)</span><b>Rs. ${money(sumTaxable)}</b></div>
+            <div class="r"><span>GST %</span><b>${gstLabel}</b></div>
+            <div class="r"><span>Tax Amount</span><b>Rs. ${money(sumTax)}</b></div>
+            <div class="r net"><span>NET PAYABLE</span><span>Rs. ${money(sumTaxable+sumTax)}</span></div>`
+            :`<div class="r"><span>Gross Amount</span><b>Rs. ${money(p.TotalValue)}</b></div>
+            <div class="r net"><span>NET PAYABLE</span><span>Rs. ${money(p.TotalValue)}</span></div>`}
           </div>
         </div>
       </div>
-      <div class="words">Amount in words: <b>Rupees ${amtWords(p.TotalValue)} Only</b></div>
+      <div class="words">Amount in words: <b>Rupees ${amtWords(isPM?(sumTaxable+sumTax):p.TotalValue)} Only</b></div>
       <div class="terms">
         <h3>Terms &amp; Conditions</h3>
-        <ol>
+        ${isPM?`<ol>
+          <li>Material must match the approved sample, specification and print approved by us.</li>
+          <li>Quantity counted at our godown at the time of receipt shall be treated as final and binding.</li>
+          <li>Rejected or damaged material will be returned at the supplier's cost.</li>
+          <li>Delivery to be completed by the expected delivery date; delays must be communicated in advance.</li>
+          <li>Payment will be released as per agreed terms after QC clearance and GRN.</li>
+        </ol>`:`<ol>
           <li>Goods must conform to the agreed Fair Average Quality (FAQ) standards; rejected stock will be at supplier's cost.</li>
           <li>Weighment recorded at the mill gate / unloading point shall be treated as final and binding.</li>
           <li>Deduction conditions and packing terms mentioned above are applicable to this order.</li>
           <li>Delivery to be completed within the stipulated period; delays must be communicated in advance.</li>
           <li>Payment will be released as per agreed terms after quality verification and final weighment.</li>
-        </ol>
+        </ol>`}
       </div>
       <div class="sign">
         <div class="s"><div class="line"></div><div class="lbl">Supplier's Acknowledgement / Seal</div></div>
