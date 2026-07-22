@@ -133,7 +133,7 @@ const SHEETS = {
   SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','InvoiceNo','Status','CreatedAt'],
   SENItems:          ['SENNo','PONo','SKUCode','SKUName','UOM','POQty','ReceivedQty'],
   QC:                ['SENNo','PONo','QCStatus','DeductionAmount','Inspector','Remarks','QCDate'],
-  Receiving:         ['GRNNo','SENNo','PONo','ReceiveDate','ReceiverName','Remarks','Status'],
+  Receiving:         ['GRNNo','SENNo','PONo','ReceiveDate','ReceiverName','FactoryGrossWeight','FactoryTareWeight','FactoryNetWeight','PartyNetWeight','Remarks','Status'],
   PurchaseReturn:    ['PRNo','SENNo','PONo','ReturnDate','Reason','Status'],
   Payment:           ['PayNo','PONo','SENNo','SupplierName','Amount','PayDate','PaymentMode','RefNo','Remarks','CreatedAt'],
   /* ---- FMS office calendar. FMS_O2C / FMS_P2P are banded sheets built by setupFMS() (see FMS section). ---- */
@@ -1590,7 +1590,14 @@ function getSENSheet(senNo){
     return {SKUCode:i.SKUCode,SKUName:i.SKUName,UOM:i.UOM||uomOf_(i.SKUCode),POQty:i.POQty,ReceivedQty:q,Rate:r.rate};
   });
   const qc=readAll_('QC').find(q=>q.SENNo===senNo)||{};
-  return {senNo:senNo,poNo:sen.PONo,supplierName:sen.SupplierName,vehicleNo:sen.VehicleNo,invoiceNo:sen.InvoiceNo,status:sen.Status,
+  const po=readAll_('PO').find(p=>p.PONo===sen.PONo)||{};
+  const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
+  const totalPOQty=readAll_('POItems').filter(i=>i.PONo===sen.PONo).reduce((s,i)=>s+(Number(i.Qty)||0),0);
+  return {senNo:senNo,poNo:sen.PONo,supplierName:sen.SupplierName,vehicleNo:sen.VehicleNo,driverName:sen.DriverName||'',invoiceNo:sen.InvoiceNo,status:sen.Status,
+          gateDate:fmtDate_(sen.GateDate),gateTime:sen.GateTime||'',
+          poDate:fmtDate_(po.PODate),brokerName:po.BrokerName||'',totalPOQty:totalPOQty,poValue:Number(po.TotalValue)||0,
+          transportType:po.TransportType||'',numVehicles:po.NumVehicles||0,deductionCondition:po.DeductionCondition||'',packingTerms:po.PackingTerms||'',
+          supplierCode:po.SupplierCode||'',supplierGST:sup.GST||'',supplierAddress:sup.Address||'',supplierContact:sup.ContactPerson||'',supplierMobile:sup.Mobile||'',supplierEmail:sup.Email||'',
           items:items,qcStatus:qc.QCStatus||'',deduction:Number(qc.DeductionAmount)||0,value:Math.round(value)};
 }
 
@@ -1618,7 +1625,7 @@ function saveReceiving(p){
   const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
   if(sen.Status!==SEN_STATUS.QC_PASSED) throw new Error('Receiving allowed only after QC Accept / Accept with Deduction.');
   const grn=nextNumber_('Receiving','GRNNo','GRN');
-  append_('Receiving',{GRNNo:grn,SENNo:p.senNo,PONo:sen.PONo,ReceiveDate:new Date(),ReceiverName:p.receiverName||'',Remarks:p.remarks||'',Status:'Received'});
+  append_('Receiving',{GRNNo:grn,SENNo:p.senNo,PONo:sen.PONo,ReceiveDate:new Date(),ReceiverName:p.receiverName||'',FactoryGrossWeight:Number(p.factoryGross)||0,FactoryTareWeight:Number(p.factoryTare)||0,FactoryNetWeight:Number(p.factoryNet)||0,PartyNetWeight:Number(p.partyNet)||0,Remarks:p.remarks||'',Status:'Received'});
   updateWhere_('SEN','SENNo',p.senNo,{Status:SEN_STATUS.RECEIVED});
   recomputePOStatus_(sen.PONo);
   fmsStep_('FMS_P2P_Inbound','SENNo',p.senNo,'Recv',new Date(),null);
