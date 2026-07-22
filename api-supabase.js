@@ -1385,12 +1385,15 @@ function rptPOStatus(){
   return readAll_('PO').map(function(po){
     const its=poItemsFor(po.PONo);
     const totalQty=its.reduce((s,i)=>s+(i.POQty||0),0);
-    const recvQty=its.reduce((s,i)=>s+(i.AcceptedQty||0),0);
-    const pending=Math.max(totalQty-recvQty,0);
+    const rcv=poReceivedBySku_(po.PONo);                       // asli tola hua net weight
+    const recvQty=Math.round(Object.keys(rcv).reduce((s,k)=>s+rcv[k],0)*1000)/1000;
+    const pending=Math.max(Math.round((totalQty-recvQty)*1000)/1000,0);
     const rate=its.length?its[0].Rate:0;
     return {
       'PO Number':po.PONo, 'PO Date':fmtDate_(po.PODate), 'Supplier Name':po.SupplierName||'',
-      'Rate':rate, 'Total PO Qty':totalQty, 'Received Qty':recvQty, 'Pending PO Qty':pending,
+      'Broker Name':po.BrokerName||'', 'Rate':rate,
+      'Total PO Qty':totalQty, 'Received Qty (Net KG)':recvQty, 'Pending PO Qty':pending,
+      'Vehicles Received':poVehiclesReceived_(po.PONo),
       'Status':po.Status||''
     };
   });
@@ -1419,7 +1422,7 @@ var REPORT_COLS = {
   QCStatusReport: ['SEN Number','Gate Entry Date','Time','PO Number','Supplier Name','Broker Name','Invoice Number','Invoice Qty','Rate','QC Date','QC Status','HL','Moisture (%)','Infestation','Gluten (%)','Foreign Matter','KB','Deduction','Inspector'],
   GRNReport:      ['GRN Date','GRN Number','SEN Number','QC Status','PO Number','Supplier Name','Broker Name','PO Qty','Rate','Weighment (KG)','Factory Tare Weight (KG)','Factory Net Weight (KG)','Party Net Weight (KG)','Received By'],
   ReturnReport:   ['Return Number','SEN Number','Date','PO Number','Supplier Name','Broker Name','Return Qty','Rate','QC Status','Reason','Status'],
-  POStatusReport: ['PO Number','PO Date','Supplier Name','Rate','Total PO Qty','Received Qty','Pending PO Qty','Status']
+  POStatusReport: ['PO Number','PO Date','Supplier Name','Broker Name','Rate','Total PO Qty','Received Qty (Net KG)','Pending PO Qty','Vehicles Received','Status']
 };
 /* Ye reports apne columns rakhte hain — 18-column normalise nahi hote */
 var REPORT_CUSTOM_SHAPE = ['POReport','QCStatusReport','GRNReport','ReturnReport','POStatusReport'];
@@ -1593,35 +1596,54 @@ function poPipelineBySku_(poNo){
   return map;
 }
 function poItemsFor(poNo){
-  const acc=poAcceptedBySku_(poNo), pipe=poPipelineBySku_(poNo);
+  const acc=poAcceptedBySku_(poNo), pipe=poPipelineBySku_(poNo), rcv=poReceivedBySku_(poNo);
   return readAll_('POItems').filter(i=>i.PONo===poNo).map(i=>{
-    const ordered=Number(i.Qty)||0, a=acc[i.SKUCode]||0, p=pipe[i.SKUCode]||0;
+    const ordered=Number(i.Qty)||0, a=acc[i.SKUCode]||0, p=pipe[i.SKUCode]||0, r=rcv[i.SKUCode]||0;
     const rate=Number(i.Rate)||0, gst=Number(i.GSTPercent)||0;
     const amount=(i.Amount!==undefined&&i.Amount!==null&&i.Amount!=='')?Number(i.Amount):Math.round(ordered*rate*(1+gst/100));
+    /* Remaining = ordered − asli receive hua net weight − jo pipeline me hai (SEN aaya par GRN baaki) */
+    const rem=Math.round((ordered-r-p)*1000)/1000;
     return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), POQty:ordered, Rate:rate, GSTPercent:gst, Amount:amount,
-             AcceptedQty:a, InPipelineQty:p, RemainingQty:Math.max(ordered-a-p,0) };
+             AcceptedQty:a, ReceivedQty:Math.round(r*1000)/1000, InPipelineQty:p, RemainingQty:Math.max(rem,0) };
   });
 }
 /* Sirf wahi qty jiska GRN (Material Received) ho chuka hai */
+/* Asli receive hui qty = GRN ka Factory Net Weight.
+   Ek SEN me kai SKU hon to net weight unki expected qty ke anupaat me baanta jata hai.
+   Agar net weight bhara hi na ho to fallback: SEN ki expected qty.        */
 function poReceivedBySku_(poNo){
-  const grnSens={}; readAll_('Receiving').forEach(r=>grnSens[r.SENNo]=1);
   const map={};
-  readAll_('SENItems').filter(s=>s.PONo===poNo).forEach(s=>{
-    if(grnSens[s.SENNo]) map[s.SKUCode]=(map[s.SKUCode]||0)+(Number(s.ReceivedQty)||0);
+  const senItems=readAll_('SENItems').filter(s=>s.PONo===poNo);
+  readAll_('Receiving').filter(r=>r.PONo===poNo).forEach(function(r){
+    const its=senItems.filter(s=>s.SENNo===r.SENNo);
+    if(!its.length) return;
+    const expected=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
+    const net=Number(r.FactoryNetWeight)||0;
+    if(net>0 && expected>0){
+      its.forEach(function(i){                                   // anupaat me baanto
+        const share=net*((Number(i.ReceivedQty)||0)/expected);
+        map[i.SKUCode]=(map[i.SKUCode]||0)+share;
+      });
+    } else {
+      its.forEach(function(i){ map[i.SKUCode]=(map[i.SKUCode]||0)+(Number(i.ReceivedQty)||0); });
+    }
   });
+  Object.keys(map).forEach(function(k){ map[k]=Math.round(map[k]*1000)/1000; });
   return map;
 }
+/* Kitni gaadiyan (GRN) receive hui — PO ke liye */
+function poVehiclesReceived_(poNo){ return readAll_('Receiving').filter(r=>r.PONo===poNo).length; }
 function recomputePOStatus_(poNo){
   const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return;
-  const items=poItemsFor(poNo);
-  const remaining=items.reduce((s,i)=>s+i.RemainingQty,0);
-  /* CHAIN: "Fully Received" tabhi jab material actually receive (GRN) ho gaya ho —
-     sirf QC pass hone se PO complete nahi hota. */
+  /* CHAIN: "Fully Received" tabhi jab GRN ho chuka ho AUR poori PO qty tul kar aa gayi ho.
+     Kam aayi to "Partially Received".  */
+  const ordered=readAll_('POItems').filter(i=>i.PONo===poNo).reduce((s,i)=>s+(Number(i.Qty)||0),0);
   const rcv=poReceivedBySku_(poNo);
   const receivedQty=Object.keys(rcv).reduce((s,k)=>s+rcv[k],0);
+  const shortfall=ordered-receivedQty;
   let st;
-  if (receivedQty>0 && remaining<=0) st=PO_STATUS.RECEIVED;
-  else if (receivedQty>0)            st=PO_STATUS.PARTIAL;
+  if (receivedQty>0 && shortfall<=0.001) st=PO_STATUS.RECEIVED;      // poori qty aa gayi
+  else if (receivedQty>0)                st=PO_STATUS.PARTIAL;       // kuch kam aayi
   else st = (po.Status===PO_STATUS.DRAFT)?PO_STATUS.DRAFT:PO_STATUS.SENT;
   updateWhere_('PO','PONo',poNo,{Status:st});
   return st;
@@ -1702,7 +1724,9 @@ function getPOLifecycle(poNo){
     {key:'received',label:'Material Received', done:recv.length>0, date:recv.length?fmtDate_(recv[0].ReceiveDate):'', sub:recv.length?recv.length+' GRN(s)':''},
     {key:'closed',  label:po.Status===PO_STATUS.CLOSED?'Closed':(po.Status===PO_STATUS.RECEIVED?'Fully Received':'In Progress'), done:[PO_STATUS.RECEIVED,PO_STATUS.CLOSED].indexOf(po.Status)>-1, date:'', sub:''}
   ];
-  const totalRecv=poItemsFor(poNo).reduce((s,i)=>s+(i.AcceptedQty||0),0);
+  const _rcvMap=poReceivedBySku_(poNo);
+  const totalRecv=Math.round(Object.keys(_rcvMap).reduce((s,k)=>s+_rcvMap[k],0)*1000)/1000;
+  const vehiclesIn=poVehiclesReceived_(poNo);
   /* AGLA STEP — chain me jo abhi karna baaki hai */
   let next=null;
   const openSen=sens.find(function(s){
@@ -1725,7 +1749,7 @@ function getPOLifecycle(poNo){
   return {
     next:next,
     poNo:po.PONo, supplier:po.SupplierName, broker:po.BrokerName||'', poDate:fmtDate_(po.PODate),
-    status:po.Status, totalQty:po.TotalQty, totalValue:po.TotalValue, receivedQty:totalRecv,
+    status:po.Status, totalQty:po.TotalQty, totalValue:po.TotalValue, receivedQty:totalRecv, vehiclesReceived:vehiclesIn,
     stages:stages, sens:senBlocks
   };
 }
