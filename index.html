@@ -432,6 +432,8 @@ body.dark .btn-primary:hover{background:#15803D}
 .lc-step.pend{opacity:.7}
 .lc-next{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
 .lc-next-l{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--t3);margin-bottom:7px;font-weight:700}
+tr.lowrow td{background:var(--warn-bg)}
+.b-mut{background:var(--surface-2);color:var(--t3)}
 .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
 .dgrid>div{display:flex;flex-direction:column;padding:4px 0;border-bottom:1px solid var(--line)}
 .dgrid .dk{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
@@ -664,7 +666,7 @@ const PERM_GROUPS=[
     ['pod','POD'],['collection','Collection'],['returnentry','Return Gate Entry'],
     ['returnreceived','Return Received'],['reports','Reports'] ]},
   { g:'P2P', items:[
-    ['p2p_dashboard','P2P Dashboard'],['p2p_po','Purchase Order'],['p2p_polist','PO List / Sent'],
+    ['p2p_dashboard','P2P Dashboard'],['p2p_stock','PM Stock Report'],['p2p_pr','Purchase Requisition'],['p2p_quote','Quotations'],['p2p_po','Purchase Order'],['p2p_polist','PO List / Sent'],
     ['p2p_gate','Gate Entry (SEN)'],['p2p_qc','QC Check'],['p2p_receiving','Material Received'],
     ['p2p_return','Material Return'],['p2p_payment','Payment (P2P)'] ]},
   { g:'Admin', items:[ ['masters','Master Data'],['users','User Management'] ]}
@@ -728,6 +730,9 @@ const MODULES=[
   {id:'returnreceived',label:'Return Received',group:'Returns',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M9 12l2 2 4-4"/></svg>'},
   {id:'masters',label:'Master Data',group:'Admin',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>'},
   {id:'p2p_dashboard',label:'P2P Dashboard',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>'},
+  {id:'p2p_stock',label:'PM Stock Report',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9M12 17v-5M16 17v-9"/></svg>'},
+  {id:'p2p_pr',label:'Purchase Requisition',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 011 1v1h2a1 1 0 011 1v15a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1h2V3a1 1 0 011-1z"/><path d="M9 12h6M9 16h4"/></svg>'},
+  {id:'p2p_quote',label:'Quotations',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H8l-4 4V4z"/><path d="M8 9h8M8 12h5"/></svg>'},
   {id:'p2p_po',label:'Purchase Order',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>'},
   {id:'p2p_polist',label:'PO List / Send',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>'},
   {id:'p2p_gate',label:'Gate Entry (SEN)',group:'Purchases',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l9-4 9 4v14M3 21h18M9 21v-6h6v6"/></svg>'},
@@ -823,6 +828,7 @@ const ROUTES={
   dispatch:renderDispatch, gate:renderGate, loading:renderLoading, invoice:renderInvoice,
   gateout:renderGateOut, pod:renderPOD, collection:renderCollection, reports:renderReports, schedule:renderSchedule,
   returnentry:renderReturnEntry, returnreceived:renderReturnReceived,
+  p2p_stock:renderPMStock, p2p_pr:renderPR, p2p_quote:renderQuotes,
   p2p_po:renderPOCreate, p2p_polist:renderPOList, p2p_gate:renderGateIn, p2p_qc:renderQC,
   p2p_receiving:renderReceiving, p2p_return:renderMatReturn, p2p_payment:renderPayment, p2p_dashboard:renderP2PDashboard,
   masters:renderMasters, users:renderUsers, more:renderMore
@@ -1449,7 +1455,7 @@ function loadCollection(orderNo){
 }
 
 /* ---------- REPORTS ---------- */
-const REPORTS=[['SKULedger','SKU Ledger (all)'],['OrderRegister','Order Register'],['OpenOrders','Open Orders (SKU)'],['ClosedOrders','Closed Orders (SKU)'],['PartialOrders','Partial Orders (SKU)'],['InvoicePending','Invoice Pending (SKU)'],['POD','POD Report (SKU)'],['DispatchPlanning','Dispatch Planning'],['GateEntry','Gate Entry'],['GateOut','Gate Out'],['InvoiceRegister','Invoice Register'],['CollectionRegister','Collection Register'],['Outstanding','Outstanding'],['PartyCollection','Party-wise Collection'],['POReport','PO Report'],['QCStatusReport','QC Status Report'],['GRNReport','GRN / Receiving Report'],['ReturnReport','Return / Rejected Report'],['POStatusReport','PO Status Report']];
+const REPORTS=[['SKULedger','SKU Ledger (all)'],['OrderRegister','Order Register'],['OpenOrders','Open Orders (SKU)'],['ClosedOrders','Closed Orders (SKU)'],['PartialOrders','Partial Orders (SKU)'],['InvoicePending','Invoice Pending (SKU)'],['POD','POD Report (SKU)'],['DispatchPlanning','Dispatch Planning'],['GateEntry','Gate Entry'],['GateOut','Gate Out'],['InvoiceRegister','Invoice Register'],['CollectionRegister','Collection Register'],['Outstanding','Outstanding'],['PartyCollection','Party-wise Collection'],['POReport','PO Report'],['QCStatusReport','QC Status Report'],['GRNReport','GRN / Receiving Report'],['ReturnReport','Return / Rejected Report'],['POStatusReport','PO Status Report'],['StockReport','PM Stock Report'],['PRReport','PR Report'],['QuotationReport','Quotation Report']];
 let curReport='SKULedger', repFilter='';
 const MONEY=/^(Value|Amount|Invoiced|Collected|Outstanding|Rate|InvoiceAmount|CollectionAmount|TotalValue)$/;
 const QTY=/^(Ordered|Planned|Dispatched|Delivered|Rejected|Pending|Loaded|Qty|PlannedQty|DispatchQty)$/;
@@ -1611,7 +1617,7 @@ function renderP2PDashboard(){
   }).catch(()=>{ const el=document.getElementById('dv2p2p'); if(el) el.innerHTML='<div class="empty">Could not load P2P dashboard.</div>'; });
   api('getPOs').then(list=>{
     const el=document.getElementById('p2pRecent'); if(!el) return;
-    el.innerHTML=list.length?list.slice(0,6).map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div class="arrow">${I.chev}</div></div></div>`).join(''):'<div class="empty">No purchase orders yet.</div>';
+    el.innerHTML=list.length?list.slice(0,6).map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}${p.MaterialType==='Packing Material'?' · <b style="color:#0284C7">Packing</b>':''}${p.ExpectedDeliveryDate?' · exp '+p.ExpectedDeliveryDate:''}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div class="arrow">${I.chev}</div></div></div>`).join(''):'<div class="empty">No purchase orders yet.</div>';
   }).catch(()=>{});
 }
 
@@ -1627,6 +1633,14 @@ function renderPOCreate(){
           <div class="field"><label>PO Date</label><input class="inp" type="date" min="${today()}" id="poDate" value="${today()}"></div>
           <div class="field"><label>PO Number</label><input class="inp" value="Auto (PO-${ym()}-###)" disabled></div>
         </div>
+        <div class="field"><label>Material Type</label>
+          <select class="sel" id="poMatType">
+            <option value="Raw Material">Raw Material (direct PO)</option>
+            <option value="Packing Material">Packing Material (selected quotation se)</option>
+          </select></div>
+        <div class="field" id="poQuoteWrap" style="display:none"><label>Selected Quotation <span class="rq">*</span></label>
+          <select class="sel" id="poQuote"><option value="">Select quotation…</option></select>
+          <div class="psub" id="poQuoteHint" style="margin-top:4px">Quotations page par select ki hui quotation yahan aayegi.</div></div>
         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
         <div class="grid2">
           <div class="field"><label>Broker Name</label><input class="inp" id="poBroker" placeholder="Auto from supplier (editable)"></div>
@@ -1672,6 +1686,33 @@ function renderPOCreate(){
       <button class="btn btn-primary" id="savePO" style="margin-top:14px">${I.check}Create PO</button>
     </div></div></div>`;
   renderPOLines();
+  /* Material type switch: packing → quotation list load karo aur items lock kar do */
+  document.getElementById('poMatType').addEventListener('change',e=>{
+    const isPM=e.target.value==='Packing Material';
+    document.getElementById('poQuoteWrap').style.display=isPM?'block':'none';
+    if(isPM){
+      api('getSelectedQuotes').then(list=>{
+        const s=document.getElementById('poQuote');
+        s.innerHTML='<option value="">Select quotation…</option>'+list.map(q=>`<option value="${q.QuoteNo}">${q.QuoteNo} · ${q.SupplierName} · ${inr(q.TotalValue)}</option>`).join('');
+        window._selQuotes=list;
+        if(!list.length) document.getElementById('poQuoteHint').textContent='Koi selected quotation nahi mili — pehle Quotations page par ek quotation select karein.';
+      });
+    } else { window._poQuote=null; poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; renderPOLines(); }
+  });
+  document.getElementById('poQuote').addEventListener('change',e=>{
+    const q=(window._selQuotes||[]).find(x=>x.QuoteNo===e.target.value);
+    window._poQuote=q||null;
+    if(q){
+      poLines=q.items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,uom:it.uom,qty:it.qty,rate:it.rate,gst:it.gstPercent}));
+      const sup=(STATE.masters.suppliers||[]).find(s=>s.SupplierCode===q.SupplierCode);
+      if(sup){ window._poSup=sup; document.getElementById('poSup').value=sup.SupplierName;
+        const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
+        if(bk) bk.value=sup.BrokerName||''; if(em) em.value=sup.Email||'';
+        document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(sup.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${sup.SupplierName}</div><div class="sub">${sup.SupplierCode} · from ${q.QuoteNo} · PR ${q.PRNo}</div></div></div>`; }
+      renderPOLines(); recalcPO();
+      toast('Quotation se items bhar diye');
+    }
+  });
   if(!v.length){ document.getElementById('poSupCard').innerHTML='<div class="empty" style="margin-top:8px">Koi supplier nahi mila — pehle Master Data → Supplier me add karein.</div>'; }
   makeCombo(document.getElementById('poSup'),v,x=>x.SupplierName,vd=>{ window._poSup=vd;
     const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
@@ -1698,7 +1739,7 @@ function doSavePO(){
   const items=poLines.filter(it=>it.skuCode&&(+it.qty>0));
   if(!items.length)return toast('Add at least one SKU with quantity',true);
   busy('savePO');
-  api('savePO',{supplierCode:window._poSup.SupplierCode,supplierName:window._poSup.SupplierName,brokerName:pval('poBroker'),supplierEmail:pval('poEmail'),transportType:pval('poTransport'),numVehicles:pval('poNumVeh'),deductionCondition:pval('poDeduction'),packingTerms:pval('poPacking'),remarks:pval('poRemarks'),poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
+  api('savePO',{materialType:pval('poMatType'),quoteNo:(window._poQuote?window._poQuote.QuoteNo:''),supplierCode:window._poSup.SupplierCode,supplierName:window._poSup.SupplierName,brokerName:pval('poBroker'),supplierEmail:pval('poEmail'),transportType:pval('poTransport'),numVehicles:pval('poNumVeh'),deductionCondition:pval('poDeduction'),packingTerms:pval('poPacking'),remarks:pval('poRemarks'),poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
     .then(r=>{toast('PO created — '+r.poNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true));
 }
 
@@ -1708,6 +1749,7 @@ function renderPOList(){
   api('getPOs').then(list=>{
     document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard" data-polife="${p.PONo}"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div style="display:flex;gap:6px">
       <button class="btn btn-ghost btn-sm" data-popdf="${p.PONo}">📄 View PDF</button>
+      ${p.Status!=='Draft'&&!p.ExpectedDeliveryDate?`<button class="btn btn-ghost btn-sm" data-podeliv="${p.PONo}">📅 Confirm delivery</button>`:''}
       ${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send →</button>`:''}
     </div></div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
   });
@@ -1890,6 +1932,29 @@ function viewPOPdf(poNo){
     const htmlDoc=poPdfHtml(d).replace('<body>','<body><style>@media print{.viewbar{display:none}}</style><div class="viewbar">'+bar+'</div>');
     w.document.write(htmlDoc); w.document.close(); w.focus();
   }).catch(err=>toast(err.message||'Failed',true));
+}
+/* Step 5 — supplier se expected delivery date confirm karke bharna */
+function askDeliveryDate(poNo){
+  const html=`<div class="modal-bg" id="ddBg"><div class="modal" style="max-width:420px">
+    <div class="modal-h"><h3>Confirm delivery — ${poNo}</h3><button class="modal-x" id="ddX">&times;</button></div>
+    <div class="modal-b">
+      <div class="field"><label>Expected arrival date <span class="rq">*</span></label><input class="inp" type="date" id="ddDate" min="${today()}" value="${today()}"></div>
+      <div class="psub">Supplier se confirm karke ye date bhariye.</div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-primary btn-sm" id="ddSave">${I.check}Save</button>
+        <button class="btn btn-ghost btn-sm" id="ddCancel">Cancel</button></div>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const close=()=>{ const b=document.getElementById('ddBg'); if(b) b.remove(); };
+  document.getElementById('ddX').onclick=close;
+  document.getElementById('ddCancel').onclick=close;
+  document.getElementById('ddBg').onclick=e=>{ if(e.target.id==='ddBg') close(); };
+  document.getElementById('ddSave').onclick=()=>{
+    const dt=pval('ddDate'); if(!dt) return toast('Date daaliye',true);
+    if(dt<today()) return toast('Past date nahi chalegi',true);
+    api('confirmPODelivery',{poNo:poNo,expectedDate:dt}).then(()=>{ toast('Delivery date confirm ho gayi'); close(); renderPOList(); })
+      .catch(e=>toast(e.message||'Failed',true));
+  };
 }
 /* PO lifecycle timeline modal */
 function showPOLifecycle(poNo){
@@ -2218,7 +2283,8 @@ const MASTER_CFG={
   SKU:{fn:'saveSKU',delFn:'deleteSKU',key:'skus',idCol:'SKUCode',req:['SKUCode','SKUName'],cols:['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate']},
   Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']},
   Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','BrokerName','Email','ContactPerson','Mobile','GST','CreditDays','Address']},
-  'Raw Material':{fn:'saveRawMaterial',delFn:'deleteRawMaterial',key:'rawmaterials',idCol:'RMCode',req:['RMCode','RMName'],cols:['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate']}
+  'Raw Material':{fn:'saveRawMaterial',delFn:'deleteRawMaterial',key:'rawmaterials',idCol:'RMCode',req:['RMCode','RMName'],cols:['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate']},
+  'Packing Material':{fn:'savePackingMaterial',delFn:'deletePackingMaterial',key:'packingmaterials',idCol:'PMCode',req:['PMCode','PMName'],cols:['PMCode','PMName','Category','UOM','GSTPercent','Rate','MOQ','ReorderLevel','CurrentStock']}
 };
 function masterFields(tab){
   if(tab==='Vendor') return `<div class="grid2">
@@ -2248,6 +2314,17 @@ function masterFields(tab){
     <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
     <div class="field"><label>Payment Terms (Credit Days)</label><input class="inp" type="number" id="mf_CreditDays" placeholder="e.g. 30"></div>
     </div><div class="field"><label>Address</label><textarea class="inp" id="mf_Address" placeholder="Street, city"></textarea></div>`;
+  if(tab==='Packing Material') return `<div class="grid2">
+    <div class="field"><label>PM Code <span class="rq">*</span></label><input class="inp" id="mf_PMCode" placeholder="PM-0000"></div>
+    <div class="field"><label>PM Name <span class="rq">*</span></label><input class="inp" id="mf_PMName" placeholder="PP Bag 50 KG"></div>
+    <div class="field"><label>Category</label><input class="inp" id="mf_Category" placeholder="Bags / Thread / Tape"></div>
+    <div class="field"><label>UOM</label><input class="inp" id="mf_UOM" placeholder="Nos / Kg / Roll"></div>
+    <div class="field"><label>Rate</label><input class="inp tnum" type="number" id="mf_Rate" placeholder="0"></div>
+    <div class="field"><label>GST %</label><input class="inp tnum" type="number" id="mf_GSTPercent" value="18"></div>
+    <div class="field"><label>MOQ (min order qty)</label><input class="inp tnum" type="number" id="mf_MOQ" placeholder="0"></div>
+    <div class="field"><label>Reorder Level</label><input class="inp tnum" type="number" id="mf_ReorderLevel" placeholder="0"></div>
+    <div class="field"><label>Current Stock</label><input class="inp tnum" type="number" id="mf_CurrentStock" placeholder="0"></div>
+    </div>`;
   if(tab==='Raw Material') return `<div class="grid2">
     <div class="field"><label>Raw Material Code <span class="rq">*</span></label><input class="inp" id="mf_RMCode" placeholder="RM-0000"></div>
     <div class="field"><label>Raw Material Name <span class="rq">*</span></label><input class="inp" id="mf_RMName"></div>
@@ -2264,11 +2341,12 @@ function masterFields(tab){
 }
 function renderMasters(){
   const m=STATE.masters;
-  const seg=['Vendor','SKU','Transporter','Supplier','Raw Material'].map(t=>`<button class="${t===masterTab?'on':''}" data-mtab="${t}">${t}</button>`).join('');
+  const seg=['Vendor','SKU','Transporter','Supplier','Raw Material','Packing Material'].map(t=>`<button class="${t===masterTab?'on':''}" data-mtab="${t}">${t}</button>`).join('');
   let body='';
   if(masterTab==='Vendor') body=m.vendors.map(v=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#16A34A,#22C55E)">${(v.VendorName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${v.VendorName}</div><div class="b">${v.VendorCode} · ${v.GST||'—'}</div></div><button class="row-del" data-mdel="${v.VendorCode}" title="Remove vendor">${I.trash}</button></div>`).join('');
   else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%${s.UOM?' · '+s.UOM:''}</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
   else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName}${s.BrokerName?' <span class="uomtag" style="background:rgba(124,58,237,.12);color:#7C3AED;border-color:rgba(124,58,237,.25)">Broker: '+s.BrokerName+'</span>':''}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.Email?' · '+s.Email:''}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Packing Material') body=(m.packingmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0284C7,#38BDF8)">${I.box}</div><div class="um"><div class="a">${r.PMName}</div><div class="b">${r.PMCode} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''} · stock ${(Number(r.CurrentStock)||0).toLocaleString('en-IN')}${r.MOQ?' · MOQ '+r.MOQ:''}</div></div><button class="row-del" data-mdel="${r.PMCode}" title="Remove">${I.trash}</button></div>`).join('');
   else if(masterTab==='Raw Material') body=(m.rawmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#EA580C,#FB923C)">${I.box}</div><div class="um"><div class="a">${r.RMName}</div><div class="b">${r.RMCode} · ${r.Brand||'—'} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''}</div></div><button class="row-del" data-mdel="${r.RMCode}" title="Remove raw material">${I.trash}</button></div>`).join('');
   else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
   view.innerHTML=head('Master Data','Vendors, SKUs and transporters','Master Data')+`
@@ -2317,15 +2395,16 @@ function renderMasters(){
   document.getElementById('dlTemplate').onclick=e=>{ e.preventDefault(); downloadTemplate(); };
 }
 /* ================= BULK UPLOAD ================= */
-const BULK_TABLE={Vendor:'VendorMaster',SKU:'SKUMaster',Transporter:'TransporterMaster',Supplier:'SupplierMaster','Raw Material':'RawMaterialMaster'};
+const BULK_TABLE={Vendor:'VendorMaster',SKU:'SKUMaster',Transporter:'TransporterMaster',Supplier:'SupplierMaster','Raw Material':'RawMaterialMaster','Packing Material':'PackingMaterialMaster'};
 const BULK_COLS={
   VendorMaster:['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
   SKUMaster:['SKUCode','SKUName','Brand','Category','UOM','Rate','GSTPercent'],
   TransporterMaster:['TransporterCode','TransporterName','ContactPerson','ContactNumber','Address'],
   SupplierMaster:['SupplierCode','SupplierName','BrokerName','Email','Address','ContactPerson','Mobile','GST','CreditDays'],
-  RawMaterialMaster:['RMCode','RMName','Brand','Category','UOM','Rate','GSTPercent']
+  RawMaterialMaster:['RMCode','RMName','Brand','Category','UOM','Rate','GSTPercent'],
+  PackingMaterialMaster:['PMCode','PMName','Category','UOM','Rate','GSTPercent','MOQ','ReorderLevel','CurrentStock']
 };
-const BULK_REQ={VendorMaster:['VendorCode','VendorName'],SKUMaster:['SKUCode','SKUName'],TransporterMaster:['TransporterCode','TransporterName'],SupplierMaster:['SupplierCode','SupplierName'],RawMaterialMaster:['RMCode','RMName']};
+const BULK_REQ={VendorMaster:['VendorCode','VendorName'],SKUMaster:['SKUCode','SKUName'],TransporterMaster:['TransporterCode','TransporterName'],SupplierMaster:['SupplierCode','SupplierName'],RawMaterialMaster:['RMCode','RMName'],PackingMaterialMaster:['PMCode','PMName']};
 let BULK_ROWS=[];
 function downloadTemplate(){
   const t=BULK_TABLE[masterTab], cols=BULK_COLS[t];
@@ -2516,6 +2595,199 @@ function delUser(email){
   });
 }
 
+/* ================= PACKING MATERIAL: STOCK · PR · QUOTATION ================= */
+function renderPMStock(){
+  view.innerHTML=head('PM Stock Report','Packing material ka current stock vs MOQ','Stock Report')+
+    `<div class="btn-row" style="margin-bottom:12px">
+       <button class="btn btn-primary btn-sm" id="stkSave">${I.check}Save stock</button>
+       <button class="btn btn-ghost btn-sm" id="stkPR">Low-stock se PR banao →</button>
+     </div>
+     <div class="psub" style="margin:-6px 2px 12px">Stock abhi manually update hota hai. Aage aapke IMS se automatic aa jayega.</div>
+     <div id="stkTable"><div class="loading"><div class="spin"></div></div></div>`;
+  document.getElementById('stkSave').onclick=doSaveStock;
+  document.getElementById('stkPR').onclick=()=>go('p2p_pr');
+  api('getStockReport').then(rows=>{
+    const el=document.getElementById('stkTable'); if(!el) return;
+    if(!rows.length){ el.innerHTML='<div class="empty">Koi packing material nahi mila — pehle Master Data → Packing Material me add karein.</div>'; return; }
+    window._stkRows=rows;
+    const low=rows.filter(r=>r.LowStock).length;
+    el.innerHTML=(low?`<div class="vo-banner" style="background:var(--warn-bg);color:var(--warn)">⚠ ${low} item low stock par hai — PR banana chahiye</div>`:'')+
+      `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+        <th>Packing Material</th><th>UOM</th><th class="num">Current Stock</th><th class="num">Reorder Level</th><th class="num">MOQ</th><th class="num">Rate</th><th>Status</th></tr></thead>
+      <tbody>${rows.map((r,i)=>`<tr class="${r.LowStock?'lowrow':''}">
+        <td><div class="nm">${r.PMName}</div><div class="cd">${r.PMCode}${r.Category?' · '+r.Category:''}</div></td>
+        <td><span class="uomtag">${r.UOM||'—'}</span></td>
+        <td class="num"><input class="qin" type="number" step="0.001" value="${r.CurrentStock}" data-stk="${i}"></td>
+        <td class="num">${r.ReorderLevel.toLocaleString('en-IN')}</td>
+        <td class="num">${r.MOQ.toLocaleString('en-IN')}</td>
+        <td class="num">${inr(r.Rate)}</td>
+        <td>${r.LowStock?'<span class="badge b-warn"><span class="bd"></span>Low — order '+r.SuggestedQty.toLocaleString('en-IN')+'</span>':'<span class="badge b-ok"><span class="bd"></span>OK</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }).catch(e=>{ const el=document.getElementById('stkTable'); if(el) el.innerHTML='<div class="empty">'+(e.message||'Load failed')+'</div>'; });
+}
+function doSaveStock(){
+  const rows=(window._stkRows||[]).map((r,i)=>{ const el=document.querySelector(`[data-stk="${i}"]`); return { PMCode:r.PMCode, CurrentStock:el?(+el.value||0):r.CurrentStock }; });
+  if(!rows.length) return;
+  busy('stkSave');
+  api('updateStock',{rows:rows}).then(r=>{ toast(r.updated+' items ka stock update hua'); renderPMStock(); })
+    .catch(e=>toast(e.message||'Failed',true));
+}
+
+/* ---------- PURCHASE REQUISITION ---------- */
+let prLines=[];
+function renderPR(){
+  view.innerHTML=head('Purchase Requisition','Low stock ke hisaab se PR banaiye','Purchase Requisition')+
+    `<div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 8px"><h3>New PR</h3>
+        <button class="btn btn-ghost btn-sm" id="prAutoFill">⚡ Low-stock items bharo</button></div>
+      <div class="grid2">
+        <div class="field"><label>PR Date</label><input class="inp" type="date" id="prDate" value="${today()}"></div>
+        <div class="field"><label>Remarks</label><input class="inp" id="prRem" placeholder="Optional"></div>
+      </div>
+      <div id="prLines"></div>
+      <button class="btn btn-add btn-sm" id="prAdd" style="margin-top:6px">${I.plus}Add item</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" id="savePR">${I.check}Generate PR</button></div>
+    </div></div>
+    <div class="sec"><h3>Recent Requisitions</h3></div>
+    <div id="prList"><div class="loading"><div class="spin"></div></div></div>`;
+  prLines=[{pmCode:'',pmName:'',requiredQty:0}];
+  api('getStockReport').then(rows=>{ window._pmList=rows; renderPRLines(); });
+  document.getElementById('prAdd').onclick=()=>{ prLines.push({pmCode:'',pmName:'',requiredQty:0}); renderPRLines(); };
+  document.getElementById('savePR').onclick=doSavePR;
+  document.getElementById('prAutoFill').onclick=()=>{
+    const low=(window._pmList||[]).filter(r=>r.LowStock);
+    if(!low.length){ toast('Abhi koi item low stock par nahi hai'); return; }
+    prLines=low.map(r=>({pmCode:r.PMCode,pmName:r.PMName,requiredQty:r.SuggestedQty}));
+    renderPRLines(); toast(low.length+' low-stock items bhar diye');
+  };
+  loadPRList();
+}
+function renderPRLines(){
+  const wrap=document.getElementById('prLines'); if(!wrap) return;
+  const pm=window._pmList||[];
+  wrap.innerHTML=prLines.map((it,i)=>{
+    const m=pm.find(x=>x.PMCode===it.pmCode)||{};
+    return `<div class="li">
+      <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp prSkuIn" data-prsku="${i}" placeholder="Search packing material…" value="${it.pmName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div>
+        <div class="cd">${it.pmCode||'Code auto-fills'}${m.UOM?' · <b class="uomtag">'+m.UOM+'</b>':''}${m.CurrentStock!==undefined?' · stock '+m.CurrentStock.toLocaleString('en-IN'):''}${m.MOQ?' · MOQ '+m.MOQ.toLocaleString('en-IN'):''}</div></div>
+        <button class="li-del" data-prdel="${i}">${I.trash}</button></div>
+      <div class="li-grid" style="grid-template-columns:1fr 2fr">
+        <div class="f"><label>Required Qty${m.UOM?' ('+m.UOM+')':''}</label><input type="number" value="${it.requiredQty}" data-prf="requiredQty" data-pri="${i}"></div>
+        <div class="f"><label>Remarks</label><input value="${it.remarks||''}" data-prf="remarks" data-pri="${i}"></div>
+      </div></div>`;
+  }).join('');
+  wrap.querySelectorAll('.prSkuIn').forEach(inp=>{ const i=inp.dataset.prsku;
+    makeCombo(inp,pm,x=>x.PMName,m=>{ prLines[i].pmCode=m.PMCode; prLines[i].pmName=m.PMName; if(!prLines[i].requiredQty) prLines[i].requiredQty=m.SuggestedQty||m.MOQ||0; renderPRLines(); }); });
+  wrap.querySelectorAll('[data-prf]').forEach(inp=>inp.addEventListener('input',e=>{
+    const f=e.target.dataset.prf, i=e.target.dataset.pri;
+    prLines[i][f]= f==='requiredQty' ? (+e.target.value||0) : e.target.value; }));
+  wrap.querySelectorAll('[data-prdel]').forEach(b=>b.onclick=()=>{ if(prLines.length>1){ prLines.splice(+b.dataset.prdel,1); renderPRLines(); } });
+}
+function doSavePR(){
+  const items=prLines.filter(l=>l.pmCode && +l.requiredQty>0);
+  if(!items.length) return toast('Kam se kam ek item aur uski qty daaliye',true);
+  if(!notPast('prDate','PR date',true)) return;
+  busy('savePR');
+  api('savePR',{prDate:pval('prDate'),remarks:pval('prRem'),items:items})
+    .then(r=>{ toast('PR bana — '+r.prNo); renderPR(); })
+    .catch(e=>toast(e.message||'Failed',true));
+}
+function loadPRList(){
+  api('getPRs').then(list=>{
+    const el=document.getElementById('prList'); if(!el) return;
+    el.innerHTML=list.length?list.map(p=>`<div class="ocard" data-prgo="${p.PRNo}">
+      <div class="top"><div><div class="oid">${p.PRNo}</div><div class="vend">${p.PRDate} · ${p.RequestedBy}</div></div>
+        <span class="badge ${prBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div>
+      <div class="bot"><div class="amt tnum">${p.Items} items · ${p.TotalQty.toLocaleString('en-IN')} qty${p.Quotations?' · '+p.Quotations+' quotation(s)':''}</div>
+        <button class="btn btn-ghost btn-sm" data-prquote="${p.PRNo}">Quotations →</button></div></div>`).join('')
+      :'<div class="empty">Abhi koi PR nahi bana.</div>';
+  });
+}
+function prBadge(s){ return s==='Open'?'b-warn':(s==='Quotations Received'?'b-info':(s==='PO Created'?'b-ok':'b-mut')); }
+
+/* ---------- QUOTATIONS ---------- */
+let qLines=[];
+function renderQuotes(arg){
+  view.innerHTML=head('Quotations','Suppliers ke rate daaliye aur compare karke select kijiye','Quotations')+
+    `<div class="field"><label>Purchase Requisition <span class="rq">*</span></label>
+      <select class="sel" id="qPR"><option value="">Select PR…</option></select></div>
+     <div id="qCompare"></div>
+     <div id="qFormWrap" style="display:none"><div class="card" style="margin:14px 0"><div class="card-p">
+       <div class="sec" style="margin:0 0 8px"><h3>Add Quotation</h3></div>
+       <div class="grid2">
+         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="qSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+         <div class="field"><label>Quote Date</label><input class="inp" type="date" id="qDate" value="${today()}"></div>
+         <div class="field"><label>Valid Until</label><input class="inp" type="date" id="qValid"></div>
+         <div class="field"><label>Delivery Days</label><input class="inp tnum" type="number" id="qDays" placeholder="e.g. 7"></div>
+       </div>
+       <div id="qLines"></div>
+       <div class="field"><label>Remarks</label><input class="inp" id="qRem" placeholder="Optional"></div>
+       <div class="btn-row" style="margin-top:10px">
+         <button class="btn btn-primary btn-sm" id="saveQuote">${I.check}Save quotation</button>
+         <button class="btn btn-ghost btn-sm" id="qCancel">Cancel</button></div>
+     </div></div></div>`;
+  api('getOpenPRs').then(list=>{
+    const s=document.getElementById('qPR'); if(!s) return;
+    s.innerHTML='<option value="">Select PR…</option>'+list.map(p=>`<option value="${p.PRNo}">${p.PRNo} · ${p.PRDate} · ${p.Status}</option>`).join('');
+    if(arg && list.some(p=>p.PRNo===arg)){ s.value=arg; loadCompare(arg); }
+  });
+  document.getElementById('qPR').addEventListener('change',e=>{ if(e.target.value) loadCompare(e.target.value); else { document.getElementById('qCompare').innerHTML=''; document.getElementById('qFormWrap').style.display='none'; } });
+}
+function loadCompare(prNo){
+  api('getQuotationsFor',prNo).then(d=>{
+    window._qData=d;
+    const el=document.getElementById('qCompare'); if(!el) return;
+    const rows=d.prItems;
+    el.innerHTML=`<div class="sec" style="margin-top:14px"><h3>Comparison — ${prNo}</h3>
+        <button class="btn btn-ghost btn-sm" id="qAdd">${I.plus}Add quotation</button></div>`+
+      (d.quotes.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item</th><th class="num">Req Qty</th>
+        ${d.quotes.map(q=>`<th class="num">${q.SupplierName}<div class="cd">${q.QuoteNo}</div></th>`).join('')}</tr></thead>
+        <tbody>${rows.map(it=>`<tr><td><div class="nm">${it.PMName}</div><div class="cd">${it.PMCode} · ${it.UOM}</div></td>
+          <td class="num">${it.RequiredQty.toLocaleString('en-IN')}</td>
+          ${d.quotes.map(q=>{ const qi=q.items.find(x=>x.PMCode===it.PMCode);
+            return `<td class="num">${qi?inr(qi.Rate)+'<div class="cd">'+qi.Qty.toLocaleString('en-IN')+' · GST '+qi.GSTPercent+'%</div>':'—'}</td>`; }).join('')}</tr>`).join('')}
+        <tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Total (incl. GST)</b></td>
+          ${d.quotes.map(q=>`<td class="num"><b>${inr(q.TotalValue)}</b></td>`).join('')}</tr>
+        <tr><td colspan="2">Delivery days</td>${d.quotes.map(q=>`<td class="num">${q.DeliveryDays||'—'}</td>`).join('')}</tr>
+        <tr><td colspan="2">Status</td>${d.quotes.map(q=>`<td class="num"><span class="badge ${q.Status==='Selected'?'b-ok':(q.Status==='Not Selected'?'b-mut':'b-info')}">${q.Status}</span></td>`).join('')}</tr>
+        <tr><td colspan="2"></td>${d.quotes.map(q=>`<td class="num">${q.Status==='Selected'?'<span style="color:var(--ok);font-weight:700">✓ Selected</span>':`<button class="btn btn-primary btn-sm" data-qsel="${q.QuoteNo}">Select this</button>`}</td>`).join('')}</tr>
+        </tbody></table></div>`
+      :'<div class="empty">Is PR par abhi koi quotation nahi aayi.</div>');
+    document.getElementById('qAdd').onclick=()=>openQuoteForm(prNo);
+  });
+}
+function openQuoteForm(prNo){
+  const d=window._qData||{prItems:[]};
+  qLines=d.prItems.map(it=>({pmCode:it.PMCode,pmName:it.PMName,uom:it.UOM,qty:it.RequiredQty,rate:0,gstPercent:18}));
+  document.getElementById('qFormWrap').style.display='block';
+  renderQLines();
+  makeCombo(document.getElementById('qSup'),STATE.masters.suppliers||[],x=>x.SupplierName,s=>{ window._qSup=s; });
+  document.getElementById('saveQuote').onclick=()=>doSaveQuote(prNo);
+  document.getElementById('qCancel').onclick=()=>{ document.getElementById('qFormWrap').style.display='none'; };
+  document.getElementById('qFormWrap').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function renderQLines(){
+  const wrap=document.getElementById('qLines'); if(!wrap) return;
+  wrap.innerHTML=qLines.map((it,i)=>`<div class="li">
+    <div class="li-top"><div style="flex:1"><div class="nm">${it.pmName}</div><div class="cd">${it.pmCode}${it.uom?' · '+it.uom:''}</div></div></div>
+    <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-qf="qty" data-qi="${i}"></div>
+      <div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" step="0.01" value="${it.rate}" data-qf="rate" data-qi="${i}"></div>
+      <div class="f"><label>GST %</label><input type="number" value="${it.gstPercent}" data-qf="gstPercent" data-qi="${i}"></div>
+    </div></div>`).join('');
+  wrap.querySelectorAll('[data-qf]').forEach(inp=>inp.addEventListener('input',e=>{ qLines[e.target.dataset.qi][e.target.dataset.qf]=+e.target.value||0; }));
+}
+function doSaveQuote(prNo){
+  if(!window._qSup) return toast('Supplier select kijiye',true);
+  const items=qLines.filter(l=>+l.qty>0 && +l.rate>0);
+  if(!items.length) return toast('Kam se kam ek item ka qty aur rate daaliye',true);
+  busy('saveQuote');
+  api('saveQuotation',{prNo:prNo,supplierCode:window._qSup.SupplierCode,supplierName:window._qSup.SupplierName,
+    quoteDate:pval('qDate'),validUntil:pval('qValid'),deliveryDays:pval('qDays'),remarks:pval('qRem'),items:items})
+    .then(r=>{ toast('Quotation saved — '+r.quoteNo); window._qSup=null; document.getElementById('qFormWrap').style.display='none'; loadCompare(prNo); })
+    .catch(e=>toast(e.message||'Failed',true));
+}
+
 /* ---------- MORE (mobile) ---------- */
 function renderMore(){
   const EXCLUDE=['dashboard','orders','create','more'];
@@ -2564,6 +2836,9 @@ document.addEventListener('click',e=>{
   const ual=e.target.closest('[data-uall]'); if(ual){ const v=ual.dataset.uall, em=ual.dataset.e;
     document.querySelectorAll(`.psel[data-e="${em}"]`).forEach(s=>{ if(s.disabled) return; s.value=v; s.className='psel p-'+v; });
     markDirty(em); return; }
+  const qs=e.target.closest('[data-qsel]'); if(qs){ askConfirm('Is quotation ko select karein? Baaki reject ho jayengi.',()=>{ api('selectQuotation',qs.dataset.qsel).then(r=>{ toast('Quotation selected'); loadCompare(r.prNo); }).catch(err=>toast(err.message||'Failed',true)); }); return; }
+  const pq=e.target.closest('[data-prquote]'); if(pq){ go('p2p_quote',pq.dataset.prquote); return; }
+  const pd=e.target.closest('[data-podeliv]'); if(pd){ askDeliveryDate(pd.dataset.podeliv); return; }
   const sp=e.target.closest('[data-sendpo]'); if(sp){ doSendPO(sp.dataset.sendpo); return; }
   const ppdf=e.target.closest('[data-popdf]'); if(ppdf){ viewPOPdf(ppdf.dataset.popdf); return; }
   const plife=e.target.closest('[data-polife]'); if(plife){ showPOLifecycle(plife.dataset.polife); return; }
