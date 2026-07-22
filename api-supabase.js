@@ -1,2015 +1,3391 @@
-/* ================================================================
- * OrderFlow — Supabase backend (runs in the browser, hosted on Vercel)
- * The original Apps Script domain logic runs unchanged against an
- * in-memory store that syncs with Supabase via its REST API.
- * ================================================================ */
-'use strict';
-/* ---- Apps Script shims ---- */
-var Session={ getScriptTimeZone:function(){return 'Asia/Kolkata';},
-  getActiveUser:function(){ return { getEmail:function(){ return (window.STATE&&STATE.user&&STATE.user.email)||''; } }; } };
-var Utilities={ formatDate:function(d,tz,fmt){
-  d=(d instanceof Date)?d:new Date(d); if(isNaN(d)) return '';
-  var p=function(n){return String(n).padStart(2,'0');};
-  var map={ 'yyyy':d.getFullYear(), 'MM':p(d.getMonth()+1), 'dd':p(d.getDate()), 'HH':p(d.getHours()), 'mm':p(d.getMinutes()), 'ss':p(d.getSeconds()), 'yy':String(d.getFullYear()).slice(-2), 'MMM':['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] };
-  return fmt.replace(/yyyy|MMM|MM|dd|HH|mm|ss|yy/g, function(t){ return map[t]; });
-}};
-var Logger={ log:function(m){ try{ console.log('[GAS]',m); }catch(e){} } };
-var CacheService={ getScriptCache:function(){ return { get:function(){return null;}, put:function(){}, remove:function(){} }; } };
-var SpreadsheetApp={ getActive:function(){ return { toast:function(){} }; }, getActiveSpreadsheet:function(){ return null; },
-  BorderStyle:{SOLID:'s'}, newConditionalFormatRule:function(){ var o={whenCellNotEmpty:function(){return o;},setBackground:function(){return o;},setFontColor:function(){return o;},setRanges:function(){return o;},build:function(){return {};}}; return o; } };
-var DriveApp={}; var ContentService={}; var HtmlService={};
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16A34A">
+<meta name="mobile-web-app-capable" content="apple-mobile-web-app-capable">
+<title>OrderFlow — Order to Collection</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --indigo:#16A34A;--indigo-7:#15803D;--indigo-50:#F0FDF4;--indigo-100:#DCFCE7;
+  --canvas:#F3F7F4;--surface:#fff;--surface-2:#F5F8F6;--ink:#0F2A1C;--ink-h:#1C3A2A;
+  --t1:#16261D;--t2:#5B6D62;--t3:#93A399;--t-inv:#C7E6D4;
+  --line:#E6EDE8;
+  --ok:#16A34A;--ok-bg:#E7F8EE;--warn:#D97706;--warn-bg:#FEF4E2;
+  --err:#DC2626;--err-bg:#FDECEC;--info:#2563EB;--info-bg:#E7EFFE;
+  --violet:#7C3AED;--violet-bg:#F0EAFE;--teal:#0D9488;--teal-bg:#D6F5F0;
+  --shadow:rgba(16,40,28,.10);
+  --r:14px;--r-lg:20px;--sb:248px;
+}
+body.dark{
+  --canvas:#0D1512;--surface:#15201B;--surface-2:#1B2822;--ink:#0A130F;--ink-h:#16241C;
+  --t1:#E6EFE9;--t2:#9DB0A4;--t3:#6E8377;--t-inv:#BFE0CC;
+  --line:#26332C;
+  --indigo:#22C55E;--indigo-7:#16A34A;--indigo-50:rgba(34,197,94,.15);--indigo-100:rgba(34,197,94,.22);
+  --ok:#22C55E;--ok-bg:rgba(34,197,94,.16);--warn:#F59E0B;--warn-bg:rgba(245,158,11,.16);
+  --err:#F87171;--err-bg:rgba(248,113,113,.16);--info:#60A5FA;--info-bg:rgba(96,165,250,.16);
+  --violet:#A78BFA;--violet-bg:rgba(167,139,250,.16);--teal:#2DD4BF;--teal-bg:rgba(45,212,191,.16);
+  --shadow:rgba(0,0,0,.4);
+}
+/* Forest — deep green, glowing accents (ADManager-style). Applied together with .dark */
+body.forest{
+  --canvas:#0B1D14;--surface:#10271B;--surface-2:#153122;--ink:#081710;--ink-h:#0E2418;
+  --t1:#EAF6EE;--t2:#9CC3AA;--t3:#5F8B70;--t-inv:#C9F0D8;
+  --line:#1E4030;
+  --indigo:#4ADE80;--indigo-7:#22C55E;--indigo-50:rgba(74,222,128,.14);--indigo-100:rgba(74,222,128,.24);
+  --ok:#4ADE80;--ok-bg:rgba(74,222,128,.15);
+  --nb:#265239;
+  --shadow:rgba(0,0,0,.5);
+}
+body.forest .sidebar{background:linear-gradient(180deg,#0A1A11,#0D2418)}
+body.forest .hdr{background:rgba(11,29,20,.88)}
+body.forest .fnode:hover{box-shadow:0 8px 22px rgba(74,222,128,.14)}
+body.forest .btn-primary{box-shadow:0 4px 16px rgba(74,222,128,.25)}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var(--t1);-webkit-font-smoothing:antialiased}
+.tnum{font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input,select,textarea{font-family:inherit}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--t3);border-radius:6px}
 
-/* ---- Supabase in-memory store ---- */
-var SB_TABLES = ["VendorMaster", "SKUMaster", "TransporterMaster", "SupplierMaster", "RawMaterialMaster", "Users", "Orders", "OrderItems", "Planning", "PlanItems", "GateEntry", "LoadItems", "Invoice", "GateOut", "POD", "PODItems", "Returns", "Collection", "Schedule", "ScheduleItems", "PO", "POItems", "SEN", "SENItems", "QC", "Receiving", "PurchaseReturn", "Payment", "Holidays", "FMS_O2C_Order", "FMS_O2C_Dispatch", "FMS_P2P_PO", "FMS_P2P_Inbound"];
-var SBStore = (function(){
-  var mem={}, loaded=false, queue=[];
-  function hdrs(){ return { 'apikey':window.SUPABASE_KEY, 'Authorization':'Bearer '+window.SUPABASE_KEY, 'Content-Type':'application/json', 'Prefer':'return=minimal' }; }
-  function base(){ return String(window.SUPABASE_URL||'').trim().replace(/\/+$/,''); }   // tolerate a trailing slash
-  function url(t,q){ return base()+'/rest/v1/'+encodeURIComponent(t)+(q||''); }
-  function revive(rows){ return rows.map(function(r){ var o={}; Object.keys(r).forEach(function(k){ if(k==='id'){o.id=r[k];return;}
-      var v=r[k]; if(v && typeof v==='string' && /^\d{4}-\d{2}-\d{2}T/.test(v)){ var d=new Date(v); if(!isNaN(d)) v=d; } o[k]=(v===null?'':v); }); return o; }); }
-  function serialize(o){ var out={}; Object.keys(o).forEach(function(k){ if(k==='id')return; var v=o[k];
-      out[k]=(v instanceof Date)?v.toISOString():(v===''?null:v); }); return out; }
-  async function loadTable(t){
-    var u=url(t,'?select=*&order=id.asc'), res;
-    try{ res=await fetch(u,{headers:hdrs()}); }
-    catch(e){ throw new Error('Cannot reach Supabase. Check SUPABASE_URL in config.js — tried: '+u); }
-    if(!res.ok){
-      var body=''; try{ body=await res.text(); }catch(e){}
-      throw new Error('Supabase '+res.status+' on table "'+t+'". URL tried: '+u+' — server said: '+(body||'(no message)'));
+/* ---------------- SHELL (responsive) ---------------- */
+.shell{display:flex;min-height:100vh}
+.sidebar{width:var(--sb);background:var(--ink);color:var(--t-inv);position:fixed;inset:0 auto 0 0;display:flex;flex-direction:column;z-index:60;transition:transform .25s}
+.brand{height:62px;display:flex;align-items:center;gap:11px;padding:0 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.brand .bm{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#22C55E,#16A34A);display:grid;place-items:center;box-shadow:0 4px 12px rgba(22,163,74,.45)}
+.brand .bm svg{width:18px;height:18px}
+.brand .bn{font-weight:700;font-size:16px;color:#fff;letter-spacing:-.02em}
+.brand .bn b{color:#86EFAC}
+.nav{flex:1;overflow-y:auto;padding:14px 12px}
+.nav-l{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5B6486;padding:14px 12px 7px}
+.nav-i{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--t-inv);font-weight:500;font-size:13.5px;width:100%;text-align:left;transition:.14s;position:relative}
+.nav-i svg{width:18px;height:18px;opacity:.85;flex-shrink:0}
+.nav-i:hover{background:var(--ink-h);color:#fff}
+.nav-i.on{background:linear-gradient(90deg,rgba(22,163,74,.22),rgba(22,163,74,.06));color:#fff}
+.nav-i.on::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:3px;height:20px;background:#818CF8;border-radius:0 3px 3px 0}
+.nav-i.on svg{opacity:1;color:#86EFAC}
+.nav-b{margin-left:auto;font-size:10.5px;font-weight:700;background:var(--indigo);color:#fff;border-radius:20px;padding:1px 7px;min-width:20px;text-align:center}
+.nav-b.am{background:#D97706}
+/* hierarchical accordion nav */
+.nav-group{margin-bottom:2px}
+.nav-gh{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;border-radius:9px;color:var(--t-inv);font-weight:650;font-size:13.5px;text-align:left}
+.nav-gh:hover{background:var(--ink-h);color:#fff}
+.nav-gh .gi{display:grid;place-items:center}.nav-gh .gi svg{width:18px;height:18px;opacity:.9}
+.nav-gh .gl{flex:1}
+.chev{width:15px;height:15px;opacity:.55;transition:transform .2s;flex-shrink:0}
+.nav-group.open>.nav-gh .chev,.nav-sub.open>.nav-sh .chev{transform:rotate(90deg)}
+.nav-gb{display:none;padding:2px 0 6px 8px;margin:2px 0 2px 12px;border-left:1px solid rgba(255,255,255,.08)}
+.nav-group.open>.nav-gb{display:block}
+.nav-sub{margin:1px 0}
+.nav-sh{display:flex;align-items:center;gap:8px;width:100%;padding:7px 12px;border-radius:8px;color:#8C95B8;font-weight:700;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;text-align:left}
+.nav-sh:hover{color:#fff}.nav-sh span{flex:1}
+.nav-sb{display:none;padding-left:2px}
+.nav-sub.open>.nav-sb{display:block}
+.nav-gb .nav-i{font-size:13px;padding:8px 12px}
+/* desktop: collapsible sidebar */
+.main{transition:margin-left .25s}
+body.nav-hidden .sidebar{transform:translateX(-100%)}
+body.nav-hidden .main{margin-left:0}
+/* app-like: never scroll the page sideways */
+html{max-width:100%;overflow-x:hidden}
+body{max-width:100%}
+.sb-foot{padding:12px;border-top:1px solid rgba(255,255,255,.06)}
+.uchip{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px}
+.uav{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#F59E0B,#D97706);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+.uchip .nm{font-size:13px;font-weight:600;color:#fff}.uchip .rl{font-size:11px;color:#9AA2C4}
+
+.main{flex:1;margin-left:var(--sb);min-width:0;display:flex;flex-direction:column}
+.hdr{height:62px;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:0 22px}
+.ham{display:flex;width:38px;height:38px;border-radius:9px;align-items:center;justify-content:center;color:var(--t2)}
+.ham:hover{background:var(--canvas)}
+.hsearch{flex:1;max-width:420px;position:relative}
+.hsearch svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--t3)}
+.hsearch input{width:100%;height:40px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:0 13px 0 38px;outline:none;font-size:14px}
+.hsearch input:focus{border-color:var(--indigo);background:var(--surface)}
+.hacts{display:flex;align-items:center;gap:6px;margin-left:auto}
+.ic-btn{width:40px;height:40px;border-radius:10px;color:var(--t2);display:grid;place-items:center;position:relative}
+.ic-btn:hover{background:var(--canvas)}.ic-btn svg{width:19px;height:19px}
+.ic-btn .dt{position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--err);border:2px solid #fff}
+
+.content{padding:24px;width:100%;max-width:100%}
+@media(min-width:1500px){.content{padding:28px 40px}}
+@media(min-width:1900px){.content{padding:30px 64px}}
+.phead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.crumbs{font-size:12.5px;color:var(--t3);margin-bottom:8px}
+.crumbs a{cursor:pointer}.crumbs a:hover{color:var(--indigo)}
+.ptitle{font-size:22px;font-weight:750;letter-spacing:-.025em}
+.psub{color:var(--t2);font-size:13.5px;margin-top:3px}
+
+/* ---------------- COMPONENTS (shared w/ approved design) ---------------- */
+.hero{background:linear-gradient(135deg,var(--indigo),#22C55E);border-radius:var(--r-lg);padding:20px;color:#fff;position:relative;overflow:hidden;box-shadow:0 12px 26px rgba(22,163,74,.3);margin-bottom:16px}
+.hero::after{content:"";position:absolute;right:-30px;top:-30px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.1)}
+.hero .lbl{font-size:13px;opacity:.85}.hero .big{font-size:32px;font-weight:800;letter-spacing:-.03em;margin:5px 0 2px}.hero .meta{font-size:12.5px;opacity:.9}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;cursor:pointer;transition:.15s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(19,24,41,.07)}
+.kpi .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;margin-bottom:9px}
+.kpi .ic svg{width:18px;height:18px}
+.kpi .v{font-size:23px;font-weight:750;letter-spacing:-.02em;line-height:1}.kpi .l{font-size:12px;color:var(--t2);margin-top:4px}
+.ic-indigo{background:var(--indigo-50);color:var(--indigo)}.ic-amber{background:var(--warn-bg);color:var(--warn)}
+.ic-green{background:var(--ok-bg);color:var(--ok)}.ic-red{background:var(--err-bg);color:var(--err)}
+.ic-blue{background:var(--info-bg);color:var(--info)}.ic-violet{background:var(--violet-bg);color:var(--violet)}.ic-teal{background:var(--teal-bg);color:var(--teal)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:16px}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.card-h h3{font-size:14.5px;font-weight:650}.card-h .s{font-size:12px;color:var(--t3)}
+.card-p{padding:18px}
+
+.sec{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 11px}
+.sec h3{font-size:15px;font-weight:700}.sec a{font-size:13px;color:var(--indigo);font-weight:600;cursor:pointer}
+
+.ocard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px;margin-bottom:11px;cursor:pointer;transition:.12s}
+.ocard:active{transform:scale(.99)}.ocard:hover{border-color:#D9DCEC}
+.ocard .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ocard .oid{font-size:15px;font-weight:700}.ocard .vend{font-size:13px;color:var(--t2)}
+.ocard .bot{display:flex;align-items:center;justify-content:space-between;margin-top:11px}.ocard .amt{font-size:16px;font-weight:750}
+.ocard .arrow{color:var(--t3)}.ocard .arrow svg{width:18px;height:18px}
+.olist-grid{display:grid;grid-template-columns:1fr;gap:0}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:4px 10px;border-radius:20px;white-space:nowrap}
+.badge .bd{width:6px;height:6px;border-radius:50%;background:currentColor}
+.b-ok{color:var(--ok);background:var(--ok-bg)}.b-info{color:var(--info);background:var(--info-bg)}
+.b-warn{color:var(--warn);background:var(--warn-bg)}.b-violet{color:var(--violet);background:var(--violet-bg)}
+.b-teal{color:var(--teal);background:var(--teal-bg)}.b-gray{color:var(--t2);background:#F0F1F6}.b-err{color:var(--err);background:var(--err-bg)}
+
+.mini-bar{height:6px;border-radius:20px;background:#EEF0F6;overflow:hidden;margin-top:11px}
+.mini-fill{height:100%;border-radius:20px;background:var(--indigo)}.mini-fill.warn{background:var(--warn)}.mini-fill.ok{background:var(--ok)}
+
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px}
+.chip{padding:7px 14px;border-radius:20px;font-size:12.5px;font-weight:650;background:var(--surface-2);color:var(--t2);white-space:nowrap;border:1px solid var(--line)}.chip.on{background:var(--indigo);color:#fff;border-color:var(--indigo)}
+
+/* tracker */
+.track{margin:6px 2px}
+.tstep{display:flex;gap:14px}
+.tline{display:flex;flex-direction:column;align-items:center}
+.tnode{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:2px solid var(--line);color:var(--t3);font-size:12px;font-weight:700;flex-shrink:0;z-index:1}
+.tnode svg{width:15px;height:15px}.tbar{width:2.5px;flex:1;background:var(--line);min-height:26px}
+.tstep.done .tnode{background:var(--ok);border-color:var(--ok);color:#fff}.tstep.done .tbar{background:var(--ok)}
+.tstep.now .tnode{background:var(--indigo);border-color:var(--indigo);color:#fff;box-shadow:0 0 0 5px var(--indigo-50)}
+.tcontent{padding-bottom:18px;flex:1}.tcontent .nm{font-size:14px;font-weight:650}.tstep.now .nm{color:var(--indigo)}.tcontent .tm{font-size:12px;color:var(--t3);margin-top:1px}
+.tstep:last-child .tbar{display:none}
+
+/* vehicles */
+.veh{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:11px;overflow:hidden}
+.vhead{display:flex;align-items:center;gap:12px;padding:14px 15px;cursor:pointer}
+.vic{width:42px;height:42px;border-radius:12px;background:var(--indigo-50);color:var(--indigo);display:grid;place-items:center;flex-shrink:0}.vic svg{width:21px;height:21px}
+.vmeta{flex:1;min-width:0}.vno{font-size:14px;font-weight:700}.vsub{font-size:12px;color:var(--t2)}
+.vchev{color:var(--t3);transition:.25s}.vchev svg{width:18px;height:18px}.veh.open .vchev{transform:rotate(180deg)}
+.vbody{max-height:0;overflow:hidden;transition:max-height .3s}.veh.open .vbody{max-height:300px}
+.vbody-in{padding:12px 15px;border-top:1px solid var(--line);font-size:13px;color:var(--t2)}
+
+/* forms */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 14px}
+.field{margin-bottom:15px}
+.field label{font-size:13px;font-weight:600;color:var(--t2);display:block;margin-bottom:7px}
+.field label .rq{color:var(--err)}
+.inp,.sel{width:100%;height:48px;border:1.5px solid var(--line);border-radius:12px;padding:0 14px;font-size:14.5px;background:var(--surface);color:var(--t1);outline:none;transition:border .15s}
+.inp:focus,.sel:focus{border-color:var(--indigo)}.inp::placeholder{color:var(--t3)}
+textarea.inp{height:auto;min-height:80px;padding:12px 14px;resize:vertical}
+.vendcard{background:var(--indigo-50);border:1px solid var(--indigo-100);border-radius:12px;padding:13px;display:flex;gap:12px;align-items:center;margin-bottom:15px}
+.vendcard .av{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,var(--indigo),#22C55E);color:#fff;display:grid;place-items:center;font-weight:700;flex-shrink:0}
+.vendcard .nm{font-size:14px;font-weight:700}.vendcard .sub{font-size:12px;color:var(--t2);margin-top:2px}
+
+/* SKU rows */
+.li{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:11px}
+.li-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:11px}
+.li-top .nm{font-size:14px;font-weight:650}.li-top .cd{font-size:12px;color:var(--t3)}
+.li-del{color:var(--t3);width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex-shrink:0}.li-del svg{width:17px;height:17px}
+.li-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.li-grid .f label{font-size:11px;color:var(--t3);font-weight:600;display:block;margin-bottom:4px}
+.li-grid .f input{width:100%;height:38px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font-size:13.5px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
+.li-grid .f input:focus{border-color:var(--indigo)}
+.li-tot{display:flex;justify-content:space-between;margin-top:11px;padding-top:11px;border-top:1px dashed var(--line);font-size:13px}.li-tot b{font-weight:700;font-variant-numeric:tabular-nums}
+
+.summary{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px}
+.srow{display:flex;justify-content:space-between;padding:7px 0;font-size:14px;color:var(--t2)}.srow b{color:var(--t1);font-weight:650;font-variant-numeric:tabular-nums}
+.srow.grand{border-top:1.5px solid var(--line);margin-top:6px;padding-top:12px;font-size:16px;color:var(--t1);font-weight:700}.srow.grand b{font-size:20px;color:var(--indigo);font-weight:800}
+
+.btn{width:100%;height:50px;border-radius:13px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:.12s;border:none}
+.btn:active{transform:scale(.99)}.btn:disabled{opacity:.5}
+.btn svg{width:18px;height:18px}
+.btn-primary{background:var(--indigo);color:#fff;box-shadow:0 8px 18px rgba(22,163,74,.28)}
+.btn-ghost{background:var(--surface);border:1.5px solid var(--line);color:var(--t1)}
+.btn-add{background:var(--indigo-50);color:var(--indigo);height:44px}
+.btn-row{display:flex;gap:10px}.btn-row .btn{flex:1}
+.btn-sm{height:40px;font-size:13.5px;border-radius:10px;width:auto;padding:0 14px}
+
+.collbar{height:13px;border-radius:20px;background:#EEF0F6;overflow:hidden;margin:13px 0}
+.collbar-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#D97706,#F59E0B);transition:width .4s}
+.coll-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:13px}
+.coll-stat{border-radius:12px;padding:12px}.coll-stat .l{font-size:11px;color:var(--t2)}.coll-stat .v{font-size:15px;font-weight:750;margin-top:3px;font-variant-numeric:tabular-nums}
+
+.hrow{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+.hrow .hic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;font-size:10px;font-weight:800}
+.hrow .hm{flex:1}.hrow .hm .a{font-size:14px;font-weight:650}.hrow .hm .b{font-size:12px;color:var(--t3)}.hrow .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+
+.chk{display:flex;align-items:center;gap:13px;background:var(--surface);border:1.5px solid var(--line);border-radius:13px;padding:15px;margin-bottom:11px;cursor:pointer}
+.chk.on{border-color:var(--ok);background:var(--ok-bg)}
+.chkbox{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;flex-shrink:0}.chk.on .chkbox{background:var(--ok);border-color:var(--ok)}
+.chkbox svg{width:15px;height:15px;color:#fff;opacity:0}.chk.on .chkbox svg{opacity:1}.chk span{font-size:15px;font-weight:600}.chk.on span{color:var(--ok)}
+
+.upl{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed var(--line);border-radius:14px;padding:24px;text-align:center;color:var(--t2);background:var(--surface);cursor:pointer}
+.upl svg{width:32px;height:32px;color:var(--indigo);margin-bottom:8px}.upl .t{font-weight:650;font-size:14px;color:var(--t1)}.upl .s{font-size:12px;margin-top:3px}
+.doc{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-top:10px}
+.doc .di{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:9px;font-weight:800;flex-shrink:0}.doc .dm .a{font-size:13.5px;font-weight:600}.doc .dm .b{font-size:11.5px;color:var(--t3)}
+
+.seg{display:flex;background:var(--surface-2);border-radius:12px;padding:4px;margin-bottom:16px;overflow-x:auto;border:1px solid var(--line)}
+.seg button{flex:1;min-width:90px;height:38px;border-radius:9px;font-size:13px;font-weight:650;color:var(--t2);white-space:nowrap}.seg button.on{background:var(--surface);color:var(--indigo);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--t3);padding:11px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);position:sticky;top:0;white-space:nowrap}
+.tbl td{padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl tr:last-child td{border-bottom:none}.tbl tr:hover td{background:var(--surface-2)}
+.tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl th.num{text-align:right}
+.tbl tfoot td{padding:11px 14px;background:var(--surface-2);border-top:2px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+.rep-count{font-size:12px;color:var(--t3);margin-bottom:8px;font-weight:600}
+
+.urow{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+.urow .ua{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;color:#fff;font-weight:700;flex-shrink:0;font-size:13px}
+.urow .um{flex:1}.urow .um .a{font-size:14px;font-weight:650}.urow .um .b{font-size:12px;color:var(--t3)}
+
+.menu-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.mtile{background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:15px 8px;display:flex;flex-direction:column;align-items:center;gap:9px;transition:.12s}
+.mtile:active{transform:scale(.96)}.mtile .mi{width:46px;height:46px;border-radius:13px;display:grid;place-items:center}.mtile .mi svg{width:22px;height:22px}.mtile span{font-size:11.5px;font-weight:600;text-align:center}
+
+.empty{text-align:center;color:var(--t3);padding:40px 20px;font-size:14px}
+.loading{text-align:center;color:var(--t3);padding:50px 0;font-size:14px}
+.spin{width:30px;height:30px;border:3px solid var(--indigo-100);border-top-color:var(--indigo);border-radius:50%;animation:sp .7s linear infinite;margin:0 auto 12px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#11131c;color:#fff;padding:12px 18px;border-radius:12px;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:9px;opacity:0;pointer-events:none;transition:.3s;z-index:200;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:90%}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.toast svg{width:18px;height:18px;color:#4ADE80;flex-shrink:0}
+.toast.err svg{color:#F87171}
+
+/* mobile bottom nav */
+.botnav{display:none;position:fixed;left:0;right:0;bottom:0;height:72px;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-top:1px solid var(--line);align-items:center;justify-content:space-around;padding:0 6px 8px;z-index:50}
+.botnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--t3);padding-top:10px}
+.botnav button svg{width:22px;height:22px;flex-shrink:0}.botnav button span{font-size:10px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.botnav button.on{color:var(--indigo)}
+.botnav .fab{flex:0 0 auto;width:52px;height:52px;border-radius:17px;background:var(--indigo);color:#fff;display:grid;place-items:center;margin-top:-24px;box-shadow:0 8px 20px rgba(22,163,74,.4)}.botnav .fab svg{width:25px;height:25px}
+.overlay{display:none;position:fixed;inset:0;background:rgba(19,24,41,.5);z-index:55}.overlay.show{display:block}
+
+.two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start}
+
+/* ---- responsive ---- */
+@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0);box-shadow:0 0 60px rgba(0,0,0,.3)}
+  .main{margin-left:0}.ham{display:flex}
+  .content{padding:16px 16px 90px}.botnav{display:flex}
+  .two-col{grid-template-columns:1fr}
+  .ptitle{font-size:19px}
+}
+/* ---- mobile: sab kuch ek column, badi tap targets, notch safe ---- */
+@media(max-width:640px){
+  .grid2,.grid3{grid-template-columns:1fr}
+  .flow{gap:8px}
+  .fnode{flex:1 1 calc(50% - 4px);min-width:0}          /* 2 boxes per row */
+  .fnode .fv{font-size:22px}
+  .inp,.sel{font-size:16px;padding:11px 12px}            /* 16px = iOS zoom nahi karega */
+  .btn{padding:12px 14px}
+  .dv2-card{padding:12px}
+  .pmx-wrap{max-height:70vh}
+  .pmx td.u,.pmx th.u{min-width:150px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .hdr{padding-top:env(safe-area-inset-top)}
+  .botnav{padding-bottom:env(safe-area-inset-bottom)}
+  .content{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+}
+@media(max-width:400px){ .fnode{flex:1 1 100%} }
+@media(max-width:560px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+  .li-grid{grid-template-columns:1fr 1fr}
+  .coll-stats{grid-template-columns:1fr 1fr 1fr}
+  .hsearch{max-width:none}
+  .desk-only{display:none}
+}
+/* searchable dropdown (vendor / SKU) — mobile-friendly replacement for native datalist */
+.cmb{position:relative}
+.cmb-list{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(20,24,41,.16);max-height:240px;overflow:auto;z-index:60;display:none;padding:4px}
+.cmb-list.show{display:block}
+.cmb-opt{padding:11px 12px;border-radius:9px;font-size:14px;cursor:pointer;line-height:1.25}
+.cmb-opt:active,.cmb-opt.active{background:var(--indigo-50)}
+@media(hover:hover){.cmb-opt:hover{background:var(--indigo-50)}}
+.cmb-empty{padding:11px 12px;color:var(--t3);font-size:13px}
+/* compact mobile view — fit more on screen */
+@media(max-width:480px){
+  .content{padding:12px 12px 86px}
+  .phead{margin-bottom:12px}
+  .ptitle{font-size:17px}.psub{font-size:12px}
+  .crumbs{font-size:11px}
+  .card-p{padding:13px}
+  .sec{margin:16px 0 8px}.sec h3{font-size:13px}
+  .kpi{padding:12px}.kpi .v{font-size:20px}.kpi .l{font-size:11px}
+  .kpi .ic{width:30px;height:30px}
+  .hero{padding:16px}.hero .big{font-size:26px}.hero .lbl{font-size:11px}
+  .ocard{padding:12px}.oid{font-size:13.5px}.vend{font-size:12px}
+  .badge{font-size:10.5px;padding:3px 7px}
+  .field{margin-bottom:11px}.field label{font-size:12px}
+  .inp,.sel{height:42px;font-size:14px;padding:0 12px}
+  textarea.inp{height:auto}
+  .li{padding:11px}.li-grid{gap:7px}
+  .li-grid .f label{font-size:10.5px}.li-grid input{height:38px;font-size:13px}
+  .btn{height:46px;font-size:14px}.btn-sm{height:38px;font-size:13px}
+  .srow{font-size:13px;padding:6px 0}
+  .veh{margin-bottom:8px}.vhead{padding:12px}.vno{font-size:13.5px}.vsub{font-size:11.5px}
+  .track .nm{font-size:13px}.track .tm{font-size:11px}
+  .summary{padding:14px}
+  .vendcard{padding:10px}.vendcard .nm{font-size:13.5px}.vendcard .sub{font-size:11.5px}
+  .cmb-opt{padding:12px;font-size:14px}
+}
+.btn-sm{height:40px;padding:0 14px;font-size:13.5px;width:auto;display:inline-flex}
+/* login gate */
+.login{position:fixed;inset:0;z-index:200;background:linear-gradient(160deg,var(--indigo-50),var(--canvas) 62%);display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 60px rgba(20,24,41,.16);padding:28px 24px}
+.login-brand{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.login-brand .bm{width:38px;height:38px;border-radius:11px;background:var(--indigo);display:grid;place-items:center}
+.login-brand .bm svg{width:21px;height:21px}
+.login-brand .bn{font-size:19px;font-weight:600;color:var(--ink)}
+.login-title{font-size:20px;font-weight:700;color:var(--ink)}
+.login-sub{font-size:13px;color:var(--t2);margin:4px 0 18px;line-height:1.4}
+.lg-field{margin-bottom:14px}
+.lg-field label{display:block;font-size:12.5px;font-weight:600;color:var(--t2);margin-bottom:6px}
+.lg-field input,.lg-field select{width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 13px;font-size:14.5px;font-family:inherit;background:var(--surface);color:var(--ink);-webkit-appearance:none;appearance:none}
+.lg-field input:focus,.lg-field select:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-50)}
+.lg-err{color:var(--err);font-size:12.5px;min-height:16px;margin-bottom:6px}
+.login-card .btn{width:100%}
+.lg-hint{text-align:center;font-size:12px;color:var(--t3);margin-top:12px}
+/* dark-mode surfaces that used translucent white */
+body.dark .hdr{background:rgba(21,32,27,.85)}
+body.dark .botnav{background:rgba(21,32,27,.95)}
+body.dark ::-webkit-scrollbar-thumb{background:#2C3A32}
+body.dark .upl,body.dark .doc,body.dark .veh{background:var(--surface)}
+body.dark .login{background:linear-gradient(160deg,#12211A,#0D1512 62%)}
+body.dark .btn-primary,body.dark .botnav .fab,body.dark .chip.on{background:#16A34A}
+body.dark .btn-primary:hover{background:#15803D}
+/* theme toggle */
+.theme-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--t2);border:1px solid var(--line);background:var(--surface)}
+.theme-btn:hover{color:var(--indigo);border-color:var(--indigo)}
+.theme-btn svg{width:19px;height:19px}
+/* selectable order-detail table (dispatch planning) */
+.seltbl input[type=checkbox]{width:17px;height:17px;accent-color:var(--indigo);cursor:pointer;vertical-align:middle}
+.seltbl .qin{width:96px;height:34px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-size:13px;text-align:right;font-variant-numeric:tabular-nums;background:var(--surface);color:var(--t1)}
+.seltbl .qin:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-50)}
+.seltbl tr.off{opacity:.4}
+.seltbl .nm{font-weight:600;font-size:13px;color:var(--t1)}
+.seltbl .cd{font-size:11px;color:var(--t3);margin-top:1px}
+.chk-col{width:44px;text-align:center}
+/* row delete + confirm modal */
+.row-del{margin-left:auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--t3);border:1px solid var(--line);background:var(--surface);flex-shrink:0}
+.row-del:hover{color:var(--err);border-color:var(--err);background:var(--err-bg)}
+.row-del svg{width:16px;height:16px}
+.btn-danger{background:var(--err);color:#fff}
+.btn-danger:hover{filter:brightness(.94)}
+.cfm{position:fixed;inset:0;z-index:300;background:rgba(15,40,28,.5);display:none;align-items:center;justify-content:center;padding:20px}
+.cfm-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:340px;width:100%;box-shadow:0 24px 60px var(--shadow)}
+.cfm-msg{font-size:14.5px;color:var(--t1);margin-bottom:16px;line-height:1.45}
+.cfm-row{display:flex;gap:8px;justify-content:flex-end}
+/* QC result options */
+.qc-opts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.qc-opt{flex:1;min-width:120px;height:46px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--t1);font-weight:600;font-size:13.5px;cursor:pointer}
+.qc-opt:hover{border-color:var(--indigo)}
+.qc-opt.on{border-color:var(--indigo);background:var(--indigo-50);color:var(--indigo)}
+.upcase{text-transform:uppercase}
+.uomtag{display:inline-block;background:var(--indigo-50);color:var(--indigo-7);border:1px solid var(--indigo-100);
+  border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:700;letter-spacing:.3px}
+.cust-list{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto}
+.cust-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.cust-chk{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;flex:1}
+.cust-chk input{width:16px;height:16px}
+.cust-mv{display:flex;gap:4px}
+.modal-bg{position:fixed;inset:0;background:rgba(8,20,14,.55);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;backdrop-filter:blur(2px)}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:520px;box-shadow:0 24px 60px rgba(0,0,0,.35);max-height:90vh;overflow:auto}
+.modal-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
+.modal-h h3{font-size:15px;margin:0}
+.modal-x{border:0;background:transparent;font-size:26px;line-height:1;cursor:pointer;color:var(--t3);padding:0 4px}
+.modal-x:hover{color:var(--t1)}
+.modal-b{padding:16px 18px}
+.lc-wrap{margin:14px 0 6px;padding:4px 0}
+.lc-stage{display:flex;gap:12px;align-items:flex-start}
+.lc-dot{width:26px;height:26px;border-radius:50%;flex:0 0 auto;border:2px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;font-weight:800}
+.lc-dot.on{background:var(--indigo);border-color:var(--indigo)}
+.lc-line{width:2px;height:16px;background:var(--line);margin-left:12px}
+.lc-line.on{background:var(--indigo)}
+.lc-body{padding-top:2px;padding-bottom:2px}
+.lc-lbl{font-size:13px;font-weight:700;color:var(--t1)}
+.lc-lbl.pend{color:var(--t3);font-weight:600}
+.lc-sub{font-size:11.5px;color:var(--t2);margin-top:1px}
+.lc-sen{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.lc-sen-h{background:var(--surface-2);padding:9px 12px;display:flex;align-items:center;gap:8px}
+.lc-sen-b{padding:10px 12px}
+.lc-step{font-size:11.5px;margin-top:6px;padding:5px 9px;border-radius:6px;background:var(--surface-2);color:var(--t2);font-weight:600}
+.lc-step.ok{background:var(--ok-bg);color:var(--ok)}
+.lc-step.bad{background:var(--err-bg,rgba(220,38,38,.12));color:var(--err,#DC2626)}
+.lc-step.pend{opacity:.7}
+.lc-next{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.lc-next-l{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--t3);margin-bottom:7px;font-weight:700}
+tr.lowrow td{background:var(--warn-bg)}
+.b-mut{background:var(--surface-2);color:var(--t3)}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
+.dgrid>div{display:flex;flex-direction:column;padding:4px 0;border-bottom:1px solid var(--line)}
+.dgrid .dk{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
+.dgrid .dv{font-size:13px;font-weight:600;color:var(--t1);margin-top:1px}
+@media(max-width:640px){.dgrid{grid-template-columns:1fr}}
+
+.lo-btn{border:1px solid var(--line);background:transparent;color:var(--t-inv);border-radius:8px;width:30px;height:30px;
+  cursor:pointer;font-size:14px;line-height:1;flex:0 0 auto}
+.lo-btn:hover{background:rgba(255,255,255,.10);color:#fff;border-color:rgba(255,255,255,.35)}
+.vo-banner{background:var(--warn-bg);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);
+  border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px}
+.pmx-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.pmx{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px}
+.pmx th,.pmx td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.pmx thead th{position:sticky;top:0;background:var(--surface-2);z-index:3;font-weight:700;color:var(--t2);text-align:left}
+.pmx thead th.grp{background:var(--indigo-50);color:var(--indigo-7);text-align:center;border-left:2px solid var(--indigo-100)}
+.pmx td.u,.pmx th.u{position:sticky;left:0;background:var(--surface);z-index:2;border-right:2px solid var(--line);min-width:190px;white-space:normal}
+.pmx thead th.u{z-index:4;background:var(--surface-2)}
+.pmx tbody tr:hover td{background:var(--surface-2)}
+.pmx tbody tr:hover td.u{background:var(--surface-2)}
+.pmx .un{font-weight:700;color:var(--t1)}
+.pmx .ue{font-size:11px;color:var(--t3)}
+.psel{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:11.5px;background:var(--surface);color:var(--t1);cursor:pointer}
+.psel.p-edit{border-color:#16A34A;background:#E7F8EE;color:#15803D;font-weight:700}
+body.dark .psel.p-edit{background:rgba(22,163,74,.18)}
+.psel.p-view{border-color:#2563EB;background:#E7EFFE;color:#1D4ED8;font-weight:700}
+body.dark .psel.p-view{background:rgba(37,99,235,.18)}
+.psel.p-none{border-color:var(--line);background:var(--surface-2);color:var(--t3)}
+.rowsave{border:0;background:var(--indigo);color:#fff;border-radius:7px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer}
+.rowsave:disabled{opacity:.45;cursor:default}
+.qbtn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--t2)}
+.qbtn:hover{border-color:var(--indigo);color:var(--indigo)}
+.bulk-drop{border:2px dashed var(--line);border-radius:12px;padding:20px;text-align:center;background:var(--surface-2);cursor:pointer}
+.bulk-drop:hover{border-color:var(--indigo);background:var(--indigo-50)}
+.bulk-res{font-size:12.5px;margin-top:10px}
+.bulk-res .ok{color:var(--ok)}.bulk-res .er{color:var(--err)}
+
+/* ---- Dashboard V2: pipeline (Design D — style D1 / D2 switchable) ---- */
+:root{--nb:#CFDCD4}
+body.dark{--nb:#39493F}
+.flow{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 18px}
+.fnode{flex:1 1 108px;min-width:108px;background:var(--surface);border-radius:11px;padding:14px 12px;
+  cursor:pointer;position:relative;overflow:hidden;transition:.16s;border:1.5px solid var(--nb)}
+.fnode:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(15,42,28,.10)}
+.fnode .fv{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--t1)}
+.fnode .fv.zero{color:var(--t3)}
+.fnode .fl{font-size:10.5px;color:var(--t2);margin-top:6px;font-weight:600;line-height:1.3}
+/* sliding green line, one node after another */
+.fnode::after{content:'';position:absolute;left:0;bottom:0;height:3px;width:34px;background:var(--indigo);border-radius:2px;
+  animation:fslide var(--cyc,6.5s) linear infinite;animation-delay:var(--dly,0s);opacity:0}
+@keyframes fslide{0%{transform:translateX(-34px);opacity:0}3%{opacity:1}14%{transform:translateX(150px);opacity:0}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.fnode::after{animation:none}}
+/* style D1 — neutral border, green on hover */
+.flow.st-d1 .fnode:hover{border-color:var(--indigo)}
+/* style D2 — neutral border + colour bar on the left */
+.flow.st-d2 .fnode{border-left:4px solid var(--bcol,#16A34A)}
+/* style switcher */
+.stsw{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:var(--surface)}
+.stsw button{border:0;background:transparent;padding:5px 12px;font-size:11.5px;font-weight:700;color:var(--t2);cursor:pointer}
+.stsw button.on{background:var(--indigo);color:#fff}
+.dv2-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+@media(max-width:820px){.dv2-grid{grid-template-columns:1fr}}
+.dv2-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.dv2-card h4{margin:0 0 10px;font-size:14px;color:var(--t1)}
+.dv2-bar{cursor:pointer}
+.dv2-bar rect{transition:.15s}
+.dv2-bar:hover rect{opacity:.75}
+.dv2-bar.sel rect{stroke:var(--t1);stroke-width:2}
+.dv2-lbl{font-size:9px;fill:var(--t2);text-anchor:middle}
+.dv2-val{font-size:9.5px;fill:var(--t1);text-anchor:middle;font-weight:700}
+.dv2-axis{stroke:var(--line)}
+.dv2-line{fill:none;stroke:var(--indigo);stroke-width:2}
+.dv2-dot{fill:var(--indigo)}
+.dv2-donut-lbl{font-size:12px;font-weight:700}
+
+</style>
+</head>
+<body>
+<!-- LOGIN GATE -->
+<div class="login" id="login">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="bm"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M3 9l2-5h14l2 5"/></svg></div>
+      <div class="bn">Order<b>Flow</b></div>
+    </div>
+    <div class="login-title">Sign in</div>
+    <div class="login-sub">Enter your email, password and role to continue.</div>
+    <div class="lg-field"><label>Email</label><input id="loginEmail" type="email" placeholder="you@company.com" autocomplete="email"></div>
+    <div class="lg-field"><label>Password</label><input id="loginPw" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+    <div class="lg-field"><label>Role</label>
+      <select id="loginRole">
+        <option value="">Select role…</option>
+        <option>Sales</option>
+        <option>Dispatch Executive</option>
+        <option>Security</option>
+        <option>Billing Executive</option>
+        <option>Accounts</option>
+        <option>HOD</option>
+        <option>Purchase Executive</option>
+        <option>Store Executive</option>
+        <option>Admin</option>
+      </select>
+    </div>
+    <div class="lg-err" id="lgErr"></div>
+    <button class="btn btn-primary" id="loginBtn">Sign in →</button>
+    <div style="text-align:center;margin-top:10px"><a href="#" id="fpLink" style="font-size:12.5px;color:var(--indigo);font-weight:600">Forgot password?</a></div>
+    <div class="lg-hint">You'll only see the pages your admin allowed for you.</div>
+    <div id="fpBox" style="display:none;border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <div class="login-title" style="font-size:16px">Reset password</div>
+      <div class="login-sub" style="margin-bottom:10px">Aapke email par 6-digit code aayega (spam folder bhi dekh lein).</div>
+      <div class="lg-field"><label>Email</label><input id="fpEmail" type="email" placeholder="you@company.com"></div>
+      <div id="fpStep2" style="display:none">
+        <div class="lg-field"><label>6-digit code (email me aaya hua)</label><input id="fpOtp" inputmode="numeric" maxlength="6" placeholder="123456"></div>
+        <div class="lg-field"><label>New password</label><input id="fpPw1" type="password" placeholder="Min 4 characters"></div>
+        <div class="lg-field"><label>Confirm new password</label><input id="fpPw2" type="password" placeholder="Repeat password"></div>
+      </div>
+      <div class="lg-err" id="fpErr"></div>
+      <div id="fpOk" style="font-size:12.5px;color:var(--ok);font-weight:600;margin-bottom:8px"></div>
+      <button class="btn btn-primary" id="fpSend">Send code →</button>
+      <button class="btn btn-primary" id="fpVerify" style="display:none">Update password →</button>
+      <div style="text-align:center;margin-top:10px"><a href="#" id="fpBack" style="font-size:12.5px;color:var(--t2)">← Back to sign in</a></div>
+    </div>
+  </div>
+</div>
+<div class="shell">
+  <!-- SIDEBAR (desktop) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="bm"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M3 9l2-5h14l2 5"/></svg></div>
+      <div class="bn">Order<b>Flow</b></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sb-foot"><div class="uchip"><div class="uav" id="uav">—</div><div style="flex:1"><div class="nm" id="uname">—</div><div class="rl" id="urole">—</div></div>
+      <button class="lo-btn" id="logoutBtn" title="Sign out">⏻</button></div></div>
+  </aside>
+  <div class="overlay" id="overlay"></div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="hdr">
+      <button class="ham" id="ham"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <div class="hsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search orders, vendors, vehicles…"></div>
+      <div class="hacts">
+        <button class="theme-btn" id="themeBtn" title="Theme"></button>
+        <button class="ic-btn desk-only"><span class="dt"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></button>
+        <div class="uav" id="uav2" style="border-radius:10px;cursor:pointer" title="Sign out">—</div>
+      </div>
+    </header>
+    <main class="content" id="view"><div class="loading"><div class="spin"></div>Loading…</div></main>
+  </div>
+</div>
+
+<!-- mobile bottom nav -->
+<nav class="botnav" id="botnav"></nav>
+<div class="toast" id="toast"><svg id="toastIc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span id="toastMsg"></span></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script src="api-supabase.js"></script>
+<script>
+/*****************************************************************
+ * SERVER BRIDGE — uses google.script.run inside Apps Script,
+ * falls back to an in-browser MOCK so the UI previews anywhere.
+ *****************************************************************/
+const IS_GAS = (typeof google!=='undefined' && google.script && google.script.run);
+const IS_SB  = (typeof window!=='undefined' && window.SUPABASE_URL && window.SBAPI);
+function api(fn, payload){
+  if (IS_SB) return SBAPI.call(fn, payload);
+  return new Promise((resolve,reject)=>{
+    if(IS_GAS){
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](payload);
+    } else {
+      setTimeout(()=>{ try{ resolve(MOCK[fn] ? MOCK[fn](payload) : null);}catch(e){ reject(e);} }, 120);
     }
-    mem[t]=revive(await res.json());
-  }
-  function checkConfig(){
-    var u=base(), k=String(window.SUPABASE_KEY||'').trim();
-    if(!u || /YOUR-PROJECT/i.test(u)) throw new Error('config.js: SUPABASE_URL is not filled in yet.');
-    if(!k || /YOUR-ANON/i.test(k))    throw new Error('config.js: SUPABASE_KEY is not filled in yet.');
-    if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(u)) throw new Error('config.js: SUPABASE_URL looks wrong — it should be exactly like https://abcd1234.supabase.co (no slash at the end). Yours: '+u);
-  }
-  async function loadAll(){ checkConfig(); await Promise.all(SB_TABLES.map(loadTable)); loaded=true; }
-  function rows(t){ if(!(t in mem)) throw new Error('Table not loaded: '+t); return mem[t]; }
-  function push(op){ queue.push(op); }
-  /* Send queued writes. Consecutive inserts into the same table are merged into ONE request,
-   * so a typical save costs 1–2 round trips instead of 3–5. */
-  async function runQueue(){
-    var ops=queue.splice(0); if(!ops.length) return;
-    var batched=[];
-    ops.forEach(function(op){
-      var last=batched[batched.length-1];
-      if(op.kind==='insert' && last && last.kind==='insert' && last.t===op.t){ last.rows=last.rows.concat(op.rows); }
-      else batched.push(op);
-    });
-    for(var i=0;i<batched.length;i++){ var op=batched[i], res;
-      if(op.kind==='insert'){ res=await fetch(url(op.t),{method:'POST',headers:hdrs(),body:JSON.stringify(op.rows.map(serialize))}); }
-      else if(op.kind==='update'){ res=await fetch(url(op.t,'?'+encodeURIComponent('"'+op.col+'"')+'=eq.'+encodeURIComponent(op.val)),{method:'PATCH',headers:hdrs(),body:JSON.stringify(serialize(op.set))}); }
-      else if(op.kind==='delete'){ res=await fetch(url(op.t,'?'+encodeURIComponent('"'+op.col+'"')+'=eq.'+encodeURIComponent(op.val)),{method:'DELETE',headers:hdrs()}); }
-      else if(op.kind==='upload'){
-        var bin=atob(op.base64), bytes=new Uint8Array(bin.length);
-        for(var bi=0;bi<bin.length;bi++) bytes[bi]=bin.charCodeAt(bi);
-        res=await fetch(String(window.SUPABASE_URL||'').trim().replace(/\/+$/,'')+'/storage/v1/object/uploads/'+op.path,
-          { method:'POST', headers:{ 'apikey':window.SUPABASE_KEY, 'Authorization':'Bearer '+window.SUPABASE_KEY, 'Content-Type':op.mime, 'x-upsert':'true' },
-            body:bytes });
-      }
-      if(res && !res.ok){ var txt=''; try{ txt=await res.text(); }catch(e){} throw new Error('Supabase write failed on '+op.t+': '+txt); }
-    }
-  }
-  /* Background writer: saves return instantly; writes drain in order behind the scenes. */
-  var chain=Promise.resolve();
-  function flush(){
-    chain = chain.then(runQueue).catch(function(e){
-      console.error('[Supabase write]', e);
-      try{ if(typeof window.toast==='function') window.toast('Save failed to sync: '+(e.message||e), true); }catch(_){}
-    });
-    return chain;
-  }
-  function pending(){ return queue.length; }
-  return { loadAll:loadAll, loadTable:loadTable, rows:rows, push:push, flush:flush, pending:pending, isLoaded:function(){return loaded;} };
+  });
+}
+
+/* ---------------- ICONS ---------------- */
+/* ---------- THEME (dark / light) ---------- */
+const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 1.5v2.5M12 20v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M1.5 12h2.5M20 12h2.5M4.2 19.8L6 18M18 6l1.8-1.8"/></svg>';
+const MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>';
+const LEAF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 019.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.5 5-6"/></svg>';
+const THEMES=['light','dark','forest'];                 /* click = agla theme */
+function applyTheme(mode){
+  if(THEMES.indexOf(mode)<0) mode='light';
+  document.body.classList.toggle('dark', mode!=='light');   /* forest bhi dark base par chalta hai */
+  document.body.classList.toggle('forest', mode==='forest');
+  const b=document.getElementById('themeBtn');
+  if(b){ b.innerHTML = mode==='light'?MOON : mode==='dark'?LEAF : SUN;
+         b.title = mode==='light'?'Switch to Dark' : mode==='dark'?'Switch to Forest' : 'Switch to Light'; }
+  try{ localStorage.setItem('o2c-theme',mode); }catch(e){}
+}
+function toggleTheme(){
+  const cur=document.body.classList.contains('forest')?'forest':document.body.classList.contains('dark')?'dark':'light';
+  applyTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);
+}
+(function initTheme(){
+  let m='light';
+  try{ m=localStorage.getItem('o2c-theme')||'light'; }catch(e){}
+  if(m==='dark'||m==='forest'){} else m='light';
+  applyTheme(m);
+  const b=document.getElementById('themeBtn'); if(b) b.addEventListener('click',toggleTheme);
 })();
 
-/* ================= ORIGINAL DOMAIN LOGIC (from Code.gs) ================= */
-/*************************************************************************
- * ORDER-TO-COLLECTION (O2C) — Google Apps Script backend
- * Backend database  : Google Sheets (this spreadsheet)
- * Frontend          : Index.html (served by doGet)
- *
- * FIRST-TIME SETUP
- *   1. Tools ▸ Script editor is already here.
- *   2. Run  setupDatabase()  once  → creates every tab + seeds masters.
- *   3. Deploy ▸ New deployment ▸ Web app ▸ Execute as "Me",
- *      access "Anyone in your org" (or "Anyone") ▸ Deploy.
- *   4. Open the web-app URL.
- *
- * Each stage writes its own row and is only unlocked after the previous
- * stage is complete. One Order can carry many Gate Entries (vehicles);
- * Loading / Invoice / Gate Out / POD are stored per Gate Entry.
- *************************************************************************/
-
-/* ============================== CONFIG ============================== */
-/* Each table is its own readable tab in the spreadsheet. */
-const SHEETS = {
-  VendorMaster:      ['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
-  SKUMaster:         ['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate'],
-  TransporterMaster: ['TransporterName','ContactNumber'],
-  SupplierMaster:    ['SupplierCode','SupplierName','BrokerName','Email','Address','ContactPerson','Mobile','GST','CreditDays'],
-  RawMaterialMaster: ['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate'],
-  Users:             ['Email','Name','Role','Password','Permissions','Status'],
-  Orders:            ['OrderNo','OrderDate','VendorCode','VendorName','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
-  OrderItems:        ['OrderNo','SKUCode','SKUName','UOM','Qty','Rate','SGST','CGST','Taxable','TaxAmount','Amount'],
-  Planning:          ['PlanNo','OrderNo','PlannedDate','PlannedTime','TransporterName','Remarks','Status','CreatedAt'],
-  PlanItems:         ['PlanNo','OrderNo','SKUCode','SKUName','UOM','PlannedQty'],
-  GateEntry:         ['GateEntryNo','PlanNo','OrderNo','GateDate','GateTime','VehicleNo','DriverName','MobileNo','DLNo','RCNo','TransporterName','Status'],
-  LoadItems:         ['GateEntryNo','PlanNo','OrderNo','SKUCode','SKUName','UOM','PlannedQty','DispatchQty'],
-  Invoice:           ['GateEntryNo','OrderNo','InvoiceNo','InvoiceDate','InvoiceAmount','InvoiceWeight','FileUrl','Status','CreatedAt'],
-  GateOut:           ['GateEntryNo','OrderNo','VehicleNo','DriverName','InvoiceNo','InvoiceVerified','LRVerified','VehicleVerified','DocsVerified','WeighmentDone','GateOutDate','GateOutTime','Status'],
-  POD:               ['GateEntryNo','OrderNo','DeliveryDate','ReceiverName','ReceiverMobile','GrossWeight','NetWeight','PartyNetWeight','FileUrl','Remarks','HasReturn','Status'],
-  PODItems:          ['GateEntryNo','OrderNo','SKUCode','SKUName','UOM','LoadedQty','DeliveredQty','RejectedQty'],
-  Returns:           ['ReturnNo','GateEntryNo','OrderNo','ReturnDate','ReturnTime','VehicleNo','DriverName','Status','ReceivedDate','ReceiverName'],
-  Collection:        ['CollectionNo','OrderNo','InvoiceNo','VendorName','InvoiceAmount','CollectionDate','CollectionAmount','DeductionAmount','ActualReceived','PaymentMode','RefNo','Remarks','CreatedAt'],
-  Schedule:          ['ScheduleNo','OrderNo','VendorName','PromisedDate','PromisedTime','Remarks','CreatedBy','CreatedAt'],
-  ScheduleItems:     ['ScheduleNo','OrderNo','SKUCode','SKUName','UOM','OrderedQty','ScheduledQty'],
-  /* ---- Purchase-to-Payment (P2P) ---- */
-  PO:                ['PONo','PODate','SupplierCode','SupplierName','BrokerName','SupplierEmail','TransportType','NumVehicles','DeductionCondition','PackingTerms','Remarks','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
-  POItems:           ['PONo','SKUCode','SKUName','UOM','Qty','Rate','GSTPercent','Amount'],
-  SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','DriverMobile','InvoiceNo','Status','CreatedAt'],
-  SENItems:          ['SENNo','PONo','SKUCode','SKUName','UOM','POQty','ReceivedQty'],
-  QC:                ['SENNo','PONo','QCStatus','DeductionAmount','HL','Moisture','Infestation','Gluten','ForeignMatter','KB','Inspector','Remarks','QCDate'],
-  Receiving:         ['GRNNo','SENNo','PONo','ReceiveDate','ReceiverName','FactoryGrossWeight','FactoryTareWeight','FactoryNetWeight','PartyNetWeight','Remarks','Status'],
-  PurchaseReturn:    ['PRNo','SENNo','PONo','ReturnDate','Reason','Status'],
-  Payment:           ['PayNo','PONo','SENNo','SupplierName','Amount','PayDate','PaymentMode','RefNo','Remarks','CreatedAt'],
-  /* ---- FMS office calendar. FMS_O2C / FMS_P2P are banded sheets built by setupFMS() (see FMS section). ---- */
-  Holidays:          ['Date']
+const I={
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h13v9H1zM14 10h4l3 3v3h-7z"/><circle cx="5.5" cy="18.5" r="1.8"/><circle cx="17.5" cy="18.5" r="1.8"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>'
 };
-const STALE_TABS = ['Docs','Lines','Masters'];   // removed if upgrading from the consolidated build
+const inr=n=>'₹'+Math.round(Number(n)||0).toLocaleString('en-IN');
+const inrS=n=>{n=Number(n)||0;return n>=1e7?'₹'+(n/1e7).toFixed(1)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(1)+'L':n>=1e3?'₹'+(n/1e3).toFixed(1)+'K':'₹'+n;};
+const STAGES=['Created','Delivery Schedule','Dispatch Planned','Vehicle Arrived','Loading Completed','Invoice Generated','Gate Out','Delivered','Collection'];
+const badgeCls=s=>({'Pending Dispatch Planning':'b-gray','Partial Planning':'b-teal','Fully Planned':'b-teal','Vehicle Arrived':'b-teal','Partial Loading':'b-info','Loading Completed':'b-info','Invoice Generated':'b-info','Vehicle Dispatched':'b-violet','Delivered':'b-violet','Partially Dispatched':'b-warn','Partially Collected':'b-warn','Fully Collected':'b-ok'}[s]||'b-gray');
 
-const PO_STATUS = { DRAFT:'Draft', SENT:'Sent to Supplier', PARTIAL:'Partially Received', RECEIVED:'Fully Received', CLOSED:'Closed' };
-const SEN_STATUS = { PENDING_QC:'Pending QC', QC_PASSED:'QC Passed', QC_REJECTED:'QC Rejected', RECEIVED:'Material Received', RETURNED:'Material Returned', PAID:'Paid' };
-const QC_STATUS = { ACCEPT:'Accept', DEDUCT:'Accept with Deduction', REJECT:'Reject' };
+/*****************************************************************
+ * NAVIGATION + ROLES
+ *****************************************************************/
+/* ================= PERMISSION ENGINE =================
+ * Har module ki permission: 'edit' (View/Edit) | 'view' (sirf dekhna) | 'none' (dikhega hi nahi)
+ * Admin ko hamesha poora access. Baaki sab User Management se control hota hai.            */
+let PERMS={};
+const PERM_GROUPS=[
+  { g:'O2C', items:[
+    ['dashboard','O2C Dashboard'],['orders','All Order View'],['create','New Order Create'],
+    ['schedule','Delivery Schedule'],['dispatch','Dispatch Planning'],['gate','Gate Entry'],
+    ['loading','Vehicle Loading'],['invoice','Invoice Entry'],['gateout','Gate Out'],
+    ['pod','POD'],['collection','Collection'],['returnentry','Return Gate Entry'],
+    ['returnreceived','Return Received'],['reports','Reports'] ]},
+  { g:'P2P', items:[
+    ['p2p_dashboard','P2P Dashboard'],['p2p_stock','PM Stock Report'],['p2p_pr','Purchase Requisition'],['p2p_quote','Quotations'],['p2p_po','Purchase Order'],['p2p_polist','PO List / Sent'],
+    ['p2p_gate','Gate Entry (SEN)'],['p2p_qc','QC Check'],['p2p_receiving','Material Received'],
+    ['p2p_return','Material Return'],['p2p_payment','Payment (P2P)'] ]},
+  { g:'Admin', items:[ ['masters','Master Data'],['users','User Management'] ]}
+];
+const PERM_MODULES=PERM_GROUPS.reduce((a,g)=>a.concat(g.items.map(i=>i[0])),[]);
+const PERM_LABEL={}; PERM_GROUPS.forEach(g=>g.items.forEach(i=>PERM_LABEL[i[0]]=i[1]));
+const PERM_OPTS=[['edit','View/Edit'],['view','View only'],['none','No access']];
 
-/* ================================================================
- * FMS — planned-vs-actual time monitoring (built like the ssgktj FMS sheet)
- * ----------------------------------------------------------------
- * Model: an entry event stamps the row Timestamp ("Whenever Needed" — no plan).
- * Every later step has 4 columns: Planned | Actual | Status | Time Delay.
- *   • PLANNED  = the previous step's Actual (or the trigger) advanced by a TAT in
- *                WORKING HOURS (office hours + working days + the Holidays tab).
- *   • ACTUAL   = stamped automatically when that step is saved.
- *   • STATUS   = Pending → Done (or the QC result).
- *   • TIME DELAY = Actual − Planned as HH:MM:SS (elapsed), blank when on time/early.
- * Edit FMS_CFG (office hours / working days) and FMS_TAT (hours per step) to your SLAs. */
-const FMS_CFG = { open:'10:00', close:'18:00', workDays:[1,2,3,4,5,6] };   // Sun=0..Sat=6 → Mon–Sat
-/* Working-hour TATs per step (edit to your SLAs). Header-level TATs: */
-const FMS_TAT_O2C_ORDER = { sched:2, plan:3, coll:72 };            // order-level: schedule within 2wh of order; collection within 72wh of first POD
-const FMS_TAT_O2C = { load:3, inv:2, gateout:2, pod:24 };          // dispatch-cycle steps after gate entry
-const FMS_TAT_P2P_PO = { send:2, deliveryDays:7, pay:120 };        // PO-level: send within 2wh; material within 7 CALENDAR days of send; payment within 120wh of receipt
-const FMS_TAT_P2P = { qc:3, recv:3, ret:3 };                       // inbound-cycle steps after gate entry
-
-function fmsMins_(hhmm){ const p=String(hhmm).split(':'); return (+p[0])*60+(+p[1]||0); }
-function fmsHolidaySet_(){
-  const set={};
-  try{ readAll_('Holidays').forEach(r=>{ const d=r.Date; if(d){ const dt=(d instanceof Date)?d:new Date(d);
-        if(!isNaN(dt)) set[Utilities.formatDate(dt,Session.getScriptTimeZone(),'yyyy-MM-dd')]=true; } }); }catch(e){}
-  return set;
+function isAdminRole(r){ return String(r||'').trim().toLowerCase()==='admin'; }
+function perm(id){
+  if(STATE.user && isAdminRole(STATE.user.role)) return 'edit';    // Admin = full access
+  const v=PERMS&&PERMS[id];
+  return (v==='edit'||v==='view')?v:'none';
 }
-function fmsIsWork_(dt, hol){
-  const key=Utilities.formatDate(dt,Session.getScriptTimeZone(),'yyyy-MM-dd');
-  return FMS_CFG.workDays.indexOf(dt.getDay())>-1 && !hol[key];
-}
-/* Advance start by N WORKING hours (office hours, skipping off-days & holidays). */
-function fmsPlanned_(start, hours){
-  if(hours==null) return '';
-  const hol=fmsHolidaySet_(), openM=fmsMins_(FMS_CFG.open), closeM=fmsMins_(FMS_CFG.close);
-  const oh=Math.floor(openM/60), om=openM%60;
-  function snap(d){
-    for(let i=0;i<500;i++){
-      if(!fmsIsWork_(d,hol)){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,oh,om,0); continue; }
-      const cur=d.getHours()*60+d.getMinutes();
-      if(cur<openM){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate(),oh,om,0); }
-      else if(cur>=closeM){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,oh,om,0); continue; }
-      return d;
-    }
-    return d;
+function canView(id){ return perm(id)!=='none'; }
+function canEdit(id){ return perm(id)==='edit'; }
+
+/* View-only page ko lock kar do: saare inputs/buttons disable + banner */
+function lockIfViewOnly(id){
+  if(perm(id)!=='view') return;
+  const v=document.getElementById('view'); if(!v) return;
+  if(!v.querySelector('.vo-banner')){
+    const b=document.createElement('div');
+    b.className='vo-banner';
+    b.innerHTML='👁 View only — aapke paas is page par edit permission nahi hai.';
+    v.insertBefore(b, v.firstChild);
   }
-  let d=snap(new Date(start.getTime())), remain=Math.round(hours*60);
-  for(let i=0;i<3000 && remain>0;i++){
-    const cur=d.getHours()*60+d.getMinutes(), left=closeM-cur;
-    if(remain<=left){ d=new Date(d.getTime()+remain*60000); remain=0; break; }
-    remain-=left;
-    d=snap(new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,oh,om,0));
-  }
-  return d;
+  v.querySelectorAll('input,select,textarea,button').forEach(el=>{
+    if(el.closest('.vo-banner')) return;
+    if(el.hasAttribute('data-go')||el.closest('[data-go]')) return;    // navigation allowed
+    if(el.classList.contains('stsw')||el.closest('.stsw')) return;      // dashboard style switch allowed
+    if(el.closest('.dv2-bar')) return;                                  // chart clicks allowed
+    el.disabled=true; el.style.cursor='not-allowed';
+  });
 }
-/* Safe planned: falls back to flat +hours if working-hour calc ever fails. */
-function fmsPlannedSafe_(start, hours){ try{ return fmsPlanned_(start,hours); }catch(e){ fmsLog_('fmsPlanned_',e); return new Date(start.getTime()+hours*3600000); } }
-/* Walk BACKWARDS by N working hours (deadline = target − N wh), e.g. plan due 24wh before the promise. */
-function fmsPlannedBack_(target, hours){
-  try{
-    if(hours==null||!target) return '';
-    const hol=fmsHolidaySet_(), openM=fmsMins_(FMS_CFG.open), closeM=fmsMins_(FMS_CFG.close);
-    const ch=Math.floor(closeM/60), cm=closeM%60;
-    function snapB(d){
-      for(let i=0;i<500;i++){
-        if(!fmsIsWork_(d,hol)){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate()-1,ch,cm,0); continue; }
-        const cur=d.getHours()*60+d.getMinutes();
-        if(cur>closeM){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate(),ch,cm,0); }
-        else if(cur<=openM){ d=new Date(d.getFullYear(),d.getMonth(),d.getDate()-1,ch,cm,0); continue; }
-        return d;
-      }
-      return d;
-    }
-    let d=snapB(new Date(target.getTime())), remain=Math.round(hours*60);
-    for(let i=0;i<3000 && remain>0;i++){
-      const cur=d.getHours()*60+d.getMinutes(), avail=cur-openM;
-      if(remain<=avail){ d=new Date(d.getTime()-remain*60000); remain=0; break; }
-      remain-=avail;
-      d=snapB(new Date(d.getFullYear(),d.getMonth(),d.getDate()-1,ch,cm,0));
-    }
-    return d;
-  }catch(e){ fmsLog_('fmsPlannedBack_',e); return new Date(target.getTime()-hours*3600000); }
-}
-/* Vendor payment terms (credit days) → Collection deadline from a delivery date. */
-function fmsCollDeadline_(orderNo, fromDate){
-  try{
-    const o=readAll_('Orders').find(function(x){return x.OrderNo===orderNo;})||{};
-    const v=readAll_('VendorMaster').find(function(x){return x.VendorName===o.VendorName;})||{};
-    const days=Number(v.CreditDays);
-    if(days>0) return new Date(fromDate.getTime()+days*24*3600000);   // as per payment terms (calendar days)
-    return fmsPlannedSafe_(fromDate, FMS_TAT_O2C_ORDER.coll);          // fallback when no terms set
-  }catch(e){ fmsLog_('fmsCollDeadline_',e); return fmsPlannedSafe_(fromDate, FMS_TAT_O2C_ORDER.coll); }
-}
-function fmsDelay_(planned, actual){
-  if(!planned||!actual) return '';
-  const p=(planned instanceof Date)?planned:new Date(planned), a=(actual instanceof Date)?actual:new Date(actual);
-  if(isNaN(p)||isNaN(a)) return '';
-  let s=Math.floor((a.getTime()-p.getTime())/1000);
-  if(s<=0) return '';
-  const hh=Math.floor(s/3600); s-=hh*3600; const mm=Math.floor(s/60); const ss=s-mm*60;
-  return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+/* Async renders ke liye: DOM badle to dobara lock lagao */
+let _voObs=null;
+function watchViewOnly(id){
+  if(_voObs){ _voObs.disconnect(); _voObs=null; }
+  if(perm(id)!=='view') return;
+  const v=document.getElementById('view'); if(!v) return;
+  _voObs=new MutationObserver(()=>lockIfViewOnly(id));
+  _voObs.observe(v,{childList:true,subtree:true});
+  lockIfViewOnly(id);
 }
 
-/* ================================================================
- * FOUR BANDED FMS SHEETS
- *   Header-level (one row per Order / PO):   FMS_O2C_Order, FMS_P2P_PO
- *   Cycle-level  (one row per Plan / SEN):   FMS_O2C_Dispatch, FMS_P2P_Inbound
- *   Every step = Planned | Actual | Current Status | Time Delay.
- *   Key planned-time links:
- *     • O2C dispatch-cycle PLAN step: Planned = the PROMISED SCHEDULE date+time.
- *     • P2P inbound GATE step:        Planned = PO Sent time + 7 calendar days.
- * ================================================================ */
-const FMS_HEADER_ROW = 6;
-function stepCols_(pfx){ return [[pfx+'Planned','Planned'],[pfx+'Actual','Actual'],[pfx+'Status','Current Status'],[pfx+'TimeDelay','Time Delay']]; }
-const FMS_LAYOUT = {
-  FMS_O2C_Order: { title:'O2C — Order Register  ·  one row per Order  ·  live totals & status',
-    groups:[
-      {what:'Order Created (trigger)', who:'Sales', how:'App', when:'Whenever Needed',
-        cols:[['OrderNo','Order Number'],['VendorName','Vendor Name'],['TotalQty','Total Order Qty'],['DeliveredQty','Total Delivered Qty'],
-              ['TotalValue','Total Order Amount'],['CollectionAmount','Collection Amount'],['OrderStatus','Order Status'],['CollectionStatus','Collection Status']]}
+const MODULES=[
+  {id:'dashboard',label:'Dashboard',group:'',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>'},
+  {id:'orders',label:'Orders',group:'Operations',roles:['Admin','Sales'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>'},
+  {id:'create',label:'New Order',group:'Operations',roles:['Admin','Sales'],ic:I.plus},
+  {id:'schedule',label:'Delivery Schedule',group:'Operations',roles:['Admin','Sales','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M9 15l2 2 4-4"/></svg>'},
+  {id:'dispatch',label:'Dispatch Planning',group:'Operations',roles:['Admin','Dispatch Executive'],ic:I.truck},
+  {id:'gate',label:'Gate Entry',group:'Operations',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l9-4 9 4v14M3 21h18M9 21v-6h6v6"/></svg>'},
+  {id:'loading',label:'Vehicle Loading',group:'Operations',roles:['Admin','Dispatch Executive'],ic:I.box},
+  {id:'invoice',label:'Invoice Entry',group:'Operations',roles:['Admin','Billing Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>'},
+  {id:'gateout',label:'Gate Out',group:'Operations',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'},
+  {id:'pod',label:'POD',group:'Operations',roles:['Admin','Billing Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
+  {id:'collection',label:'Collection',group:'Finance',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>'},
+  {id:'reports',label:'Reports',group:'Finance',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>'},
+  {id:'returnentry',label:'Return Gate Entry',group:'Returns',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 015 5v6"/></svg>'},
+  {id:'returnreceived',label:'Return Received',group:'Returns',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M9 12l2 2 4-4"/></svg>'},
+  {id:'masters',label:'Master Data',group:'Admin',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>'},
+  {id:'p2p_dashboard',label:'P2P Dashboard',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>'},
+  {id:'p2p_stock',label:'PM Stock Report',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9M12 17v-5M16 17v-9"/></svg>'},
+  {id:'p2p_pr',label:'Purchase Requisition',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 011 1v1h2a1 1 0 011 1v15a1 1 0 01-1 1H6a1 1 0 01-1-1V5a1 1 0 011-1h2V3a1 1 0 011-1z"/><path d="M9 12h6M9 16h4"/></svg>'},
+  {id:'p2p_quote',label:'Quotations',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H8l-4 4V4z"/><path d="M8 9h8M8 12h5"/></svg>'},
+  {id:'p2p_po',label:'Purchase Order',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>'},
+  {id:'p2p_polist',label:'PO List / Send',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>'},
+  {id:'p2p_gate',label:'Gate Entry (SEN)',group:'Purchases',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l9-4 9 4v14M3 21h18M9 21v-6h6v6"/></svg>'},
+  {id:'p2p_qc',label:'QC Check',group:'Purchases',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>'},
+  {id:'p2p_receiving',label:'Material Received',group:'Purchases',roles:['Admin','Dispatch Executive'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>'},
+  {id:'p2p_return',label:'Material Return',group:'Purchases',roles:['Admin','Security'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 015 5v6"/></svg>'},
+  {id:'p2p_payment',label:'Payment',group:'Purchases',roles:['Admin','Accounts'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>'},
+  {id:'users',label:'User Management',group:'Admin',roles:['Admin'],ic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg>'}
+];
+
+let STATE={user:null,masters:null,dashboard:null};
+let current='dashboard';
+
+function allowed(m){
+  if(!STATE.user) return true;
+  if(m.group==='Returns' && !STATE.showReturns) return false;   // conditional: only when a POD rejection exists
+  return canView(m.id);                                          // permission tay karti hai kya dikhega
+}
+function refreshReturns(){
+  return api('getReturnFlags').then(f=>{ STATE.showReturns=!!(f&&f.showReturns); buildNav(); }).catch(()=>{});
+}
+
+const NAV_ICONS={
+  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+  ops:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h13v9H1zM14 10h4l3 3v3h-7z"/><circle cx="5.5" cy="18.5" r="1.8"/><circle cx="17.5" cy="18.5" r="1.8"/></svg>',
+  fin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
+  rep:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>',
+  admin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 00-2.3-1.3L13.8 2h-3.6l-.4 2.4A7 7 0 007.5 5.7l-2.4-1-2 3.4 2 1.6a7 7 0 000 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 002.3 1.3l.4 2.4h3.6l.4-2.4a7 7 0 002.3-1.3l2.4 1 2-3.4-2-1.6c.06-.42.1-.85.1-1.3z"/></svg>'
+};
+const NAV_TREE=[
+  {label:'Dashboard',ic:NAV_ICONS.dash,children:[
+    {route:'dashboard',label:'O2C Dashboard'},
+    {route:'p2p_dashboard',label:'P2P Dashboard'}
+  ]},
+  {label:'Operations',ic:NAV_ICONS.ops,children:[
+    {label:'O2C',children:[
+      {route:'orders',label:'Orders'},{route:'create',label:'New Order'},{route:'schedule',label:'Delivery Schedule'},{route:'dispatch',label:'Dispatch Planning'},
+      {route:'gate',label:'Gate Entry'},{route:'loading',label:'Vehicle Loading'},{route:'invoice',label:'Invoice Entry'},
+      {route:'gateout',label:'Gate Out'},{route:'pod',label:'POD'},
+      {route:'returnentry',label:'Return Gate Entry'},{route:'returnreceived',label:'Return Received'}
     ]},
-  FMS_O2C_Dispatch: { title:'O2C — Delivery Cycle  ·  one row per Delivery Schedule  ·  Schedule → Collection',
-    groups:[
-      {what:'Delivery Schedule (trigger)', who:'Sales / Dispatch', how:'App', when:'Whenever Needed',
-        cols:[['OrderNo','Order No'],['VendorName','Vendor Name'],['ScheduleNo','Schedule No'],['ScheduledQty','Scheduled Qty'],['PromisedFor','Promised (Date+Time)'],
-              ['PlanNo','Plan No'],['VehicleNo','Vehicle No'],['GateEntryNo','Gate Entry No']]},
-      {what:'Dispatch Plan', who:'Dispatch Executive', how:'App', when:'24 working hrs before promise', cols:stepCols_('Plan')},
-      {what:'Gate Entry', who:'Security', how:'App', when:'By promised schedule time', cols:stepCols_('Gate')},
-      {what:'Vehicle Loading', who:'Loading Supervisor', how:'App', when:'Within 3 working hrs', cols:stepCols_('Load')},
-      {what:'Invoice', who:'Billing Executive', how:'Tally + App', when:'Within 2 working hrs', cols:stepCols_('Inv')},
-      {what:'Gate Out', who:'Security', how:'App', when:'Within 2 working hrs', cols:stepCols_('GateOut')},
-      {what:'POD / Delivered', who:'Driver / Customer', how:'App', when:'Within 24 working hrs of Gate Out', cols:stepCols_('POD')},
-      {what:'Collection', who:'Accounts', how:'App', when:'As per payment terms (Credit Days)', cols:stepCols_('Coll')}
-    ]},
-  FMS_P2P_PO: { title:'P2P — PO Level  ·  one row per Purchase Order  ·  Send & Payment',
-    groups:[
-      {what:'PO Created (trigger)', who:'Accounts', how:'App', when:'Whenever Needed',
-        cols:[['PONo','PO Number'],['SupplierName','Supplier Name']]},
-      {what:'Send PO to Supplier', who:'Accounts', how:'App', when:'Within 2 working hrs', cols:stepCols_('Send')},
-      {what:'First Gate Entry (material in)', who:'Security', how:'App', when:'Within 7 days of PO sent', cols:stepCols_('FGate')},
-      {what:'Payment', who:'Accounts', how:'App', when:'Within 120 working hrs of receipt', cols:stepCols_('Pay')}
-    ]},
-  FMS_P2P_Inbound: { title:'P2P — Inbound Cycle  ·  one row per Gate Entry (SEN)  ·  Gate deadline = PO sent + 7 days',
-    groups:[
-      {what:'Gate Entry (trigger)', who:'Security', how:'App', when:'Within 7 days of PO sent',
-        cols:[['PONo','PO Number'],['SupplierName','Supplier Name'],['SENNo','SEN Number'],['ReceivedQty','Received Qty'],
-              ['GatePlanned','Planned (PO sent +7d)'],['GateActual','Actual'],['GateStatus','Current Status'],['GateTimeDelay','Time Delay']]},
-      {what:'QC Check', who:'QC Inspector', how:'As per SOP + App', when:'Within 3 working hrs',
-        cols:[['QCResult','QC Status']].concat(stepCols_('QC'))},
-      {what:'GRN / Material Received', who:'Store Executive', how:'App', when:'Within 3 working hrs', cols:stepCols_('Recv')},
-      {what:'GRN / Material Return', who:'Store Executive', how:'App', when:'Within 3 working hrs',
-        cols:[['ReturnReason','Return Reason']].concat(stepCols_('Return'))}
+    {label:'P2P',children:[
+      {route:'p2p_po',label:'Purchase Order'},{route:'p2p_polist',label:'PO List / Send'},{route:'p2p_gate',label:'Gate Entry (SEN)'},
+      {route:'p2p_qc',label:'QC Check'},{route:'p2p_receiving',label:'Material Received'},{route:'p2p_return',label:'Material Return'}
     ]}
+  ]},
+  {label:'Finance',ic:NAV_ICONS.fin,children:[
+    {route:'collection',label:'Collection (O2C)'},
+    {route:'p2p_payment',label:'Payment (P2P)'}
+  ]},
+  {label:'Reports',ic:NAV_ICONS.rep,children:[
+    {route:'reports',label:'Reports'}
+  ]},
+  {label:'Administration',ic:NAV_ICONS.admin,children:[
+    {route:'masters',label:'Master Data'},{route:'users',label:'User Management'}
+  ]}
+];
+function leafAllowed(route){ const m=MODULES.find(x=>x.id===route); return m?allowed(m):false; }
+function nodeVisible(n){ return n.route ? leafAllowed(n.route) : (n.children||[]).some(nodeVisible); }
+function navPathTo(route,nodes,acc){ acc=acc||[]; for(const n of (nodes||NAV_TREE)){ if(n.route===route) return acc.concat(n.label); if(n.children){ const r=navPathTo(route,n.children,acc.concat(n.label)); if(r) return r; } } return null; }
+function toggleNav(label){ if(STATE.navOpen.has(label)) STATE.navOpen.delete(label); else STATE.navOpen.add(label); buildNav(); }
+
+function buildNav(){
+  if(!STATE.navOpen) STATE.navOpen=new Set(['Dashboard','Operations']);
+  const path=navPathTo(current); if(path) path.forEach(l=>STATE.navOpen.add(l));   // auto-open ancestors of current page
+  const leaf=n=>`<button class="nav-i ${n.route===current?'on':''}" data-go="${n.route}">${n.label}</button>`;
+  const sub=n=>{ const open=STATE.navOpen.has(n.label); return `<div class="nav-sub ${open?'open':''}"><button class="nav-sh" data-navtoggle="${n.label}"><span>${n.label}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button><div class="nav-sb">${n.children.filter(nodeVisible).map(c=>c.route?leaf(c):sub(c)).join('')}</div></div>`; };
+  const group=n=>{ const open=STATE.navOpen.has(n.label); return `<div class="nav-group ${open?'open':''}"><button class="nav-gh" data-navtoggle="${n.label}"><span class="gi">${n.ic}</span><span class="gl">${n.label}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button><div class="nav-gb">${n.children.filter(nodeVisible).map(c=>c.route?leaf(c):sub(c)).join('')}</div></div>`; };
+  document.getElementById('nav').innerHTML=NAV_TREE.filter(nodeVisible).map(group).join('');
+
+  // bottom nav (mobile): role's own pages (up to 4) + More
+  const SHORT={dashboard:'Home',orders:'Orders',create:'New',schedule:'Schedule',dispatch:'Dispatch',loading:'Loading',gate:'Gate In',gateout:'Gate Out',invoice:'Invoice',pod:'POD',collection:'Collect',p2p_dashboard:'P2P',p2p_po:'PO',p2p_gate:'Gate In',p2p_qc:'QC',p2p_receiving:'Receive',p2p_payment:'Pay'};
+  const prim=MODULES.filter(m=>allowed(m) && ['dashboard','orders','create','dispatch','loading','gate','gateout','invoice','pod','collection','p2p_dashboard','p2p_polist','p2p_gate','p2p_qc','p2p_receiving','p2p_payment'].indexOf(m.id)>-1).slice(0,4);
+  document.getElementById('botnav').innerHTML = prim.map(m=>`<button data-go="${m.id}" class="${current===m.id?'on':''}">${m.ic}<span>${SHORT[m.id]||m.label}</span></button>`).join('')
+    + `<button data-go="more" class="${current==='more'?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>More</span></button>`;
+}
+
+function setUser(u){
+  STATE.user=u;
+  const init=(u.name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('uav').textContent=init;
+  document.getElementById('uav2').textContent=init;
+  document.getElementById('uname').textContent=u.name;
+  document.getElementById('urole').textContent=u.role;
+}
+
+/*****************************************************************
+ * ROUTER
+ *****************************************************************/
+const view=document.getElementById('view');
+const ROUTES={
+  dashboard:renderDashboard, orders:renderOrders, detail:renderDetail, create:renderCreate,
+  dispatch:renderDispatch, gate:renderGate, loading:renderLoading, invoice:renderInvoice,
+  gateout:renderGateOut, pod:renderPOD, collection:renderCollection, reports:renderReports, schedule:renderSchedule,
+  returnentry:renderReturnEntry, returnreceived:renderReturnReceived,
+  p2p_stock:renderPMStock, p2p_pr:renderPR, p2p_quote:renderQuotes,
+  p2p_po:renderPOCreate, p2p_polist:renderPOList, p2p_gate:renderGateIn, p2p_qc:renderQC,
+  p2p_receiving:renderReceiving, p2p_return:renderMatReturn, p2p_payment:renderPayment, p2p_dashboard:renderP2PDashboard,
+  masters:renderMasters, users:renderUsers, more:renderMore
 };
-function fmsCols_(name){ const out=['Timestamp']; FMS_LAYOUT[name].groups.forEach(g=>g.cols.forEach(c=>out.push(c[0]))); return out; }
-function fmsHdrs_(name){ const out=['Timestamp']; FMS_LAYOUT[name].groups.forEach(g=>g.cols.forEach(c=>out.push(c[1]))); return out; }
-
-
-function fmsEnsure_(name){
-  if(_FMS_OK[name]) return;               // verified once this request — skip the sheet round-trip
-  var sh=ss_().getSheetByName(name);
-  if(!sh){ sh=ss_().insertSheet(name); }
-  if(String(sh.getRange(6,1).getValue())!=='Timestamp'){
-    try{ fmsBuild_(name); }
-    catch(e){ fmsLog_('fmsBuild_ '+name, e);
-      try{ sh.getRange(6,1,1,fmsHdrs_(name).length).setValues([fmsHdrs_(name)]); sh.setFrozenRows(6); }catch(e2){ fmsLog_('fmsEnsure_ fallback '+name, e2); }
-    }
+const DEFAULT_ROUTE={'Admin':'dashboard','Sales':'orders','Dispatch Executive':'dispatch','Security':'gate','Billing Executive':'invoice','Accounts':'collection'};
+function defaultRoute(){
+  if(STATE.user && DEFAULT_ROUTE[STATE.user.role] && canView(DEFAULT_ROUTE[STATE.user.role])) return DEFAULT_ROUTE[STATE.user.role];
+  const first=MODULES.find(allowed); return first?first.id:'orders';
+}
+function go(id,arg){
+  const m=MODULES.find(x=>x.id===id);
+  if(m && STATE.user && !canView(m.id)){ id=defaultRoute(); arg=undefined; }   // block pages not mapped to this role
+  if(!ROUTES[id]) return;
+  current=id;
+  // fast path: just flip active classes; rebuild only if the target isn't in the tree yet
+  const navEl=document.getElementById('nav');
+  if(navEl){
+    const hit=navEl.querySelector(`.nav-i[data-go="${id}"]`);
+    if(hit){ navEl.querySelectorAll('.nav-i.on').forEach(n=>n.classList.remove('on')); hit.classList.add('on');
+             document.querySelectorAll('.botnav button').forEach(b=>b.classList.toggle('on',b.dataset.go===id)); }
+    else buildNav();
   }
-  _FMS_OK[name]=true;
+  closeSidebar();
+  view.innerHTML='<div class="loading"><div class="spin"></div>Loading…</div>';
+  window.scrollTo(0,0);
+  setTimeout(()=>watchViewOnly(id),0);   // view-only pages ko lock kar do (async render ke baad bhi)
+  ROUTES[id](arg);
 }
-function fmsReadAll_(name){
-  const sh=ss_().getSheetByName(name); if(!sh) return [];
-  const last=sh.getLastRow(); if(last<7) return [];
-  const keys=fmsCols_(name);
-  return sh.getRange(7,1,last-6,keys.length).getValues().filter(function(r){ return r.join('')!==''; })
-           .map(function(r){ const o={}; keys.forEach(function(k,i){ o[k]=r[i]; }); return o; });
+function head(title,sub,crumb){
+  return `<div class="phead"><div>${crumb?`<div class="crumbs"><a data-go="dashboard">Home</a> › ${crumb}</div>`:''}<div class="ptitle">${title}</div>${sub?`<div class="psub">${sub}</div>`:''}</div></div>`;
 }
-function fmsAppend_(name,obj){ fmsEnsure_(name); const sh=ss_().getSheetByName(name), keys=fmsCols_(name);
-  sh.getRange(sh.getLastRow()+1,1,1,keys.length).setValues([keys.map(function(k){ return obj[k]!==undefined?obj[k]:''; })]); }
-function fmsFind_(name,keyCol,keyVal){
-  const sh=ss_().getSheetByName(name); if(!sh) return -1; const last=sh.getLastRow(); if(last<7) return -1;
-  const keys=fmsCols_(name), ci=keys.indexOf(keyCol); if(ci<0) return -1;
-  const vals=sh.getRange(7,ci+1,last-6,1).getValues();
-  for(var r=0;r<vals.length;r++){ if(String(vals[r][0])===String(keyVal)) return 7+r; }
-  return -1;
-}
-function fmsUpdate_(name,keyCol,keyVal,updates){
-  const ix=fmsFind_(name,keyCol,keyVal); if(ix<0) return false;
-  const sh=ss_().getSheetByName(name), keys=fmsCols_(name);
-  const cur=sh.getRange(ix,1,1,keys.length).getValues()[0];
-  Object.keys(updates).forEach(function(k){ const c=keys.indexOf(k); if(c>-1) cur[c]=updates[k]; });
-  sh.getRange(ix,1,1,keys.length).setValues([cur]); return true;
-}
-function fmsLog_(where, err){
-  try{
-    var ssp=ss_(); var sh=ssp.getSheetByName('FMS_LOG'); if(!sh){ sh=ssp.insertSheet('FMS_LOG'); sh.getRange(1,1,1,3).setValues([['When','Where','Error']]).setFontWeight('bold'); }
-    sh.getRange(sh.getLastRow()+1,1,1,3).setValues([[new Date(), where, String(err && err.stack || err)]]);
-  }catch(_){}
-}
-/* stamping API */
-function fmsInit_(name,obj){ try{ fmsAppend_(name,obj); }catch(e){ fmsLog_('fmsInit_ '+name, e); } }
-function fmsRow_(name,keyCol,keyVal){ try{ return fmsReadAll_(name).find(function(r){ return String(r[keyCol])===String(keyVal); }); }catch(e){ return null; } }
-function fmsSet_(name,keyCol,keyVal,obj){
-  try{ fmsEnsure_(name);
-    if(!fmsUpdate_(name,keyCol,keyVal,obj)){ const row={}; row[keyCol]=keyVal; Object.keys(obj).forEach(function(k){ row[k]=obj[k]; }); fmsAppend_(name,row); }
-  }catch(e){ fmsLog_('fmsSet_ '+name, e); }
-}
-function fmsStep_(name, keyCol, keyVal, prefix, whenDate, nextPrefix, nextTat, statusVal, extra){
-  try{
-    const row=fmsRow_(name,keyCol,keyVal); if(!row) return;
-    if(row[prefix+'Actual']) return;
-    const now=whenDate||new Date(), upd=extra||{};
-    upd[prefix+'Actual']=now;
-    upd[prefix+'Status']=statusVal||'Done';
-    upd[prefix+'TimeDelay']=fmsDelay_(row[prefix+'Planned'], now);
-    if(nextPrefix && nextTat!=null && !row[nextPrefix+'Planned']){ upd[nextPrefix+'Planned']=fmsPlannedSafe_(now,nextTat); upd[nextPrefix+'Status']='Pending'; }
-    fmsSet_(name,keyCol,keyVal,upd);
-  }catch(e){ fmsLog_('fmsStep_ '+name+'/'+prefix, e); }
-}
-/* Parse the promised schedule (date + optional time) into a Date. */
-function fmsPromise_(dateStr, timeStr){
-  try{ if(!dateStr) return null;
-    const t=(timeStr&&/^\d{1,2}:\d{2}/.test(String(timeStr)))?String(timeStr):'10:00';
-    const d=new Date(dateStr+'T'+(t.length===4?'0'+t:t)+':00');
-    return isNaN(d)?null:d;
-  }catch(e){ return null; }
-}
-/* Latest promised schedule Date for an order (or null). */
-function fmsOrderPromise_(orderNo){
-  try{ const s=readAll_('Schedule').filter(function(r){ return r.OrderNo===orderNo; }).slice(-1)[0]; if(!s) return null;
-    if(s.PromisedDate instanceof Date && !isNaN(s.PromisedDate)){
-      const d=new Date(s.PromisedDate.getTime());
-      const t=String(s.PromisedTime||''); const m=t.match(/^(\d{1,2}):(\d{2})/);
-      if(m){ d.setHours(+m[1],+m[2],0,0); } else if(d.getHours()===0&&d.getMinutes()===0){ d.setHours(10,0,0,0); }
-      return d;
-    }
-    return fmsPromise_(String(s.PromisedDate||''), String(s.PromisedTime||''));
-  }catch(e){ return null; }
-}
-/* PO sent time + N calendar days (for the inbound gate deadline). */
-function fmsPOSentDeadline_(poNo){
-  try{ const row=fmsRow_('FMS_P2P_PO','PONo',poNo);
-    const sent=row && row.SendActual; if(!sent) return null;
-    const d=(sent instanceof Date)?new Date(sent.getTime()):new Date(sent); if(isNaN(d)) return null;
-    return new Date(d.getTime()+FMS_TAT_P2P_PO.deliveryDays*24*3600000);
-  }catch(e){ return null; }
-}
-
-/* Refresh the live summary columns of the order register row. */
-function fmsOrderSummary_(orderNo){
-  try{
-    const o=readAll_('Orders').find(function(x){return x.OrderNo===orderNo;}); if(!o) return;
-    let delivered=0; readAll_('PODItems').filter(function(p){return p.OrderNo===orderNo;})
-      .forEach(function(p){ delivered+=Math.max((Number(p.LoadedQty)||0)-(Number(p.RejectedQty)||0),0); });
-    let collected=0; readAll_('Collection').filter(function(cx){return cx.OrderNo===orderNo;})
-      .forEach(function(cx){ collected+=Number(cx.CollectionAmount)||0; });
-    let invoiced=0; readAll_('Invoice').filter(function(i){return i.OrderNo===orderNo;})
-      .forEach(function(i){ invoiced+=Number(i.InvoiceAmount)||0; });
-    const collStatus = collected<=0 ? 'Pending' : (invoiced>0 && collected>=invoiced ? 'Fully Collected' : 'Partially Collected');
-    fmsSet_('FMS_O2C_Order','OrderNo',orderNo,{ DeliveredQty:delivered, CollectionAmount:collected,
-      OrderStatus:o.Status||'', CollectionStatus:collStatus });
-  }catch(e){ fmsLog_('fmsOrderSummary_', e); }
-}
-
-
-
-
-
-/* Fetch endpoints (newest first). */
-function fmsFmtDate_(d){ if(!d) return ''; const t=(d instanceof Date)?d:new Date(d); return isNaN(t)?String(d):Utilities.formatDate(t,Session.getScriptTimeZone(),'dd-MM-yyyy HH:mm:ss'); }
-function fmsStepOut_(r,p){ return {Planned:fmsFmtDate_(r[p+'Planned']),Actual:fmsFmtDate_(r[p+'Actual']),Status:r[p+'Status']||'',TimeDelay:r[p+'TimeDelay']||''}; }
-function getFMSO2COrder(){ return fmsReadAll_('FMS_O2C_Order').reverse().map(function(r){ return { Timestamp:fmsFmtDate_(r.Timestamp),OrderNo:r.OrderNo,VendorName:r.VendorName,TotalQty:r.TotalQty,DeliveredQty:r.DeliveredQty,TotalValue:r.TotalValue,CollectionAmount:r.CollectionAmount,OrderStatus:r.OrderStatus||'',CollectionStatus:r.CollectionStatus||'' }; }); }
-function getFMSO2CDispatch(){ return fmsReadAll_('FMS_O2C_Dispatch').reverse().map(function(r){ return { Timestamp:fmsFmtDate_(r.Timestamp),OrderNo:r.OrderNo,VendorName:r.VendorName,ScheduleNo:r.ScheduleNo,ScheduledQty:r.ScheduledQty,PromisedFor:fmsFmtDate_(r.PromisedFor),PlanNo:r.PlanNo,VehicleNo:r.VehicleNo,GateEntryNo:r.GateEntryNo,Plan:fmsStepOut_(r,'Plan'),GateEntry:fmsStepOut_(r,'Gate'),Loading:fmsStepOut_(r,'Load'),Invoice:fmsStepOut_(r,'Inv'),GateOut:fmsStepOut_(r,'GateOut'),POD:fmsStepOut_(r,'POD'),Collection:fmsStepOut_(r,'Coll') }; }); }
-function getFMSP2PPO(){ return fmsReadAll_('FMS_P2P_PO').reverse().map(function(r){ return { Timestamp:fmsFmtDate_(r.Timestamp),PONo:r.PONo,SupplierName:r.SupplierName,Send:fmsStepOut_(r,'Send'),FirstGate:fmsStepOut_(r,'FGate'),Payment:fmsStepOut_(r,'Pay') }; }); }
-function getFMSP2PInbound(){ return fmsReadAll_('FMS_P2P_Inbound').reverse().map(function(r){ return { Timestamp:fmsFmtDate_(r.Timestamp),PONo:r.PONo,SupplierName:r.SupplierName,SENNo:r.SENNo,ReceivedQty:r.ReceivedQty,GateEntry:fmsStepOut_(r,'Gate'),QC:Object.assign({Result:r.QCResult||''},fmsStepOut_(r,'QC')),Received:fmsStepOut_(r,'Recv'),Return:Object.assign({Reason:r.ReturnReason||''},fmsStepOut_(r,'Return')) }; }); }
-/* Back-compat aliases */
-function getFMSO2C(){ return getFMSO2CDispatch(); }
-function getFMSP2P(){ return getFMSP2PInbound(); }
-function getBackendVersion(){ return 'FMS-v4-4tabs'; }
-
-const ORDER_STATUS = { PENDING:'Pending Dispatch Planning', PARTIAL:'Partial Planning', PLANNED:'Fully Planned',
-                       ARRIVED:'Vehicle Arrived', LOADING:'Partial Loading', LOADED:'Loading Completed',
-                       INVOICED:'Invoice Generated', DISPATCHED:'Vehicle Dispatched', DELIVERED:'Delivered',
-                       RETURN_PENDING:'Return Pending', RETURNED:'Returned',
-                       PART_DISPATCH:'Partially Dispatched',
-                       PART_COLL:'Partially Collected', COLLECTED:'Fully Collected', CLOSED:'Closed' };
-
-const DRIVE_FOLDER = 'O2C Uploads';   // where invoice / POD files are stored
-
-/* ============================ WEB ENTRY ============================ */
-function doGet() {
-  return HtmlService.createTemplateFromFile('Index')
-    .evaluate()
-    .setTitle('OrderFlow — Order to Collection')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-function xcPut_(name, rows){
-  try{ const raw=JSON.stringify(rows); if(raw.length<95000) CacheService.getScriptCache().put('t_'+name, raw, CACHE_TTL); }catch(e){}
-}
-function xcBust_(name){ try{ CacheService.getScriptCache().remove('t_'+name); }catch(e){} }
-
-function ss_(){ return SpreadsheetApp.getActiveSpreadsheet(); }
-
-function getSheet_(name){
-  const s = ss_().getSheetByName(name);
-  if (!s) throw new Error('Sheet "'+name+'" missing — run setupDatabase() first.');
-  return s;
-}
-
-/* Read a sheet once per request (memoised), returning row objects.
- * Master-type tables are additionally served from CacheService across requests. */
-function readAll_(name){
-  if (!_CACHE[name]){
-    if (CACHED_TABLES[name]){ const hit=xcGet_(name); if(hit){ _CACHE[name]=hit; return hit.map(r=>{ const o={}; for (const k in r) o[k]=r[k]; return o; }); } }
-    const sh = getSheet_(name);
-    const rng = sh.getDataRange().getValues();
-    let out = [];
-    if (rng.length >= 2){ const head = rng.shift(); out = rng.filter(r=>r.join('')!=='').map(r=>{ const o={}; head.forEach((h,i)=>o[h]=r[i]); return o; }); }
-    _CACHE[name] = out;
-    if (CACHED_TABLES[name]) xcPut_(name, out);
-  }
-  return _CACHE[name].map(r=>{ const o={}; for (const k in r) o[k]=r[k]; return o; });   // copies so callers can't corrupt the cache
-}
-
-function append_(name, obj){
-  const sh = getSheet_(name), head = SHEETS[name];
-  sh.appendRow(head.map(h => obj[h] !== undefined ? obj[h] : ''));
-  invalidate_(name); if (CACHED_TABLES[name]) xcBust_(name);
-}
-
-function appendMany_(name, objs){
-  if (!objs.length) return;
-  const sh = getSheet_(name), head = SHEETS[name];
-  const rows = objs.map(o => head.map(h => o[h] !== undefined ? o[h] : ''));
-  sh.getRange(sh.getLastRow()+1, 1, rows.length, head.length).setValues(rows);   // one write for all rows
-  invalidate_(name); if (CACHED_TABLES[name]) xcBust_(name);
-}
-
-/** Update first matching row; updates = {Col:value}. Single batched write. */
-function updateWhere_(name, matchCol, matchVal, updates){
-  const sh = getSheet_(name);
-  const data = sh.getDataRange().getValues();
-  const head = data[0];
-  const ci = head.indexOf(matchCol);
-  for (let r=1; r<data.length; r++){
-    if (String(data[r][ci]) === String(matchVal)){
-      Object.keys(updates).forEach(k=>{ const c = head.indexOf(k); if (c>-1) data[r][c] = updates[k]; });
-      sh.getRange(r+1, 1, 1, head.length).setValues([data[r]]);
-      invalidate_(name); if (CACHED_TABLES[name]) xcBust_(name);
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Delete all rows matching a column value, bottom-up in contiguous blocks. */
-function deleteWhere_(name, matchCol, matchVal){
-  const sh = getSheet_(name);
-  const data = sh.getDataRange().getValues();
-  const head = data[0];
-  const ci = head.indexOf(matchCol);
-  let run = 0, deleted = 0;
-  for (let r=data.length-1; r>=1; r--){
-    if (String(data[r][ci]) === String(matchVal)){ run++; }
-    else if (run){ sh.deleteRows(r+2, run); deleted+=run; run=0; }
-  }
-  if (run){ sh.deleteRows(2, run); deleted+=run; }
-  if (deleted) invalidate_(name); if (CACHED_TABLES[name]) xcBust_(name);
-  return deleted;
-}
-
-/* ============================ NUMBERING =========================== */
-function ym_(){ return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMM'); }
-/* Fiscal-year tag: SRFM26 for FY Apr-2025→Mar-2026 style (uses ending year's last two digits;
-   Jan–Mar belong to the FY ending that year, Apr–Dec to the FY ending next year). */
-/* SKU ka UOM master se — client kuch bheje ya na bheje, yahi final source hai */
-function uomOf_(skuCode){
-  const s=readAll_('SKUMaster').find(function(x){ return String(x.SKUCode)===String(skuCode); });
-  if(s) return s.UOM||'';
-  const r=readAll_('RawMaterialMaster').find(function(x){ return String(x.RMCode)===String(skuCode); });   // P2P raw material
-  return r ? (r.UOM||'') : '';
-}
-function fyTag_(){
-  const d=new Date(); let y=d.getFullYear(); if(d.getMonth()<3) y=y-1;   // Jan–Mar belong to the previous FY (start-year tag)
-  return 'SRFM'+String(y).slice(-2);
-}
-/* Generic sequence generator: finds the max numeric suffix among values starting with `tag`
-   and returns tag + zero-padded next number. */
-function nextSeq_(sheetName, col, tag, width){
-  const rows=readAll_(sheetName); let max=0;
-  rows.forEach(r=>{ const v=String(r[col]||'');
-    if(v.indexOf(tag)===0){ const n=parseInt(v.slice(tag.length),10); if(!isNaN(n)&&n>max) max=n; } });
-  return tag + String(max+1).padStart(width||4,'0');
-}
-function yearTag_(){ return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy'); }
-/* Yearly-reset plain sequence (e.g. GE-0001): scoped by CreatedAt/date column year via a marker row scan.
-   We embed no year in the number itself, so the sequence is derived from rows created this calendar year. */
-function nextSeqYearly_(sheetName, col, prefix, dateCol, width){
-  const yr=new Date().getFullYear(); const rows=readAll_(sheetName); let max=0;
-  rows.forEach(r=>{
-    const v=String(r[col]||''); if(v.indexOf(prefix)!==0) return;
-    let inYear=true;
-    if(dateCol && r[dateCol]){ const d=(r[dateCol] instanceof Date)?r[dateCol]:new Date(r[dateCol]); if(!isNaN(d)) inYear=(d.getFullYear()===yr); }
-    if(!inYear) return;
-    const n=parseInt(v.slice(prefix.length),10); if(!isNaN(n)&&n>max) max=n;
-  });
-  return prefix + String(max+1).padStart(width||4,'0');
-}
-
-function nextNumber_(sheetName, col, prefix){
-  const ym = ym_();
-  const tag = prefix + '-' + ym + '-';
-  const rows = readAll_(sheetName);
-  let max = 0;
-  rows.forEach(r=>{
-    const v = String(r[col]||'');
-    if (v.indexOf(tag) === 0){
-      const n = parseInt(v.slice(tag.length),10);
-      if (n>max) max = n;
-    }
-  });
-  return tag + String(max+1).padStart(3,'0');
-}
-
-/* ============================ THE USER ============================ */
-function currentUser_(){
-  const email = (Session.getActiveUser().getEmail()||'').toLowerCase();
-  const rows = readAll_('Users');
-  const u = rows.find(r => String(r.Email||'').toLowerCase() === email);
-  return u ? { email:email, name:u.Name, role:u.Role }
-           : { email:email||'guest', name:email? email.split('@')[0] : 'Guest', role:'Admin' };
-}
-function getCurrentUser(){ return currentUser_(); }
-
-/* ========================= BOOTSTRAP (1 call) ===================== */
-function getBootstrap(){
-  return {
-    user:        currentUser_(),
-    masters:     getMasters(),
-    dashboard:   getDashboard(),
-    orders:      getOrders('All'),
-    statuses:    ORDER_STATUS,
-    showReturns: getReturnFlags().showReturns
+/* role check for a module id (used by lifecycle "Continue" buttons) */
+function roleCan(id){ return !STATE.user || canView(id); }   /* lifecycle 'Continue' buttons */
+/* preselect a dropdown value and trigger its change handler (used for stage deep-links) */
+function presel(id,val){ const s=document.getElementById(id); if(s&&val){ s.value=val; if(s.value===String(val)) s.dispatchEvent(new Event('change')); } }
+/* searchable tappable dropdown bound to an <input> inside a .cmb wrapper */
+function makeCombo(input, items, labelOf, onSelect){
+  const list=input.parentElement.querySelector('.cmb-list'); if(!list) return;
+  const render=q=>{
+    const ql=(q||'').toLowerCase();
+    const f=items.filter(it=>labelOf(it).toLowerCase().indexOf(ql)>-1).slice(0,40);
+    list._f=f;
+    list.innerHTML=f.length?f.map((it,i)=>`<div class="cmb-opt" data-idx="${i}">${labelOf(it)}</div>`).join(''):'<div class="cmb-empty">No match</div>';
+    list.classList.add('show');
   };
-}
-
-/** Cheap single-call flag for whether the conditional Return steps should be shown. */
-function getReturnFlags(){
-  const gates = readAll_('GateEntry');
-  const rp = gates.some(g=>g.Status==='Return Pending');
-  const rr = readAll_('Returns').some(r=>r.Status==='Returned');
-  return { showReturns: rp || rr };
-}
-
-/* =========================== MASTER DATA ========================== */
-function getMasters(){
-  return {
-    vendors:      readAll_('VendorMaster'),
-    skus:         readAll_('SKUMaster'),
-    transporters: readAll_('TransporterMaster'),
-    suppliers:    readAll_('SupplierMaster'),
-    rawmaterials: readAll_('RawMaterialMaster')
-  };
-}
-function saveVendor(v){ append_('VendorMaster', v); return getMasters().vendors; }
-function saveSKU(s){ append_('SKUMaster', s); return getMasters().skus; }
-function saveTransporter(t){ append_('TransporterMaster', t); return getMasters().transporters; }
-function saveSupplier(s){ append_('SupplierMaster', s); return getMasters().suppliers; }
-function saveRawMaterial(r){ append_('RawMaterialMaster', r); return getMasters().rawmaterials; }
-/* ================= USERS · AUTH · PERMISSIONS =================
- * Permissions ek JSON string me store hote hain: {"moduleId":"edit|view|none", ...}
- * Password frontend par SHA-256 hash hokar aata hai (plain password kabhi store nahi hota).
- * NOTE: ye access-control hai (kaun kya dekhe), asli database-level security nahi.        */
-function normEmail_(e){ return String(e||'').trim().toLowerCase(); }
-function findUser_(email){ const t=normEmail_(email); return readAll_('Users').find(function(u){ return normEmail_(u.Email)===t; }); }
-function parsePerms_(s){ try{ return (typeof s==='string' && s) ? JSON.parse(s) : (s||{}); }catch(e){ return {}; } }
-
-/* Login: teeno match hone chahiye — email registered, password sahi, role assigned role se same. */
-function authenticate(p){
-  const u=findUser_(p&&p.email);
-  if(!u) throw new Error('This email is not registered. Ask your admin to add you.');
-  if(String(u.Status||'Active')!=='Active') throw new Error('Your account is disabled. Contact your admin.');
-  if(!u.Password) throw new Error('No password set for this account. Ask your admin to set one.');
-  if(String(u.Password)!==String(p.pwHash||'')) throw new Error('Wrong password.');
-  const rA=String(u.Role||'').trim().toLowerCase(), rB=String(p.role||'').trim().toLowerCase();
-  if(rA!==rB) throw new Error('Wrong role selected. Your role is: '+u.Role);
-  return { email:u.Email, name:u.Name||u.Email, role:u.Role, perms:parsePerms_(u.Permissions) };
-}
-/* Forgot-password: sirf batata hai ki email registered hai ya nahi (koi private data nahi) */
-function emailExists(p){ return !!findUser_(p&&p.email); }
-/* OTP verify hone ke BAAD hi call hota hai — password reset karta hai */
-function resetPasswordWithOtp(p){
-  const u=findUser_(p&&p.email); if(!u) throw new Error('This email is not registered.');
-  if(!p.pwHash) throw new Error('New password missing.');
-  updateWhere_('Users','Email',u.Email,{ Password:p.pwHash, Status:'Active' });
-  return { ok:true };
-}
-/* Login screen ke role dropdown ke liye (koi private data nahi bhejta) */
-function getLoginRoles(){
-  const set={}; readAll_('Users').forEach(function(u){ if(u.Role && String(u.Status||'Active')==='Active') set[u.Role]=1; });
-  const list=Object.keys(set); return list.length?list.sort():['Admin'];
-}
-function getUsers(){
-  return readAll_('Users').map(function(u){
-    return { Email:u.Email, Name:u.Name, Role:u.Role, Status:u.Status||'Active',
-             HasPassword: !!u.Password, Permissions:parsePerms_(u.Permissions) };
+  input.addEventListener('focus',()=>render(input.value));
+  input.addEventListener('input',()=>render(input.value));
+  input.addEventListener('blur',()=>setTimeout(()=>list.classList.remove('show'),160));
+  list.addEventListener('mousedown',e=>{                       // mousedown beats input blur
+    const opt=e.target.closest('.cmb-opt'); if(!opt) return;
+    e.preventDefault();
+    const it=list._f[+opt.dataset.idx]; if(!it) return;
+    input.value=labelOf(it); list.classList.remove('show'); onSelect(it);
   });
 }
-function saveUser(u){
-  if(!u || !u.Email) throw new Error('Email is required.');
-  const email=normEmail_(u.Email);
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
-  if(findUser_(email)) throw new Error('This email already exists.');
-  if(!u.Role) throw new Error('Role is required.');
-  if(!u.pwHash) throw new Error('Password is required.');
-  append_('Users',{ Email:email, Name:u.Name||email, Role:u.Role, Password:u.pwHash,
-                    Permissions:JSON.stringify(u.perms||{}), Status:'Active' });
-  return getUsers();
-}
-function updateUser(p){
-  const u=findUser_(p&&p.email); if(!u) throw new Error('User not found.');
-  const upd={};
-  if(p.name!==undefined)  upd.Name=p.name;
-  if(p.role!==undefined)  upd.Role=p.role;
-  if(p.status!==undefined)upd.Status=p.status;
-  if(p.perms!==undefined) upd.Permissions=JSON.stringify(p.perms||{});
-  if(p.pwHash)            upd.Password=p.pwHash;
-  updateWhere_('Users','Email',u.Email,upd);
-  return getUsers();
-}
-function saveUserPermissions(p){ return updateUser({ email:p.email, perms:p.perms }); }
-function deleteUser(email){
-  const list=readAll_('Users');
-  const target=findUser_(email); if(!target) throw new Error('User not found.');
-  const isAdm=function(r){ return String(r||'').trim().toLowerCase()==='admin'; };
-  const admins=list.filter(function(u){ return isAdm(u.Role) && String(u.Status||'Active')==='Active'; });
-  if(isAdm(target.Role) && admins.length<=1) throw new Error('Cannot remove the last Admin.');
-  deleteWhere_('Users','Email',target.Email);
-  return getUsers();
-}
 
-/* ================= BULK IMPORT (Vendor / SKU / Transporter) ================= */
-const BULK_CFG = {
-  VendorMaster:      { key:'VendorCode', required:['VendorCode','VendorName'] },
-  SKUMaster:         { key:'SKUCode',    required:['SKUCode','SKUName'] },
-  TransporterMaster: { key:'TransporterCode', required:['TransporterCode','TransporterName'] },
-  SupplierMaster:    { key:'SupplierCode', required:['SupplierCode','SupplierName'] },
-  RawMaterialMaster: { key:'RMCode',       required:['RMCode','RMName'] }
-};
-/* rows = [{ColumnName:value, ...}]. Duplicates skip ho jate hain, baaki import. */
-function bulkImport(p){
-  const table=p&&p.table, rows=(p&&p.rows)||[];
-  const cfg=BULK_CFG[table]; if(!cfg) throw new Error('Bulk import not allowed for: '+table);
-  const cols=SHEETS[table];
-  const existing={}; readAll_(table).forEach(function(r){ existing[String(r[cfg.key]||'').trim().toLowerCase()]=1; });
-  const add=[], errors=[]; let dupes=0;
-  rows.forEach(function(raw,i){
-    const row={}; cols.forEach(function(cn){ row[cn]=raw[cn]!==undefined?raw[cn]:''; });
-    const miss=cfg.required.filter(function(f){ return !String(row[f]||'').trim(); });
-    if(miss.length){ errors.push('Row '+(i+2)+': missing '+miss.join(', ')); return; }
-    const k=String(row[cfg.key]).trim().toLowerCase();
-    if(existing[k]){ dupes++; return; }
-    existing[k]=1;
-    ['CreditDays','Rate','GSTPercent'].forEach(function(nf){ if(cols.indexOf(nf)>-1) row[nf]=Number(row[nf])||0; });
-    add.push(row);
+/*****************************************************************
+ * SCREENS
+ *****************************************************************/
+
+/* ================= DASHBOARD V2 (pipeline + charts) ================= */
+const DV2_M=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function dv2K(v){ v=Number(v)||0; if(v>=1e7)return (v/1e7).toFixed(1)+'Cr'; if(v>=1e5)return (v/1e5).toFixed(1)+'L'; if(v>=1000)return (v/1000).toFixed(0)+'K'; return String(Math.round(v)); }
+let DASH_STYLE=(function(){ try{ return localStorage.getItem('o2c-dashstyle')||'d1'; }catch(e){ return 'd1'; } })();
+function setDashStyle(s){ DASH_STYLE=s; try{ localStorage.setItem('o2c-dashstyle',s); }catch(e){}
+  document.querySelectorAll('.flow').forEach(f=>{ f.classList.remove('st-d1','st-d2'); f.classList.add('st-'+s); });
+  document.querySelectorAll('.stsw button').forEach(b=>b.classList.toggle('on',b.dataset.st===s));
+}
+function dv2Flow(nodes){
+  const step=0.4, cyc=(nodes.length*step+2.5).toFixed(1)+'s';
+  return `<div class="flow st-${DASH_STYLE}">${nodes.map((n,i)=>
+    `<div class="fnode" style="--bcol:${n[2]};--cyc:${cyc};--dly:${(i*step).toFixed(2)}s" ${n[3]?`data-go="${n[3]}"`:''}>
+       <div class="fv tnum ${n[1]?'':'zero'}">${n[1]}</div><div class="fl">${n[0]}</div></div>`).join('')}</div>`;
+}
+function dv2Bars(series, selM){
+  const mx=Math.max(1,...series.monthly.map(x=>x.count));
+  const W=560,H=172,bw=25,gap=(W-40-12*bw)/11;
+  let bars='';
+  series.monthly.forEach((m,i)=>{
+    const h=Math.round((m.count/mx)*106), x=30+i*(bw+gap), y=134-h;
+    bars+=`<g class="dv2-bar ${i===selM?'sel':''}" data-m="${i}">
+      <rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="4" fill="${['#3B82F6','#F59E0B','#22C55E','#8B5CF6','#EF4444','#3B82F6','#F97316','#14B8A6','#E11D48','#6366F1','#84CC16','#0EA5E9'][i]}"></rect>
+      ${m.count?`<text class="dv2-val" x="${x+bw/2}" y="${y-4}">${m.count}</text>`:''}
+      <text class="dv2-lbl" x="${x+bw/2}" y="153">${DV2_M[i]}</text></g>`;
   });
-  if(add.length) appendMany_(table, add);
-  return { imported:add.length, duplicates:dupes, errors:errors.slice(0,12), total:rows.length };
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:620px"><line class="dv2-axis" x1="26" y1="134" x2="${W-8}" y2="134"/>${bars}</svg>`;
 }
-function getBulkTemplate(table){ const cfg=BULK_CFG[table]; if(!cfg) throw new Error('Not allowed'); return { columns:SHEETS[table], required:cfg.required }; }
-
-function deleteVendor(code){ deleteWhere_('VendorMaster','VendorCode',code); return getMasters().vendors; }
-function deleteSKU(code){ deleteWhere_('SKUMaster','SKUCode',code); return getMasters().skus; }
-function deleteTransporter(name){ deleteWhere_('TransporterMaster','TransporterName',name); return getMasters().transporters; }
-function deleteSupplier(code){ deleteWhere_('SupplierMaster','SupplierCode',code); return getMasters().suppliers; }
-function deleteRawMaterial(code){ deleteWhere_('RawMaterialMaster','RMCode',code); return getMasters().rawmaterials; }
-
-
-/* ============================ DASHBOARD ========================== */
-function getDashboard(){
-  const orders = readAll_('Orders');
-  const has = (name,oc,val) => readAll_(name).some(r=>r[oc]===val);
-  const cnt = st => orders.filter(o=>o.Status===st).length;
-  const open = orders.filter(o=>[ORDER_STATUS.COLLECTED, ORDER_STATUS.CLOSED].indexOf(o.Status)<0).length;
-  const outstanding = invoiceOutstanding_();
-  return {
-    totalOrders:     orders.length,
-    partialOrders:   cnt(ORDER_STATUS.PARTIAL) + cnt(ORDER_STATUS.LOADING) + cnt(ORDER_STATUS.PART_COLL) + cnt(ORDER_STATUS.PART_DISPATCH),
-    pendingDispatch: cnt(ORDER_STATUS.PENDING),
-    dispatchPlanned: cnt(ORDER_STATUS.PLANNED) + cnt(ORDER_STATUS.PARTIAL),
-    vehicleArrived:  cnt(ORDER_STATUS.ARRIVED),
-    loadingPending:  cnt(ORDER_STATUS.ARRIVED) + cnt(ORDER_STATUS.LOADING),
-    invoicePending:  cnt(ORDER_STATUS.LOADED),
-    podPending:      cnt(ORDER_STATUS.DISPATCHED),
-    collectionPending: getCollectionOrders().length,
-    fullyClosed:     cnt(ORDER_STATUS.COLLECTED) + cnt(ORDER_STATUS.CLOSED),
-    openOrders:      open,
-    outstanding:     outstanding
-  };
+function dv2Weekly(series, m){
+  const wk=series.weekly[m]||[0,0,0,0,0];
+  const mx=Math.max(1,...wk);
+  const W=560,H=152,x0=50,x1=W-20,y0=118,step=(x1-x0)/4;
+  const pts=wk.map((v,i)=>[x0+i*step, y0-Math.round((v/mx)*84)]);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:680px">
+    <line class="dv2-axis" x1="${x0-10}" y1="${y0}" x2="${x1}" y2="${y0}"/>
+    <polyline class="dv2-line" points="${pts.map(p=>p.join(',')).join(' ')}"/>
+    ${pts.map((p,i)=>`<circle class="dv2-dot" cx="${p[0]}" cy="${p[1]}" r="3.6"></circle>
+      <text class="dv2-val" x="${p[0]}" y="${p[1]-9}">${wk[i]?('₹'+dv2K(wk[i])):''}</text>
+      <text class="dv2-lbl" x="${p[0]}" y="${y0+15}">${i+1} week</text>`).join('')}
+  </svg>`;
 }
-
-function invoiceOutstanding_(){
-  const inv = readAll_('Invoice');
-  const coll = readAll_('Collection');
-  let totInv = 0, totColl = 0;
-  inv.forEach(i=> totInv += Number(i.InvoiceAmount)||0);
-  coll.forEach(c=> totColl += Number(c.CollectionAmount)||0);
-  return Math.max(totInv - totColl, 0);
+function dv2Donut(d){
+  const total=Math.max(1,(d.pending||0)+(d.closed||0));
+  const C=2*Math.PI*54, closedFrac=(d.closed||0)/total;
+  return `<svg viewBox="0 0 160 160" style="width:100%;max-width:190px;margin:auto;display:block">
+    <circle cx="80" cy="80" r="54" fill="none" stroke="#F97316" stroke-width="26"/>
+    <circle cx="80" cy="80" r="54" fill="none" stroke="#22C55E" stroke-width="26"
+      stroke-dasharray="${(closedFrac*C).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 80 80)"/>
+    <text x="80" y="76" text-anchor="middle" class="dv2-donut-lbl" fill="#22C55E">Closed ${d.closed||0}</text>
+    <text x="80" y="94" text-anchor="middle" class="dv2-donut-lbl" fill="#F97316">Pending ${d.pending||0}</text>
+  </svg>`;
 }
-
-/* ============================== ORDERS =========================== */
-function getOrders(filter){
-  let rows = readAll_('Orders').reverse();
-  if (filter && filter!=='All'){
-    rows = rows.filter(o => statusBucket_(o.Status)===filter);
-  }
-  const sched = scheduledSet_();
-  return rows.map(o => ({
-    OrderNo:o.OrderNo, OrderDate:fmtDate_(o.OrderDate), VendorName:o.VendorName,
-    TotalQty:o.TotalQty, TotalValue:o.TotalValue, Status:o.Status,
-    StageIndex: stageIndex_(o.Status, !!sched[o.OrderNo])
-  }));
-}
-
-function statusBucket_(st){
-  if (st===ORDER_STATUS.PENDING) return 'Created';
-  if (st===ORDER_STATUS.PARTIAL||st===ORDER_STATUS.PLANNED||st===ORDER_STATUS.ARRIVED) return 'Dispatch';
-  if (st===ORDER_STATUS.LOADING||st===ORDER_STATUS.LOADED||st===ORDER_STATUS.INVOICED) return 'Loading';
-  if (st===ORDER_STATUS.DISPATCHED||st===ORDER_STATUS.DELIVERED||st===ORDER_STATUS.RETURN_PENDING||st===ORDER_STATUS.RETURNED||st===ORDER_STATUS.PART_DISPATCH) return 'Delivery';
-  return 'Collection';
-}
-
-/** Map status → 0..8 progress index for the lifecycle tracker. */
-function stageIndex_(st, scheduled){
-  const map = {};
-  map[ORDER_STATUS.PENDING]= scheduled?1:0;                        // Created(0) → Delivery Schedule(1) once scheduled
-  map[ORDER_STATUS.PARTIAL]=2; map[ORDER_STATUS.PLANNED]=2;        // Dispatch Planned
-  map[ORDER_STATUS.ARRIVED]=3; map[ORDER_STATUS.LOADING]=4; map[ORDER_STATUS.LOADED]=5;
-  map[ORDER_STATUS.INVOICED]=6; map[ORDER_STATUS.DISPATCHED]=7; map[ORDER_STATUS.DELIVERED]=8;
-  map[ORDER_STATUS.RETURN_PENDING]=8; map[ORDER_STATUS.RETURNED]=8; map[ORDER_STATUS.PART_DISPATCH]=8;
-  map[ORDER_STATUS.PART_COLL]=8; map[ORDER_STATUS.COLLECTED]=9; map[ORDER_STATUS.CLOSED]=9;
-  return map[st] !== undefined ? map[st] : 0;
-}
-function scheduledSet_(){ const s={}; readAll_('Schedule').forEach(r=>s[r.OrderNo]=true); return s; }
-
-function genOrderNo_(){ return nextSeq_('Orders','OrderNo', fyTag_()+'-', 4); }
-
-function saveOrder(p){
-  // p = { vendorCode, vendorName, orderDate, items:[{skuCode,skuName,qty,rate,sgst,cgst}] }
-  const orderNo = genOrderNo_();
-  let totQty = 0, totVal = 0;
-  const itemRows = p.items.map(it=>{
-    const qty = Number(it.qty)||0, rate = Number(it.rate)||0;
-    const taxable = qty*rate;
-    const taxPct = (Number(it.sgst)||0)+(Number(it.cgst)||0);
-    const taxAmt = taxable*taxPct/100;
-    totQty += qty; totVal += taxable+taxAmt;
-    return { OrderNo:orderNo, SKUCode:it.skuCode, SKUName:it.skuName, UOM:uomOf_(it.skuCode), Qty:qty, Rate:rate,
-             SGST:Number(it.sgst)||0, CGST:Number(it.cgst)||0, Taxable:taxable, TaxAmount:taxAmt, Amount:taxable+taxAmt };
-  });
-  append_('Orders', {
-    OrderNo:orderNo, OrderDate:p.orderDate||new Date(), VendorCode:p.vendorCode, VendorName:p.vendorName,
-    TotalQty:totQty, TotalValue:totVal, Status:ORDER_STATUS.PENDING,
-    CreatedBy:currentUser_().name, CreatedAt:new Date()
-  });
-  appendMany_('OrderItems', itemRows);
-  try{ const _n=new Date();
-    fmsInit_('FMS_O2C_Order',{ Timestamp:_n, OrderNo:orderNo, VendorName:p.vendorName||'',
-      TotalQty:totQty, DeliveredQty:0, TotalValue:totVal, CollectionAmount:0,
-      OrderStatus:ORDER_STATUS.PENDING, CollectionStatus:'Pending' });
-  }catch(fe){ fmsLog_('saveOrder FMS hook', fe); }
-  return { orderNo:orderNo, totalQty:totQty, totalValue:totVal };
-}
-
-function getOrderDetail(orderNo){
-  const o = readAll_('Orders').find(r=>r.OrderNo===orderNo);
-  if (!o) return null;
-  const items = readAll_('OrderItems').filter(r=>r.OrderNo===orderNo);
-  const gates = readAll_('GateEntry').filter(r=>r.OrderNo===orderNo);
-  const invoices = readAll_('Invoice').filter(r=>r.OrderNo===orderNo);
-  const gateOuts = readAll_('GateOut').filter(r=>r.OrderNo===orderNo);
-  const pods = readAll_('POD').filter(r=>r.OrderNo===orderNo);
-  const vehicles = gates.map(g=>{
-    const inv = invoices.find(i=>i.GateEntryNo===g.GateEntryNo);
-    const go  = gateOuts.find(x=>x.GateEntryNo===g.GateEntryNo);
-    const pod = pods.find(x=>x.GateEntryNo===g.GateEntryNo);
-    return { gateEntryNo:g.GateEntryNo, vehicleNo:g.VehicleNo, driver:g.DriverName,
-             status:g.Status, invoiceNo:inv?inv.InvoiceNo:'', invoiceAmount:inv?inv.InvoiceAmount:0,
-             gatedOut: !!go, delivered: !!pod };
-  });
-  const invoiced = invoices.reduce((s,i)=>s+(Number(i.InvoiceAmount)||0),0);
-  const collected = readAll_('Collection').filter(c=>c.OrderNo===orderNo)
-                     .reduce((s,c)=>s+(Number(c.CollectionAmount)||0),0);
-  const scheduled = readAll_('Schedule').some(s=>s.OrderNo===orderNo);
-  return {
-    order:{ OrderNo:o.OrderNo, OrderDate:fmtDate_(o.OrderDate), VendorName:o.VendorName,
-            TotalQty:o.TotalQty, TotalValue:o.TotalValue, Status:o.Status, Scheduled:scheduled, StageIndex:stageIndex_(o.Status, scheduled) },
-    items:items, vehicles:vehicles,
-    invoiced:invoiced, collected:collected, outstanding:Math.max(invoiced-collected,0)
-  };
-}
-
-/* ===================== DELIVERY SCHEDULE (promise date) ===================== */
-/* Orders with quantity still open — same pool as dispatch planning. */
-function getSchedulableOrders(){ return getPendingDispatch(); }
-function scheduledBySku_(orderNo){
-  const m={}; readAll_('ScheduleItems').filter(s=>s.OrderNo===orderNo).forEach(s=>m[s.SKUCode]=(m[s.SKUCode]||0)+(Number(s.ScheduledQty)||0));
-  return m;
-}
-/* Full item list for scheduling: Ordered, Pending, and any existing scheduled qty. */
-function getScheduleSheet(orderNo){
-  const o=readAll_('Orders').find(x=>x.OrderNo===orderNo); if(!o) return null;
-  const loaded=loadedBySku_(orderNo), openPlan=plannedOpenBySku_(orderNo), sched=scheduledBySku_(orderNo);
-  const items=readAll_('OrderItems').filter(r=>r.OrderNo===orderNo).map(i=>{
-    const ordered=Number(i.Qty)||0;
-    const pending=Math.max(ordered-(loaded[i.SKUCode]||0)-(openPlan[i.SKUCode]||0),0);
-    return {SKUCode:i.SKUCode,SKUName:i.SKUName,UOM:i.UOM||uomOf_(i.SKUCode),OrderedQty:ordered,PendingQty:pending,ScheduledQty:(sched[i.SKUCode]!=null?sched[i.SKUCode]:pending)};
-  });
-  const existing=readAll_('Schedule').filter(s=>s.OrderNo===orderNo).slice(-1)[0];
-  return {orderNo:orderNo, vendorName:o.VendorName, promisedDate: existing?fmtDate_(existing.PromisedDate):'', promisedTime: existing?String(existing.PromisedTime||''):'', items:items};
-}
-function saveSchedule(p){
-  o2cOrder_(p.orderNo);                                    // CHAIN: order pehle
-  const schNo=nextNumber_('Schedule','ScheduleNo','SCH');
-  append_('Schedule',{ScheduleNo:schNo,OrderNo:p.orderNo,VendorName:p.vendorName||'',PromisedDate:p.promisedDate||'',PromisedTime:p.promisedTime||'',Remarks:p.remarks||'',CreatedBy:currentUser_().email,CreatedAt:new Date()});
-  appendMany_('ScheduleItems',(p.items||[]).filter(it=>Number(it.scheduledQty)>0).map(it=>({ScheduleNo:schNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),OrderedQty:Number(it.orderedQty)||0,ScheduledQty:Number(it.scheduledQty)||0})));
-  try{ const _n=new Date(), _promise=fmsPromise_(p.promisedDate, p.promisedTime);
-    const _o=readAll_('Orders').find(function(x){return x.OrderNo===p.orderNo;})||{};
-    const _sq=(p.items||[]).reduce(function(s,it){return s+(Number(it.scheduledQty)||0);},0);
-    fmsInit_('FMS_O2C_Dispatch',{ Timestamp:_n, OrderNo:p.orderNo, VendorName:_o.VendorName||'', ScheduleNo:schNo,
-      ScheduledQty:_sq, PromisedFor:_promise||'',
-      PlanPlanned:_promise?new Date(_promise.getTime()-24*3600000):fmsPlannedSafe_(_n,3), PlanStatus:'Pending' });
-  }catch(fe){ fmsLog_('saveSchedule FMS hook', fe); }
-  return {scheduleNo:schNo};
-}
-
-/* ========================= DISPATCH PLANNING ===================== */
-/**
- * Orders that still have qty left to plan.
- * Remaining-to-plan = Ordered − Loaded(shipped) − OpenPlanned(committed, not yet loaded).
- * Because a plan is CLOSED at loading, any planned-but-unloaded qty falls back into this pool,
- * so partially-loaded balances automatically reappear for re-planning.
- */
-function getPendingDispatch(){
-  const done = [ORDER_STATUS.CLOSED, ORDER_STATUS.COLLECTED];
-  return readAll_('Orders').filter(o=>done.indexOf(o.Status)<0)
-    .map(o=>{
-      const rem = getOrderItemsFor(o.OrderNo).reduce((s,i)=>s+i.RemainingQty,0);
-      return { OrderNo:o.OrderNo, VendorName:o.VendorName, TotalValue:o.TotalValue, Status:o.Status, RemainingQty:rem };
-    })
-    .filter(o=>o.RemainingQty>0);
-}
-
-/** Per-SKU remaining to plan for an order. Items with remaining ≤ 0 are dropped. */
-function getOrderItemsFor(orderNo){
-  const loaded   = loadedBySku_(orderNo);        // already shipped
-  const openPlan = plannedOpenBySku_(orderNo);   // committed in plans not yet loaded
-  /* If the order has a delivery schedule, planning is capped at the SCHEDULED qty
-     (e.g. ordered 10000, scheduled 5000 → dispatch planning shows only 5000). */
-  const sched = {}; let hasSched=false;
-  readAll_('ScheduleItems').filter(s=>s.OrderNo===orderNo).forEach(s=>{ hasSched=true; sched[s.SKUCode]=(sched[s.SKUCode]||0)+(Number(s.ScheduledQty)||0); });
-  return readAll_('OrderItems').filter(r=>r.OrderNo===orderNo)
-    .map(i=>{
-      const ordered = Number(i.Qty)||0;
-      const base = hasSched ? Math.min(ordered, sched[i.SKUCode]||0) : ordered;   // schedule caps the plannable qty
-      const rem = base - (loaded[i.SKUCode]||0) - (openPlan[i.SKUCode]||0);
-      return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), OrderedQty:ordered, ScheduledQty:hasSched?(sched[i.SKUCode]||0):ordered,
-               LoadedQty:(loaded[i.SKUCode]||0), OpenPlannedQty:(openPlan[i.SKUCode]||0), RemainingQty:Math.max(rem,0) };
-    })
-    .filter(r => r.RemainingQty > 0);
-}
-
-/** Σ planned qty per SKU across OPEN plans only (plans whose loading isn't done). */
-function plannedOpenBySku_(orderNo){
-  const open = readAll_('Planning').filter(pl=>pl.OrderNo===orderNo && pl.Status==='Open').map(pl=>pl.PlanNo);
-  const map={};
-  readAll_('PlanItems').filter(pi=>pi.OrderNo===orderNo && open.indexOf(pi.PlanNo)>-1)
-    .forEach(pi=> map[pi.SKUCode] = (map[pi.SKUCode]||0) + (Number(pi.PlannedQty)||0));
-  return map;
-}
-
-/** Σ loaded/dispatched qty per SKU for an order (all gate entries). */
-function loadedBySku_(orderNo){
-  const map={};
-  readAll_('LoadItems').filter(l=>l.OrderNo===orderNo)
-    .forEach(l=> map[l.SKUCode] = (map[l.SKUCode]||0) + (Number(l.DispatchQty)||0));
-  return map;
-}
-
-function savePlanning(p){
-  o2cOrder_(p.orderNo);                                    // CHAIN: order pehle
-  // p = { orderNo, plannedDate, plannedTime, transporterName, remarks, items:[{skuCode,skuName,plannedQty}] }
-  const planNo = nextSeq_('Planning','PlanNo','PLN-'+Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'ddMMyy')+'-',4);
-  append_('Planning', { PlanNo:planNo, OrderNo:p.orderNo, PlannedDate:p.plannedDate, PlannedTime:p.plannedTime,
-                        TransporterName:p.transporterName, Remarks:p.remarks||'', Status:'Open', CreatedAt:new Date() });
-  appendMany_('PlanItems', (p.items||[]).filter(it=>Number(it.plannedQty)>0)
-    .map(it=>({ PlanNo:planNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName, UOM:uomOf_(it.skuCode), PlannedQty:it.plannedQty })));
-  const remLeft = getOrderItemsFor(p.orderNo).reduce((s,i)=>s+i.RemainingQty,0);
-  updateWhere_('Orders','OrderNo',p.orderNo,{ Status: remLeft>0 ? ORDER_STATUS.PARTIAL : ORDER_STATUS.PLANNED });
-  try{
-    const _n=new Date(), _v=(readAll_('Orders').find(o=>o.OrderNo===p.orderNo)||{}).VendorName||'';
-    /* attach this plan to the oldest schedule row of the order that has no plan yet */
-    const _open=fmsReadAll_('FMS_O2C_Dispatch').find(function(r){ return String(r.OrderNo)===String(p.orderNo) && !r.PlanActual; });
-    if(_open){
-      const _promise=_open.PromisedFor||'';
-      fmsSet_('FMS_O2C_Dispatch','ScheduleNo',_open.ScheduleNo,{ PlanNo:planNo, PlanActual:_n, PlanStatus:'Done',
-        PlanTimeDelay:fmsDelay_(_open.PlanPlanned,_n),
-        GatePlanned:_promise||fmsPlannedSafe_(_n,6), GateStatus:'Pending' });
-    } else {
-      /* no schedule — ad-hoc plan gets its own row */
-      fmsInit_('FMS_O2C_Dispatch',{ Timestamp:_n, OrderNo:p.orderNo, VendorName:_v, ScheduleNo:'', PlanNo:planNo,
-        PlanActual:_n, PlanStatus:'Done', GatePlanned:fmsPlannedSafe_(_n,6), GateStatus:'Pending' });
-    }
-    fmsOrderSummary_(p.orderNo);
-  }catch(fe){ fmsLog_('savePlanning FMS hook', fe); }
-  return { planNo:planNo };
-}
-function totalQtyByOrder_(sheet,col,orderNo){
-  return readAll_(sheet).filter(r=>r.OrderNo===orderNo).reduce((s,r)=>s+(Number(r[col])||0),0);
-}
-
-/* ============================ GATE ENTRY ========================= */
-/** Gate entry selects an OPEN plan that has no vehicle yet (one plan = one vehicle). */
-function getDispatchPlanned(){
-  const used = readAll_('GateEntry').map(g=>g.PlanNo);
-  const orders = readAll_('Orders');
-  const planItems = readAll_('PlanItems');
-  return readAll_('Planning').filter(pl=>pl.Status==='Open' && used.indexOf(pl.PlanNo)<0)
-    .map(pl=>{
-      const vend = (orders.find(o=>o.OrderNo===pl.OrderNo)||{}).VendorName||'';
-      const its = planItems.filter(pi=>pi.PlanNo===pl.PlanNo);
-      return { PlanNo:pl.PlanNo, OrderNo:pl.OrderNo, VendorName:vend,
-               Summary: its.map(i=>i.SKUName+' ×'+i.PlannedQty).join(', ') };
-    });
-}
-
-function saveGateEntry(p){
-  if(!p.planNo) throw new Error('Plan number missing.');
-  if(!readAll_('Planning').some(x=>x.PlanNo===p.planNo)) throw new Error('Pehle Dispatch Planning karein — plan nahi mila.');
-  if(readAll_('GateEntry').some(g=>g.PlanNo===p.planNo)) throw new Error('Is plan par gate entry pehle ho chuki hai.');
-  // p = { planNo, orderNo, vehicleNo, driverName, mobileNo, dlNo, rcNo, transporterName }
-  const geNo = nextSeqYearly_('GateEntry','GateEntryNo','GE-','GateDate',4);
-  ['vehicleNo','driverName','dlNo','rcNo'].forEach(function(k){ if(p[k]) p[k]=String(p[k]).toUpperCase(); });
-  const now = new Date();
-  append_('GateEntry', { GateEntryNo:geNo, PlanNo:p.planNo, OrderNo:p.orderNo, GateDate:now, GateTime:fmtTime_(now),
-                         VehicleNo:p.vehicleNo, DriverName:p.driverName, MobileNo:String(p.mobileNo||'').trim(), DLNo:p.dlNo, RCNo:p.rcNo,
-                         TransporterName:p.transporterName||'', Status:'Vehicle Arrived' });
-  updateWhere_('Orders','OrderNo',p.orderNo,{ Status:ORDER_STATUS.ARRIVED });
-  fmsStep_('FMS_O2C_Dispatch','PlanNo',p.planNo,'Gate',new Date(),'Load',FMS_TAT_O2C.load,'Done',{VehicleNo:p.vehicleNo||'',GateEntryNo:geNo});
-  fmsOrderSummary_(p.orderNo);
-  return { gateEntryNo:geNo };
-}
-
-function getGateEntries(statusFilter){
-  let rows = readAll_('GateEntry').reverse();
-  if (statusFilter) rows = rows.filter(g=>g.Status===statusFilter);
-  return rows.map(g=>({ GateEntryNo:g.GateEntryNo, PlanNo:g.PlanNo, OrderNo:g.OrderNo, VehicleNo:g.VehicleNo,
-                        DriverName:g.DriverName, Status:g.Status }));
-}
-
-/* ========================== VEHICLE LOADING ====================== */
-/**
- * Loading sheet shows ONLY this gate entry's plan items, capped at the planned qty.
- * Partial loading is allowed; the unloaded balance is released back to the order's
- * pending pool when the plan is closed in saveLoading().
- */
-function getLoadingSheet(gateEntryNo){
-  const ge = readAll_('GateEntry').find(g=>g.GateEntryNo===gateEntryNo);
-  if (!ge) return null;
-  const planItems = readAll_('PlanItems').filter(pi=>pi.PlanNo===ge.PlanNo);
-  const loadedThis = {};
-  readAll_('LoadItems').filter(l=>l.GateEntryNo===gateEntryNo)
-    .forEach(l=> loadedThis[l.SKUCode] = (loadedThis[l.SKUCode]||0)+(Number(l.DispatchQty)||0));
-  const skuRows = planItems.map(pi=>{
-    const plan = Number(pi.PlannedQty)||0;
-    const bal  = plan - (loadedThis[pi.SKUCode]||0);
-    return { SKUCode:pi.SKUCode, SKUName:pi.SKUName, UOM:pi.UOM||uomOf_(pi.SKUCode), PlannedQty:plan, BalanceQty:Math.max(bal,0), DispatchQty:0 };
-  }).filter(r => r.BalanceQty > 0);
-  const _ord=readAll_('Orders').find(o=>o.OrderNo===ge.OrderNo)||{};
-  const _vnd=readAll_('VendorMaster').find(v=>v.VendorName===_ord.VendorName)||{};
-  return { gateEntryNo:gateEntryNo, planNo:ge.PlanNo, orderNo:ge.OrderNo, vehicleNo:ge.VehicleNo,
-           vendorName:_ord.VendorName||'', vendorCode:_vnd.VendorCode||'', vendorGST:_vnd.GST||'', vendorContact:_vnd.ContactPerson||'', skus:skuRows };
-}
-
-function saveLoading(p){
-  // p = { gateEntryNo, planNo, orderNo, items:[{skuCode,skuName,plannedQty,dispatchQty}] }
-  o2cGate_(p.gateEntryNo);                                 // CHAIN: gate entry pehle
-  if(o2cHasInvoice_(p.gateEntryNo)) throw new Error('Is vehicle ka invoice ban chuka hai — ab loading change nahi ho sakti.');
-  deleteWhere_('LoadItems','GateEntryNo',p.gateEntryNo);   // clear any prior load rows for this vehicle
-  appendMany_('LoadItems', p.items.filter(it=>Number(it.dispatchQty)>0).map(it=>({
-    GateEntryNo:p.gateEntryNo, PlanNo:p.planNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName,
-    UOM:uomOf_(it.skuCode), PlannedQty:it.plannedQty, DispatchQty:it.dispatchQty })));
-  // close the plan → any unloaded planned qty returns to the order's pending pool
-  updateWhere_('Planning','PlanNo',p.planNo,{ Status:'Closed' });
-  updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Loading Completed' });
-  const ordered = totalQtyByOrder_('OrderItems','Qty',p.orderNo);
-  const loaded  = totalQtyByOrder_('LoadItems','DispatchQty',p.orderNo);
-  updateWhere_('Orders','OrderNo',p.orderNo,{ Status: loaded>=ordered ? ORDER_STATUS.LOADED : ORDER_STATUS.LOADING });
-  { const _ge=readAll_('GateEntry').find(g=>g.GateEntryNo===p.gateEntryNo)||{}; fmsStep_('FMS_O2C_Dispatch','PlanNo',_ge.PlanNo,'Load',new Date(),'Inv',FMS_TAT_O2C.inv); }
-  return { ok:true };
-}
-
-/* ============================ INVOICE ENTRY ====================== */
-/* ============================== INVOICE ========================= */
-/** Auto-fill data for the Invoice screen: this vehicle's loaded items, with rates and a computed amount. */
-function getInvoiceSheet(gateEntryNo){
-  const ge = readAll_('GateEntry').find(g=>g.GateEntryNo===gateEntryNo);
-  if (!ge) return null;
-  const order = readAll_('Orders').find(o=>o.OrderNo===ge.OrderNo) || {};
-  const skuMap = {};   // master fallback
-  readAll_('SKUMaster').forEach(s=> skuMap[s.SKUCode] = s);
-  const oiMap = {};    // the order's agreed rate / tax per SKU (preferred)
-  readAll_('OrderItems').filter(i=>i.OrderNo===ge.OrderNo).forEach(i=> oiMap[i.SKUCode] = i);
-  let amount = 0;
-  const items = readAll_('LoadItems').filter(l=>l.GateEntryNo===gateEntryNo).map(l=>{
-    const oi   = oiMap[l.SKUCode] || {};
-    const sku  = skuMap[l.SKUCode] || {};
-    const rate = Number(oi.Rate)!==undefined && Number(oi.Rate)>0 ? Number(oi.Rate) : (Number(sku.Rate)||0);
-    const gst  = (oi.SGST!==undefined || oi.CGST!==undefined) ? ((Number(oi.SGST)||0)+(Number(oi.CGST)||0)) : (Number(sku.GSTPercent)||0);
-    const qty  = Number(l.DispatchQty)||0;
-    const line = qty * rate * (1 + gst/100);
-    amount += line;
-    return { SKUCode:l.SKUCode, SKUName:l.SKUName, Qty:qty, Rate:rate, GSTPercent:gst, Amount:Math.round(line) };
-  });
-  return {
-    gateEntryNo: gateEntryNo,
-    orderNo:     ge.OrderNo,
-    vehicleNo:   ge.VehicleNo,
-    vendorName:  order.VendorName||'',
-    items:       items,
-    suggestedAmount: Math.round(amount)
-  };
-}
-
-function saveInvoice(p){
-  // p = { gateEntryNo, orderNo, invoiceNo, invoiceDate, invoiceAmount, file:{base64,name,mime} }
-  o2cGate_(p.gateEntryNo);
-  if(!o2cHasLoad_(p.gateEntryNo)) throw new Error('Pehle Vehicle Loading complete karein, tabhi invoice ban sakta hai.');
-  if(o2cHasInvoice_(p.gateEntryNo)) throw new Error('Is vehicle ka invoice pehle hi ban chuka hai.');
-  if(!p.invoiceNo || !String(p.invoiceNo).trim()) throw new Error('Invoice number is required.');
-  let url='';
-  if (p.file && p.file.base64) url = uploadFile_(p.file.base64, p.file.name, p.file.mime);
-  append_('Invoice', { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, InvoiceNo:p.invoiceNo,
-                       InvoiceDate:p.invoiceDate, InvoiceAmount:Number(p.invoiceAmount)||0,
-                       InvoiceWeight:Number(p.invoiceWeight)||0,
-                       FileUrl:url, Status:'Invoice Generated', CreatedAt:new Date() });
-  // advance this gate entry so it drops out of the Invoice list and becomes eligible for Gate Out
-  updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Invoice Generated' });
-  updateWhere_('Orders','OrderNo',p.orderNo,{ Status:ORDER_STATUS.INVOICED });
-  { const _ge=readAll_('GateEntry').find(g=>g.GateEntryNo===p.gateEntryNo)||{}; fmsStep_('FMS_O2C_Dispatch','PlanNo',_ge.PlanNo,'Inv',new Date(),'GateOut',FMS_TAT_O2C.gateout); }
-  return { ok:true, fileUrl:url };
-}
-
-/* ============================== GATE OUT ========================= */
-function saveGateOut(p){
-  // p = { gateEntryNo, orderNo, vehicleNo, driverName, invoiceNo, checks:{invoice,lr,vehicle,docs} }
-  o2cGate_(p.gateEntryNo);
-  if(!o2cHasInvoice_(p.gateEntryNo)) throw new Error('Pehle Invoice Entry karein, tabhi gate out ho sakta hai.');
-  if(o2cHasGateOut_(p.gateEntryNo)) throw new Error('Ye vehicle pehle hi gate out ho chuka hai.');
-  const c = p.checks||{};
-  if (!(c.invoice && c.lr && c.vehicle && c.docs && c.weighment)) throw new Error('All verifications (including Weighment Done) are required before gate out.');
-  const now = new Date();
-  append_('GateOut', { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, VehicleNo:p.vehicleNo, DriverName:p.driverName,
-                       InvoiceNo:p.invoiceNo, InvoiceVerified:'Yes', LRVerified:'Yes', VehicleVerified:'Yes',
-                       DocsVerified:'Yes', WeighmentDone:'Yes', GateOutDate:now, GateOutTime:fmtTime_(now), Status:'Vehicle Dispatched' });
-  updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Vehicle Dispatched' });
-  updateWhere_('Orders','OrderNo',p.orderNo,{ Status:ORDER_STATUS.DISPATCHED });
-  { const _ge=readAll_('GateEntry').find(g=>g.GateEntryNo===p.gateEntryNo)||{}; const _now=new Date();
-    fmsStep_('FMS_O2C_Dispatch','PlanNo',_ge.PlanNo,'GateOut',_now,null);
-    try{ const _r=fmsReadAll_('FMS_O2C_Dispatch').find(function(x){return String(x.PlanNo)===String(_ge.PlanNo);});
-      if(_r && !_r.PODPlanned){ const key=_r.ScheduleNo?['ScheduleNo',_r.ScheduleNo]:['PlanNo',_r.PlanNo];
-        fmsSet_('FMS_O2C_Dispatch',key[0],key[1],{ PODPlanned:new Date(_now.getTime()+24*3600000), PODStatus:'Pending' }); }
-    }catch(e){ fmsLog_('POD plan arm', e); } }
-  return { ok:true };
-}
-
-/* ================================ POD =========================== */
-/** Loaded items for a dispatched gate entry — POD captures delivered vs rejected per item. */
-function getPODSheet(gateEntryNo){
-  const ge = readAll_('GateEntry').find(g=>g.GateEntryNo===gateEntryNo);
-  if(!ge) return null;
-  const items = readAll_('LoadItems').filter(l=>l.GateEntryNo===gateEntryNo).map(l=>{
-    const loaded = Number(l.DispatchQty)||0;
-    return { SKUCode:l.SKUCode, SKUName:l.SKUName, UOM:l.UOM||uomOf_(l.SKUCode), LoadedQty:loaded, DeliveredQty:loaded, RejectedQty:0 };
-  });
-  return { gateEntryNo:gateEntryNo, orderNo:ge.OrderNo, vehicleNo:ge.VehicleNo, items:items };
-}
-
-function savePOD(p){
-  // p = { gateEntryNo, orderNo, deliveryDate, receiverName, receiverMobile, remarks, file,
-  //       items:[{skuCode,skuName,loadedQty,deliveredQty,rejectedQty}] }
-  o2cGate_(p.gateEntryNo);
-  if(!o2cHasGateOut_(p.gateEntryNo)) throw new Error('Pehle Gate Out karein, tabhi POD post ho sakta hai.');
-  if(o2cHasPOD_(p.gateEntryNo)) throw new Error('Is vehicle ka POD pehle hi post ho chuka hai.');
-  let url='';
-  if (p.file && p.file.base64) url = uploadFile_(p.file.base64, p.file.name, p.file.mime);
-  const items = p.items||[];
-  const rejected = items.reduce((s,i)=>s+(Number(i.rejectedQty)||0),0);
-  const hasReturn = rejected>0;
-  append_('POD', { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, DeliveryDate:p.deliveryDate,
-                   ReceiverName:p.receiverName, ReceiverMobile:p.receiverMobile,
-                   GrossWeight:Number(p.grossWeight)||0, NetWeight:Number(p.netWeight)||0, PartyNetWeight:Number(p.partyNetWeight)||0,
-                   FileUrl:url, Remarks:p.remarks||'',
-                   HasReturn:hasReturn?'Yes':'No', Status:hasReturn?'Partial Delivery':'Delivered' });
-  appendMany_('PODItems', items.map(it=>{
-    const loaded=Number(it.loadedQty)||0, rej=Number(it.rejectedQty)||0;
-    return { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName,
-             UOM:uomOf_(it.skuCode), LoadedQty:loaded, DeliveredQty:Math.max(loaded-rej,0), RejectedQty:rej };   // delivered = loaded − rejected
-  }));
-  // rejected items trigger the conditional return flow; otherwise straight to Delivered
-  updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status: hasReturn?'Return Pending':'Delivered' });
-  const orderStatus = recomputeOrderStatus_(p.orderNo);   // stays Partially Dispatched if qty remains un-shipped
-  { const _ge=readAll_('GateEntry').find(g=>g.GateEntryNo===p.gateEntryNo)||{};
-    const _now=new Date();
-    fmsStep_('FMS_O2C_Dispatch','PlanNo',_ge.PlanNo,'POD',_now,null);
-    try{ const _r=fmsReadAll_('FMS_O2C_Dispatch').find(function(x){return String(x.PlanNo)===String(_ge.PlanNo);});
-      if(_r && !_r.CollPlanned){ const key=_r.ScheduleNo?['ScheduleNo',_r.ScheduleNo]:['PlanNo',_r.PlanNo];
-        fmsSet_('FMS_O2C_Dispatch',key[0],key[1],{ CollPlanned:fmsCollDeadline_(p.orderNo,_now), CollStatus:'Pending' }); }
-    }catch(e){ fmsLog_('POD coll terms', e); }
-    fmsOrderSummary_(p.orderNo); }
-  return { ok:true, hasReturn:hasReturn, rejected:rejected, orderStatus:orderStatus };
-}
-
-/* ===================== RETURN FLOW (conditional) ================= */
-/** Only populated when a POD marked items rejected — vehicles awaiting a return gate entry. */
-function getReturnPending(){
-  return readAll_('GateEntry').filter(g=>g.Status==='Return Pending').reverse()
-    .map(g=>({ GateEntryNo:g.GateEntryNo, OrderNo:g.OrderNo, VehicleNo:g.VehicleNo, DriverName:g.DriverName }));
-}
-/** Rejected items for a gate entry (what is physically coming back to the factory). */
-function getRejectedItems(gateEntryNo){
-  return readAll_('PODItems').filter(i=>i.GateEntryNo===gateEntryNo && (Number(i.RejectedQty)||0)>0)
-    .map(i=>({ SKUCode:i.SKUCode, SKUName:i.SKUName, RejectedQty:Number(i.RejectedQty)||0 }));
-}
-/** Step 1 — log the returning vehicle at the factory gate. */
-function saveReturnGateEntry(p){
-  // p = { gateEntryNo, orderNo, vehicleNo, driverName }
-  ['vehicleNo','driverName'].forEach(function(k){ if(p[k]) p[k]=String(p[k]).toUpperCase(); });
-  const rNo = nextSeqYearly_('Returns','ReturnNo','RE-','ReturnDate',4);
-  const now = new Date();
-  append_('Returns', { ReturnNo:rNo, GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, ReturnDate:now, ReturnTime:fmtTime_(now),
-                       VehicleNo:p.vehicleNo||'', DriverName:p.driverName||'', Status:'Returned', ReceivedDate:'' });
-  updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Returned' });
-  updateWhere_('Orders','OrderNo',p.orderNo,{ Status:ORDER_STATUS.RETURNED });
-  return { returnNo:rNo };
-}
-/** Returns awaiting warehouse receipt. */
-function getReturnsToReceive(){
-  return readAll_('Returns').filter(r=>r.Status==='Returned').reverse()
-    .map(r=>({ ReturnNo:r.ReturnNo, GateEntryNo:r.GateEntryNo, OrderNo:r.OrderNo, VehicleNo:r.VehicleNo }));
-}
-/** Step 2 — confirm rejected goods received back. Per spec this closes only the
- *  returned line items (the gate entry's cycle); the ORDER closes only when nothing
- *  else is outstanding (no qty left to ship, no other returns, collection settled). */
-function saveReturnReceived(p){
-  // p = { returnNo, gateEntryNo, orderNo, receiverName }
-  if(!p.receiverName || !String(p.receiverName).trim()) throw new Error('Receiver Name is required.');
-  updateWhere_('Returns','ReturnNo',p.returnNo,{ Status:'Received', ReceivedDate:new Date(), ReceiverName:String(p.receiverName).toUpperCase() });
-  updateWhere_('GateEntry','GateEntryNo',p.gateEntryNo,{ Status:'Closed' });   // this vehicle's returned lines are closed
-  const status = recomputeOrderStatus_(p.orderNo);                              // order closes only if fully resolved
-  return { ok:true, orderStatus:status };
-}
-
-/**
- * Derive the order's status from the live ledger so partial flows never close early.
- * KEY RULE: an order can only reach "Fully Collected"/"Closed" when EVERY ordered unit
- * has been dispatched (loaded ≥ ordered). If any ordered qty is still un-dispatched, the
- * order stays "Partially Dispatched" even if the shipped portion is fully delivered & paid.
- */
-function recomputeOrderStatus_(orderNo){
-  const oi = readAll_('OrderItems').filter(r=>r.OrderNo===orderNo);
-  const ordered = oi.reduce((s,i)=>s+(Number(i.Qty)||0),0);
-  const loadedMap = loadedBySku_(orderNo);
-  const loaded = Object.keys(loadedMap).reduce((s,k)=>s+loadedMap[k],0);
-  const fullyShipped = ordered>0 && loaded>=ordered;                 // all ordered qty dispatched
-  const pendingToPlan = getOrderItemsFor(orderNo).reduce((s,i)=>s+i.RemainingQty,0);
-  const gates  = readAll_('GateEntry').filter(g=>g.OrderNo===orderNo);
-  const inFlight = gates.some(g=>['Vehicle Arrived','Loading Completed','Invoice Generated','Vehicle Dispatched'].indexOf(g.Status)>-1);
-  const returnPending  = gates.some(g=>g.Status==='Return Pending');
-  const returnInTransit = readAll_('Returns').some(r=>r.OrderNo===orderNo && r.Status==='Returned');
-  const c = getCollection(orderNo);
-  let status;
-  if (returnPending)                          status = ORDER_STATUS.RETURN_PENDING;
-  else if (returnInTransit)                   status = ORDER_STATUS.RETURNED;
-  else if (loaded>0 && !fullyShipped)         status = ORDER_STATUS.PART_DISPATCH;  // shipped some, more still to dispatch
-  else if (c.invoiced>0 && c.outstanding>0)   status = (c.collected>0 ? ORDER_STATUS.PART_COLL : ORDER_STATUS.DELIVERED);
-  else if (pendingToPlan>0 || inFlight)       status = ORDER_STATUS.PARTIAL;        // nothing shipped yet, work still open
-  else if (c.invoiced>0 && c.outstanding<=0 && fullyShipped) status = ORDER_STATUS.COLLECTED;
-  else                                        status = ORDER_STATUS.CLOSED;
-  updateWhere_('Orders','OrderNo',orderNo,{ Status:status });
-  return status;
-}
-
-/* ========================= COLLECTION TRACKING =================== */
-/** Orders that have a billed-but-unpaid balance (outstanding > 0), excluding active returns. */
-function getCollectionOrders(){
-  const block = [ORDER_STATUS.RETURN_PENDING, ORDER_STATUS.RETURNED];
-  return readAll_('Orders').filter(o=>block.indexOf(o.Status)<0)
-    .map(o=>{ const c=getCollection(o.OrderNo); return { OrderNo:o.OrderNo, VendorName:o.VendorName, outstanding:c.outstanding, invoiced:c.invoiced }; })
-    .filter(o=>o.invoiced>0 && o.outstanding>0);
-}
-
-function getCollection(orderNo){
-  const o = readAll_('Orders').find(r=>r.OrderNo===orderNo);
-  const invoices = readAll_('Invoice').filter(i=>i.OrderNo===orderNo);
-  const invoiced = invoices.reduce((s,i)=>s+(Number(i.InvoiceAmount)||0),0);
-  const hist = readAll_('Collection').filter(c=>c.OrderNo===orderNo).reverse()
-    .map(c=>({ date:fmtDate_(c.CollectionDate), amount:Number(c.CollectionAmount)||0, deduction:Number(c.DeductionAmount)||0,
-               actual:Number(c.ActualReceived)||0, mode:c.PaymentMode, ref:c.RefNo, remarks:c.Remarks }));
-  const collected = hist.reduce((s,c)=>s+c.amount,0);
-  return {
-    orderNo:orderNo, vendorName:o?o.VendorName:'',
-    invoiceNo: invoices.map(i=>i.InvoiceNo).join(', '),
-    invoiced:invoiced, collected:collected, outstanding:Math.max(invoiced-collected,0), history:hist
-  };
-}
-
-function saveCollection(p){
-  // p = { orderNo, invoiceNo, vendorName, invoiceAmount, collectionDate, amount, mode, refNo, remarks }
-  o2cOrder_(p.orderNo);
-  if(!readAll_('POD').some(x=>x.OrderNo===p.orderNo)) throw new Error('Pehle POD (delivery proof) post karein, tabhi collection entry ho sakti hai.');
-  if(!p.refNo || !String(p.refNo).trim()) throw new Error('Reference No. is required.');
-  const colNo = nextNumber_('Collection','CollectionNo','COL');
-  const _ded=Number(p.deductionAmount)||0, _amt=Number(p.amount)||0;
-  const _actual = (p.actualReceived!==undefined && p.actualReceived!=='') ? (Number(p.actualReceived)||0) : Math.max(_amt-_ded,0);
-  append_('Collection', { CollectionNo:colNo, OrderNo:p.orderNo, InvoiceNo:p.invoiceNo, VendorName:p.vendorName,
-                          InvoiceAmount:Number(p.invoiceAmount)||0, CollectionDate:p.collectionDate||new Date(),
-                          CollectionAmount:_amt, DeductionAmount:_ded, ActualReceived:_actual,
-                          PaymentMode:p.mode, RefNo:p.refNo||'', Remarks:p.remarks||'', CreatedAt:new Date() });
-  const c = getCollection(p.orderNo);
-  recomputeOrderStatus_(p.orderNo);   // Fully Collected only if every ordered unit was dispatched
-  try{ const _n=new Date();
-    fmsReadAll_('FMS_O2C_Dispatch').forEach(function(r){
-      if(String(r.OrderNo)===String(p.orderNo) && r.PODActual && !r.CollActual){
-        if(r.ScheduleNo) fmsSet_('FMS_O2C_Dispatch','ScheduleNo',r.ScheduleNo,{ CollActual:_n, CollStatus:'Done', CollTimeDelay:fmsDelay_(r.CollPlanned,_n) });
-        else if(r.PlanNo) fmsSet_('FMS_O2C_Dispatch','PlanNo',r.PlanNo,{ CollActual:_n, CollStatus:'Done', CollTimeDelay:fmsDelay_(r.CollPlanned,_n) });
-      }
-    });
-    fmsOrderSummary_(p.orderNo);
-  }catch(fe){ fmsLog_('saveCollection FMS hook', fe); }
-  return c;
-}
-
-
-
-/* ===== NAYE P2P REPORTS (apna alag format — 18-col normalise nahi hote) ===== */
-function rptSupplierOf_(poNo){
-  const po=readAll_('PO').find(p=>p.PONo===poNo)||{};
-  const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
-  return {po:po, sup:sup};
-}
-/* 5) PO Report */
-function rptPOReport(){
-  const out=[];
-  readAll_('PO').forEach(function(po){
-    const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
-    readAll_('POItems').filter(i=>i.PONo===po.PONo).forEach(function(i){
-      const qty=Number(i.Qty)||0, rate=Number(i.Rate)||0, gst=Number(i.GSTPercent)||0;
-      const taxable=qty*rate, tax=taxable*gst/100;
-      out.push({
-        'Date':fmtDate_(po.PODate), 'PO Number':po.PONo, 'Supplier Name':po.SupplierName||'',
-        'Broker Name':po.BrokerName||'', 'Supplier Add':sup.Address||'', 'Broker Add':sup.BrokerAddress||'',
-        'Item':i.SKUName||'', 'UOM':i.UOM||'',
-        'PO Qty':qty, 'PO Rate':rate, 'GST %':gst,
-        'Taxable Amount':Math.round(taxable), 'Tax Amount':Math.round(tax), 'Total Amount':Math.round(taxable+tax),
-        'Status':po.Status||''
+function dv2Render(elId, d, nodes, chartTitle){
+  const el=document.getElementById(elId); if(!el) return;
+  let selM=new Date().getMonth();
+  function paint(){
+    el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin:-4px 0 6px">
+        <div class="stsw"><button data-st="d1" class="${DASH_STYLE==='d1'?'on':''}">Style 1</button><button data-st="d2" class="${DASH_STYLE==='d2'?'on':''}">Style 2</button></div>
+      </div>` + dv2Flow(nodes(d.pipeline)) + `
+      <div class="dv2-grid">
+        <div class="dv2-card"><h4>${chartTitle} — ${d.series.year}</h4><div id="${elId}_bars">${dv2Bars(d.series,selM)}</div></div>
+        <div class="dv2-card"><h4>Status</h4>${dv2Donut(d.donut)}</div>
+      </div>
+      <div class="dv2-card" style="margin-top:16px"><h4 id="${elId}_wt">${DV2_M[selM]} — weekly value</h4><div id="${elId}_week">${dv2Weekly(d.series,selM)}</div></div>`;
+    el.querySelectorAll('.stsw button').forEach(b=>b.addEventListener('click',()=>setDashStyle(b.dataset.st)));
+    /* Delegation: listener parent par hai, isliye bars redraw hone ke baad bhi click chalta rahega */
+    if(!el._dv2Click){
+      el._dv2Click=true;
+      el.addEventListener('click',ev=>{
+        const b=ev.target.closest('.dv2-bar'); if(!b||!el.contains(b)) return;
+        selM=+b.dataset.m;
+        const bx=document.getElementById(elId+'_bars'); if(bx) bx.innerHTML=dv2Bars(d.series,selM);
+        const wt=document.getElementById(elId+'_wt'); if(wt) wt.textContent=DV2_M[selM]+' — weekly value';
+        const wk=document.getElementById(elId+'_week'); if(wk) wk.innerHTML=dv2Weekly(d.series,selM);
       });
-    });
-  });
-  return out;
-}
-/* 6) QC Status Report */
-function rptQCStatus(){
-  const sens=readAll_('SEN'), qcs=readAll_('QC'), items=readAll_('SENItems'), pois=readAll_('POItems');
-  return qcs.map(function(q){
-    const sen=sens.find(s=>s.SENNo===q.SENNo)||{};
-    const x=rptSupplierOf_(sen.PONo||q.PONo);
-    const its=items.filter(i=>i.SENNo===q.SENNo);
-    const invQty=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
-    const first=its[0]||{};
-    const poi=pois.find(i=>i.PONo===(sen.PONo||q.PONo) && i.SKUCode===first.SKUCode)||{};
-    return {
-      'SEN Number':q.SENNo, 'Gate Entry Date':fmtDate_(sen.GateDate), 'Time':sen.GateTime||'',
-      'PO Number':sen.PONo||q.PONo, 'Supplier Name':sen.SupplierName||'', 'Broker Name':x.po.BrokerName||'',
-      'Invoice Number':sen.InvoiceNo||'', 'Invoice Qty':invQty, 'Rate':Number(poi.Rate)||0,
-      'QC Date':fmtDate_(q.QCDate), 'QC Status':q.QCStatus||'',
-      'HL':q.HL||'', 'Moisture (%)':q.Moisture||'', 'Infestation':q.Infestation||'',
-      'Gluten (%)':q.Gluten||'', 'Foreign Matter':q.ForeignMatter||'', 'KB':q.KB||'',
-      'Deduction':Number(q.DeductionAmount)||0, 'Inspector':q.Inspector||''
-    };
-  });
-}
-/* 7) GRN / Receiving Report */
-function rptGRN(){
-  const sens=readAll_('SEN'), qcs=readAll_('QC'), items=readAll_('SENItems'), pois=readAll_('POItems');
-  return readAll_('Receiving').map(function(r){
-    const sen=sens.find(s=>s.SENNo===r.SENNo)||{};
-    const qc=qcs.find(q=>q.SENNo===r.SENNo)||{};
-    const x=rptSupplierOf_(r.PONo||sen.PONo);
-    const its=items.filter(i=>i.SENNo===r.SENNo);
-    const poQty=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
-    const first=its[0]||{};
-    const poi=pois.find(i=>i.PONo===(r.PONo||sen.PONo) && i.SKUCode===first.SKUCode)||{};
-    return {
-      'GRN Date':fmtDate_(r.ReceiveDate), 'GRN Number':r.GRNNo, 'SEN Number':r.SENNo,
-      'QC Status':qc.QCStatus||'', 'PO Number':r.PONo||sen.PONo,
-      'Supplier Name':sen.SupplierName||'', 'Broker Name':x.po.BrokerName||'',
-      'PO Qty':poQty, 'Rate':Number(poi.Rate)||0,
-      'Weighment (KG)':Number(r.FactoryGrossWeight)||0,
-      'Factory Tare Weight (KG)':Number(r.FactoryTareWeight)||0,
-      'Factory Net Weight (KG)':Number(r.FactoryNetWeight)||0,
-      'Party Net Weight (KG)':Number(r.PartyNetWeight)||0,
-      'Received By':r.ReceiverName||''
-    };
-  });
-}
-/* 8) Return / Rejected Report */
-function rptReturn(){
-  const sens=readAll_('SEN'), items=readAll_('SENItems'), pois=readAll_('POItems'), qcs=readAll_('QC');
-  return readAll_('PurchaseReturn').map(function(pr){
-    const sen=sens.find(s=>s.SENNo===pr.SENNo)||{};
-    const x=rptSupplierOf_(pr.PONo||sen.PONo);
-    const its=items.filter(i=>i.SENNo===pr.SENNo);
-    const qty=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
-    const first=its[0]||{};
-    const poi=pois.find(i=>i.PONo===(pr.PONo||sen.PONo) && i.SKUCode===first.SKUCode)||{};
-    const qc=qcs.find(q=>q.SENNo===pr.SENNo)||{};
-    return {
-      'Return Number':pr.PRNo, 'SEN Number':pr.SENNo, 'Date':fmtDate_(pr.ReturnDate),
-      'PO Number':pr.PONo||sen.PONo, 'Supplier Name':sen.SupplierName||'', 'Broker Name':x.po.BrokerName||'',
-      'Return Qty':qty, 'Rate':Number(poi.Rate)||0,
-      'QC Status':qc.QCStatus||'', 'Reason':pr.Reason||'', 'Status':pr.Status||''
-    };
-  });
-}
-/* 9) PO Status Report */
-function rptPOStatus(){
-  return readAll_('PO').map(function(po){
-    const its=poItemsFor(po.PONo);
-    const totalQty=its.reduce((s,i)=>s+(i.POQty||0),0);
-    const rcv=poReceivedBySku_(po.PONo);                       // asli tola hua net weight
-    const recvQty=Math.round(Object.keys(rcv).reduce((s,k)=>s+rcv[k],0)*1000)/1000;
-    const pending=Math.max(Math.round((totalQty-recvQty)*1000)/1000,0);
-    const rate=its.length?its[0].Rate:0;
-    return {
-      'PO Number':po.PONo, 'PO Date':fmtDate_(po.PODate), 'Supplier Name':po.SupplierName||'',
-      'Broker Name':po.BrokerName||'', 'Rate':rate,
-      'Total PO Qty':totalQty, 'Received Qty (Net KG)':recvQty, 'Pending PO Qty':pending,
-      'Vehicles Received':poVehiclesReceived_(po.PONo),
-      'Status':po.Status||''
-    };
-  });
-}
-
-/* ============================== REPORTS ========================= */
-/* Har report ke SAARE possible columns (data khaali ho tab bhi customise me dikhein).
-   Frontend inhe default order+visibility ke liye use karta hai.                       */
-var REPORT_COLS = {
-  SKULedger: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  OrderRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  OpenOrders: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  ClosedOrders: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  PartialOrders: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  InvoicePending: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  POD: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  DispatchPlanning: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  GateEntry: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  GateOut: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  InvoiceRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  CollectionRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  Outstanding: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  PartyCollection: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
-  /* --- P2P reports: apna alag format --- */
-  POReport:       ['Date','PO Number','Supplier Name','Broker Name','Supplier Add','Broker Add','Item','UOM','PO Qty','PO Rate','GST %','Taxable Amount','Tax Amount','Total Amount','Status'],
-  QCStatusReport: ['SEN Number','Gate Entry Date','Time','PO Number','Supplier Name','Broker Name','Invoice Number','Invoice Qty','Rate','QC Date','QC Status','HL','Moisture (%)','Infestation','Gluten (%)','Foreign Matter','KB','Deduction','Inspector'],
-  GRNReport:      ['GRN Date','GRN Number','SEN Number','QC Status','PO Number','Supplier Name','Broker Name','PO Qty','Rate','Weighment (KG)','Factory Tare Weight (KG)','Factory Net Weight (KG)','Party Net Weight (KG)','Received By'],
-  ReturnReport:   ['Return Number','SEN Number','Date','PO Number','Supplier Name','Broker Name','Return Qty','Rate','QC Status','Reason','Status'],
-  POStatusReport: ['PO Number','PO Date','Supplier Name','Broker Name','Rate','Total PO Qty','Received Qty (Net KG)','Pending PO Qty','Vehicles Received','Status']
-};
-/* Ye reports apne columns rakhte hain — 18-column normalise nahi hote */
-var REPORT_CUSTOM_SHAPE = ['POReport','QCStatusReport','GRNReport','ReturnReport','POStatusReport'];
-function getReportColumns(type){ return REPORT_COLS[type] || []; }
-
-/* Har order ke chaaro dates ek jagah: Created, Order, Delivery (aakhri POD), Collection (aakhri) */
-function rptDates_(){
-  const ord={}, pod={}, coll={};
-  readAll_('Orders').forEach(function(o){ ord[o.OrderNo]={created:o.CreatedAt||'', order:o.OrderDate||''}; });
-  readAll_('POD').forEach(function(p){ const d=p.DeliveryDate||''; if(d && (!pod[p.OrderNo] || new Date(d)>new Date(pod[p.OrderNo]))) pod[p.OrderNo]=d; });
-  readAll_('Collection').forEach(function(cl){ const d=cl.CollectionDate||''; if(d && (!coll[cl.OrderNo] || new Date(d)>new Date(coll[cl.OrderNo]))) coll[cl.OrderNo]=d; });
-  return { created:function(no){ const x=ord[no]; return x?fmtDate_(x.created):''; },
-           order:  function(no){ const x=ord[no]; return x?fmtDate_(x.order):''; },
-           delivery:function(no){ return pod[no]?fmtDate_(pod[no]):''; },
-           collection:function(no){ return coll[no]?fmtDate_(coll[no]):''; } };
-}
-function getReportRaw(type){
-  const orders = readAll_('Orders');
-  const open   = orders.filter(o=>[ORDER_STATUS.COLLECTED,ORDER_STATUS.CLOSED].indexOf(o.Status)<0);
-  const closed = orders.filter(o=>[ORDER_STATUS.COLLECTED,ORDER_STATUS.CLOSED].indexOf(o.Status)>-1);
-  const partial= orders.filter(o=>[ORDER_STATUS.PARTIAL,ORDER_STATUS.LOADING,ORDER_STATUS.PART_COLL,ORDER_STATUS.PART_DISPATCH].indexOf(o.Status)>-1);
-  const loaded = orders.filter(o=>o.Status===ORDER_STATUS.LOADED);
-  switch(type){
-    case 'OrderRegister':  { const D=rptDates_(); return orders.map(o=>({ OrderNo:o.OrderNo, CreatedDate:fmtDate_(o.CreatedAt), OrderDate:fmtDate_(o.OrderDate), DeliveryDate:D.delivery(o.OrderNo), CollectionDate:D.collection(o.OrderNo), Vendor:o.VendorName, Value:o.TotalValue, Status:o.Status })); }
-    case 'SKULedger':      return skuRows_(orders);      // every SKU of every order, full movement
-    case 'OpenOrders':     return skuRows_(open);
-    case 'ClosedOrders':   return skuRows_(closed);
-    case 'PartialOrders':  return skuRows_(partial);
-    case 'InvoicePending': return skuRows_(loaded);
-    case 'DispatchPlanning': return readAll_('Planning');
-    case 'GateEntry':      return readAll_('GateEntry');
-    case 'GateOut':        return readAll_('GateOut');
-    case 'InvoiceRegister':{ const D=rptDates_(); return readAll_('Invoice').map(i=>({ InvoiceNo:i.InvoiceNo, OrderNo:i.OrderNo, GateEntryNo:i.GateEntryNo, CreatedDate:fmtDate_(i.CreatedAt), OrderDate:D.order(i.OrderNo), InvoiceDate:fmtDate_(i.InvoiceDate), DeliveryDate:D.delivery(i.OrderNo), CollectionDate:D.collection(i.OrderNo), Amount:Number(i.InvoiceAmount)||0, InvoiceWeight:Number(i.InvoiceWeight)||0, Status:i.Status||'' })); }
-    case 'POD':            return podRows_();            // SKU-level delivered / rejected
-    case 'CollectionRegister':{ const D=rptDates_(); return readAll_('Collection').map(cl=>({ CollectionNo:cl.CollectionNo, OrderNo:cl.OrderNo, InvoiceNo:cl.InvoiceNo, Vendor:cl.VendorName, CreatedDate:fmtDate_(cl.CreatedAt), OrderDate:D.order(cl.OrderNo), DeliveryDate:D.delivery(cl.OrderNo), CollectionDate:fmtDate_(cl.CollectionDate), InvoiceAmount:Number(cl.InvoiceAmount)||0, Collected:Number(cl.CollectionAmount)||0, Deduction:Number(cl.DeductionAmount)||0, ActualReceived:Number(cl.ActualReceived)||0, Mode:cl.PaymentMode||'', RefNo:cl.RefNo||'' })); }
-    case 'Outstanding':    return outstandingReport_();
-    case 'PartyCollection':return partyCollection_();
-    case 'POReport':       return rptPOReport();
-    case 'QCStatusReport': return rptQCStatus();
-    case 'GRNReport':      return rptGRN();
-    case 'ReturnReport':   return rptReturn();
-    case 'POStatusReport': return rptPOStatus();
-    default: return [];
+    }
   }
+  paint();
 }
 
-
-/* Sabhi reports ko same 18-column shape me dhaalta hai.
-   Jo value report me hai wo sahi column me, baaki blank. */
-var REPORT_STD=['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'];
-function getReport(type){
-  const rows=getReportRaw(type)||[];
-  if(REPORT_CUSTOM_SHAPE.indexOf(type)>-1) return rows;   // apna format, jaisa hai waisa hi
-  const D=rptDates_();
-  return rows.map(function(r){
-    const no=r.OrderNo||'';
-    const out={};
-    REPORT_STD.forEach(function(k){ out[k]=''; });               // default sab blank
-    // seedha available fields copy karo (jinke naam std list me hain)
-    REPORT_STD.forEach(function(k){ if(r[k]!==undefined && r[k]!==null) out[k]=r[k]; });
-    // report-specific values ko standard columns me le aao (taaki blank na rahein)
-    if(out.Vendor==='' && r.Vendor!==undefined) out.Vendor=r.Vendor;
-    if(out.SKU==='' && r.SKU!==undefined) out.SKU=r.SKU;
-    if(out.Value===''){                                            // Value: order value / invoice amt / collected / outstanding
-      if(r.Value!==undefined) out.Value=r.Value;
-      else if(r.Amount!==undefined) out.Value=r.Amount;
-      else if(r.Collected!==undefined) out.Value=r.Collected;
-      else if(r.Outstanding!==undefined) out.Value=r.Outstanding;
-      else if(r.InvoiceAmount!==undefined) out.Value=r.InvoiceAmount;
-    }
-    if(out.Delivered==='' && r.Loaded!==undefined) out.Delivered=r.Delivered!==undefined?r.Delivered:'';
-    if(out.CollectionDate==='' && r.LastCollectionDate) out.CollectionDate=r.LastCollectionDate;
-    if(out.OrderDate==='' && r.FirstCollectionDate) out.OrderDate=r.FirstCollectionDate;   // party-wise: pehli collection
-    if(out.Ordered==='' && r.Orders!==undefined) out.Ordered=r.Orders;                     // party-wise: kitne orders
-    if(out.Status==='' && r.Mode) out.Status=r.Mode;               // collection: mode as status hint
-    if(out.OrderNo==='' && r.InvoiceNo) out.OrderNo=r.InvoiceNo;   // invoice/collection register me invoice no dikhe
-    if(out.Rate==='' && r.Rate!==undefined) out.Rate=r.Rate;
-    // agar OrderNo hai to teeno/chaaro dates + vendor bhar do (jaha khaali hain)
-    if(no){
-      if(out.CreatedDate==='') out.CreatedDate=D.created(no);
-      if(out.OrderDate==='') out.OrderDate=D.order(no);
-      if(out.DeliveryDate==='') out.DeliveryDate=D.delivery(no);
-      if(out.CollectionDate==='') out.CollectionDate=D.collection(no);
-    }
-    return out;
-  });
+function renderDashboard(){
+  view.innerHTML=head('O2C Dashboard','Order → Delivery → Collection pipeline · build v2')+`<div id="dv2o2c"><div class="loading"><div class="spin"></div>Loading…</div></div>`;
+  api('getO2CDashV2').then(d=>{
+    if(current!=='dashboard') return;
+    dv2Render('dv2o2c', d, p=>[
+      ['Total Orders',p.total,'#2563EB','orders'],
+      ['Delivery Schedule',p.schedule,'#16A34A','dispatch'],
+      ['Dispatch Planned',p.planned,'#D946EF','gate'],
+      ['Vehicle Arrived',p.arrived,'#F59E0B','loading'],
+      ['Loading Pending',p.loading,'#2563EB','loading'],
+      ['Invoice Pending',p.invoice,'#14B8A6','invoice'],
+      ['Gate Out Pending',p.gateout,'#EAB308','gateout'],
+      ['POD Pending',p.pod,'#8B5CF6','pod'],
+      ['Rejected Orders',p.rejected,'#DC2626','returnentry'],
+      ['Return Gate Entry',p.returnGate,'#0EA5E9','returnentry'],
+      ['Returns Received',p.returnsRecv,'#F97316','returnreceived'],
+      ['Collection Pending',p.collection,'#EC4899','collection'],
+      ['Fully Closed',p.closed,'#64748B','orders']
+    ], 'Monthly Orders');
+  }).catch(()=>{ paintDashboard(); });   // old dashboard as fallback (mock/GAS mode)
 }
-
-/** One row per (order, SKU) with the whole quantity ledger. Pre-indexed for speed. */
-function skuRows_(orders){
-  const D=rptDates_();
-  const K=(o,s)=>o+'|'+s;
-  const plan={}, load={}, del={}, rej={};
-  readAll_('PlanItems').forEach(p=>{ plan[K(p.OrderNo,p.SKUCode)]=(plan[K(p.OrderNo,p.SKUCode)]||0)+(Number(p.PlannedQty)||0); });
-  readAll_('LoadItems').forEach(l=>{ load[K(l.OrderNo,l.SKUCode)]=(load[K(l.OrderNo,l.SKUCode)]||0)+(Number(l.DispatchQty)||0); });
-  readAll_('PODItems').forEach(p=>{ const k=K(p.OrderNo,p.SKUCode); const lq=Number(p.LoadedQty)||0, rq=Number(p.RejectedQty)||0; del[k]=(del[k]||0)+Math.max(lq-rq,0); rej[k]=(rej[k]||0)+rq; });
-  const oiAll = readAll_('OrderItems');
-  const byOrder = {}; orders.forEach(o=>byOrder[o.OrderNo]=o);
-  const rows=[];
-  oiAll.forEach(it=>{
-    const o = byOrder[it.OrderNo]; if(!o) return;                 // only the requested orders
-    const k = K(it.OrderNo,it.SKUCode);
-    const ordered=Number(it.Qty)||0, rate=Number(it.Rate)||0, ld=load[k]||0;
-    rows.push({
-      OrderNo:it.OrderNo, CreatedDate:fmtDate_(o.CreatedAt), OrderDate:fmtDate_(o.OrderDate),
-      DeliveryDate:D.delivery(it.OrderNo), CollectionDate:D.collection(it.OrderNo),
-      Vendor:o.VendorName, SKUCode:it.SKUCode, SKU:it.SKUName, UOM:it.UOM||'',
-      Ordered:ordered, Planned:plan[k]||0, Dispatched:ld, Delivered:del[k]||0, Rejected:rej[k]||0,
-      Pending:Math.max(ordered-ld,0), Rate:rate, Value:Math.round(ordered*rate), Status:o.Status
-    });
-  });
-  return rows;
-}
-
-/** SKU-level POD movement across all vehicles. */
-function podRows_(){
-  const gate={}; readAll_('GateEntry').forEach(g=>gate[g.GateEntryNo]=g);
-  return readAll_('PODItems').map(p=>{ const lq=Number(p.LoadedQty)||0, rq=Number(p.RejectedQty)||0; return {
-    OrderNo:p.OrderNo, GateEntryNo:p.GateEntryNo, Vehicle:(gate[p.GateEntryNo]||{}).VehicleNo||'',
-    SKU:p.SKUName, Loaded:lq, Delivered:Math.max(lq-rq,0), Rejected:rq
-  };});
-}
-function rptOrder_(o){ return { OrderNo:o.OrderNo, Vendor:o.VendorName, Value:o.TotalValue, Status:o.Status }; }
-function outstandingReport_(){
-  const map = {};
-  readAll_('Invoice').forEach(i=>{ map[i.OrderNo]=map[i.OrderNo]||{OrderNo:i.OrderNo,Invoiced:0,Collected:0}; map[i.OrderNo].Invoiced+=Number(i.InvoiceAmount)||0; });
-  readAll_('Collection').forEach(c=>{ map[c.OrderNo]=map[c.OrderNo]||{OrderNo:c.OrderNo,Invoiced:0,Collected:0}; map[c.OrderNo].Collected+=Number(c.CollectionAmount)||0; });
-  return Object.values(map).map(x=>({ OrderNo:x.OrderNo, Invoiced:x.Invoiced, Collected:x.Collected, Outstanding:Math.max(x.Invoiced-x.Collected,0) }));
-}
-function partyCollection_(){
-  const map={};
-  readAll_('Collection').forEach(function(c){
-    const m=map[c.VendorName]=map[c.VendorName]||{amt:0,first:'',last:'',orders:{}};
-    m.amt+=Number(c.CollectionAmount)||0;
-    const d=c.CollectionDate||'';
-    if(d){ if(!m.first||new Date(d)<new Date(m.first)) m.first=d;
-           if(!m.last ||new Date(d)>new Date(m.last))  m.last=d; }
-    if(c.OrderNo) m.orders[c.OrderNo]=1;
-  });
-  return Object.keys(map).map(function(k){ const m=map[k];
-    return { Vendor:k, Orders:Object.keys(m.orders).length,
-             FirstCollectionDate:m.first?fmtDate_(m.first):'', LastCollectionDate:m.last?fmtDate_(m.last):'',
-             Collected:m.amt }; });
-}
-
-/* ============================== UTILS =========================== */
-function fmtDate_(d){ if(!d) return ''; const dt=(d instanceof Date)?d:new Date(d); return isNaN(dt)?String(d):Utilities.formatDate(dt,Session.getScriptTimeZone(),'dd MMM yyyy'); }
-function fmtTime_(d){ return Utilities.formatDate(d,Session.getScriptTimeZone(),'HH:mm'); }
-
-/* ===================== ONE-TIME DATABASE SETUP ================== */
-/* ================================================================
- * PURCHASE-TO-PAYMENT (P2P)
- * ================================================================ */
-/* net accepted qty per SKU (Accept / Accept with Deduction) across QC'd SENs */
-function poAcceptedBySku_(poNo){
-  const qc={}; readAll_('QC').forEach(q=>qc[q.SENNo]=q.QCStatus);
-  const map={};
-  readAll_('SENItems').filter(s=>s.PONo===poNo).forEach(s=>{
-    const st=qc[s.SENNo];
-    if (st===QC_STATUS.ACCEPT || st===QC_STATUS.DEDUCT) map[s.SKUCode]=(map[s.SKUCode]||0)+(Number(s.ReceivedQty)||0);
-  });
-  return map;
-}
-/* qty received at gate but QC not done yet */
-function poPipelineBySku_(poNo){
-  const qc={}; readAll_('QC').forEach(q=>qc[q.SENNo]=q.QCStatus);
-  const map={};
-  readAll_('SENItems').filter(s=>s.PONo===poNo).forEach(s=>{
-    if (!qc[s.SENNo]) map[s.SKUCode]=(map[s.SKUCode]||0)+(Number(s.ReceivedQty)||0);
-  });
-  return map;
-}
-function poItemsFor(poNo){
-  const acc=poAcceptedBySku_(poNo), pipe=poPipelineBySku_(poNo), rcv=poReceivedBySku_(poNo);
-  return readAll_('POItems').filter(i=>i.PONo===poNo).map(i=>{
-    const ordered=Number(i.Qty)||0, a=acc[i.SKUCode]||0, p=pipe[i.SKUCode]||0, r=rcv[i.SKUCode]||0;
-    const rate=Number(i.Rate)||0, gst=Number(i.GSTPercent)||0;
-    const amount=(i.Amount!==undefined&&i.Amount!==null&&i.Amount!=='')?Number(i.Amount):Math.round(ordered*rate*(1+gst/100));
-    /* Remaining = ordered − asli receive hua net weight − jo pipeline me hai (SEN aaya par GRN baaki) */
-    const rem=Math.round((ordered-r-p)*1000)/1000;
-    return { SKUCode:i.SKUCode, SKUName:i.SKUName, UOM:i.UOM||uomOf_(i.SKUCode), POQty:ordered, Rate:rate, GSTPercent:gst, Amount:amount,
-             AcceptedQty:a, ReceivedQty:Math.round(r*1000)/1000, InPipelineQty:p, RemainingQty:Math.max(rem,0) };
-  });
-}
-/* Sirf wahi qty jiska GRN (Material Received) ho chuka hai */
-/* Asli receive hui qty = GRN ka Factory Net Weight.
-   Ek SEN me kai SKU hon to net weight unki expected qty ke anupaat me baanta jata hai.
-   Agar net weight bhara hi na ho to fallback: SEN ki expected qty.        */
-function poReceivedBySku_(poNo){
-  const map={};
-  const senItems=readAll_('SENItems').filter(s=>s.PONo===poNo);
-  readAll_('Receiving').filter(r=>r.PONo===poNo).forEach(function(r){
-    const its=senItems.filter(s=>s.SENNo===r.SENNo);
-    if(!its.length) return;
-    const expected=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
-    const net=Number(r.FactoryNetWeight)||0;
-    if(net>0 && expected>0){
-      its.forEach(function(i){                                   // anupaat me baanto
-        const share=net*((Number(i.ReceivedQty)||0)/expected);
-        map[i.SKUCode]=(map[i.SKUCode]||0)+share;
-      });
-    } else {
-      its.forEach(function(i){ map[i.SKUCode]=(map[i.SKUCode]||0)+(Number(i.ReceivedQty)||0); });
-    }
-  });
-  Object.keys(map).forEach(function(k){ map[k]=Math.round(map[k]*1000)/1000; });
-  return map;
-}
-/* Kitni gaadiyan (GRN) receive hui — PO ke liye */
-function poVehiclesReceived_(poNo){ return readAll_('Receiving').filter(r=>r.PONo===poNo).length; }
-function recomputePOStatus_(poNo){
-  const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return;
-  /* CHAIN: "Fully Received" tabhi jab GRN ho chuka ho AUR poori PO qty tul kar aa gayi ho.
-     Kam aayi to "Partially Received".  */
-  const ordered=readAll_('POItems').filter(i=>i.PONo===poNo).reduce((s,i)=>s+(Number(i.Qty)||0),0);
-  const rcv=poReceivedBySku_(poNo);
-  const receivedQty=Object.keys(rcv).reduce((s,k)=>s+rcv[k],0);
-  const shortfall=ordered-receivedQty;
-  let st;
-  if (receivedQty>0 && shortfall<=0.001) st=PO_STATUS.RECEIVED;      // poori qty aa gayi
-  else if (receivedQty>0)                st=PO_STATUS.PARTIAL;       // kuch kam aayi
-  else st = (po.Status===PO_STATUS.DRAFT)?PO_STATUS.DRAFT:PO_STATUS.SENT;
-  updateWhere_('PO','PONo',poNo,{Status:st});
-  return st;
-}
-
-/* ================= O2C CHAIN GUARDS =================
- * Har step tabhi allowed jab uska pichhla step complete ho — pipeline ki tarah. */
-function o2cOrder_(orderNo){ const o=readAll_('Orders').find(x=>x.OrderNo===orderNo); if(!o) throw new Error('Order not found: '+orderNo); return o; }
-function o2cGate_(gateEntryNo){ const g=readAll_('GateEntry').find(x=>x.GateEntryNo===gateEntryNo); if(!g) throw new Error('Gate entry not found: '+gateEntryNo); return g; }
-function o2cHasLoad_(gateEntryNo){ return readAll_('LoadItems').some(l=>l.GateEntryNo===gateEntryNo); }
-function o2cHasInvoice_(gateEntryNo){ return readAll_('Invoice').some(i=>i.GateEntryNo===gateEntryNo); }
-function o2cHasGateOut_(gateEntryNo){ return readAll_('GateOut').some(g=>g.GateEntryNo===gateEntryNo); }
-function o2cHasPOD_(gateEntryNo){ return readAll_('POD').some(p=>p.GateEntryNo===gateEntryNo); }
-
-/* ---- Purchase Order ---- */
-function savePO(p){
-  const poNo=nextSeq_('PO','PONo','PO/'+fyTag_()+'-',4);
-  let tq=0,tv=0;
-  const items=(p.items||[]).filter(it=>Number(it.qty)>0).map(it=>{
-    const qty=Number(it.qty)||0, rate=Number(it.rate)||0, gst=Number(it.gstPercent)||0, amt=qty*rate*(1+gst/100);
-    tq+=qty; tv+=amt;
-    return {PONo:poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(amt)};
-  });
-  const u=currentUser_();
-  append_('PO',{PONo:poNo,PODate:p.poDate||fmtDate_(new Date()),SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,BrokerName:p.brokerName||'',SupplierEmail:p.supplierEmail||'',TransportType:p.transportType||'',NumVehicles:Number(p.numVehicles)||0,DeductionCondition:p.deductionCondition||'',PackingTerms:p.packingTerms||'',Remarks:p.remarks||'',TotalQty:tq,TotalValue:Math.round(tv),Status:PO_STATUS.DRAFT,CreatedBy:u.email,CreatedAt:new Date()});
-  appendMany_('POItems',items);
-  try{ const _n=new Date();
-    fmsInit_('FMS_P2P_PO',{ Timestamp:_n, PONo:poNo, SupplierName:p.supplierName||'',
-      SendPlanned:fmsPlannedSafe_(_n,FMS_TAT_P2P_PO.send), SendStatus:'Pending' });
-  }catch(fe){ fmsLog_('savePO FMS hook', fe); }
-  return {poNo:poNo,totalValue:Math.round(tv)};
-}
-function getPOs(){ return readAll_('PO').reverse().map(p=>({PONo:p.PONo,PODate:fmtDate_(p.PODate),SupplierName:p.SupplierName,BrokerName:p.BrokerName||'',SupplierEmail:p.SupplierEmail||'',TotalQty:p.TotalQty,TotalValue:p.TotalValue,Status:p.Status})); }
-function sendPO(poNo){ const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) throw new Error('PO not found'); if(po.Status===PO_STATUS.DRAFT) updateWhere_('PO','PONo',poNo,{Status:PO_STATUS.SENT});
-  try{ const _n=new Date();
-    fmsStep_('FMS_P2P_PO','PONo',poNo,'Send',_n,null);
-    const _r=fmsRow_('FMS_P2P_PO','PONo',poNo);
-    if(_r && !_r.FGatePlanned) fmsSet_('FMS_P2P_PO','PONo',poNo,{ FGatePlanned:new Date(_n.getTime()+FMS_TAT_P2P_PO.deliveryDays*24*3600000), FGateStatus:'Pending' });
-  }catch(fe){ fmsLog_('sendPO FMS hook', fe); }
-  return getPOs(); }
-function getPODetail(poNo){
-  const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return null;
-  const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode)) || {};
-  return {po:{PONo:po.PONo,PODate:fmtDate_(po.PODate),SupplierName:po.SupplierName,SupplierCode:po.SupplierCode,
-              BrokerName:po.BrokerName||'',SupplierEmail:po.SupplierEmail||sup.Email||'',
-              SupplierGST:sup.GST||'',SupplierAddress:sup.Address||'',SupplierContact:sup.ContactPerson||'',SupplierMobile:sup.Mobile||'',
-              TransportType:po.TransportType||'',NumVehicles:po.NumVehicles||0,DeductionCondition:po.DeductionCondition||'',PackingTerms:po.PackingTerms||'',Remarks:po.Remarks||'',
-              Status:po.Status,TotalQty:po.TotalQty,TotalValue:po.TotalValue}, items:poItemsFor(poNo)};
-}
-/* PO ka poora safar: Created → Sent → har SEN (Gate In → QC → Received → Paid) */
-function getPOLifecycle(poNo){
-  const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return null;
-  const sens=readAll_('SEN').filter(s=>s.PONo===poNo).sort((a,b)=>new Date(a.CreatedAt||a.GateDate)-new Date(b.CreatedAt||b.GateDate));
-  const qcs=readAll_('QC').filter(q=>q.PONo===poNo);
-  const recv=readAll_('Receiving').filter(r=>r.PONo===poNo);
-  const pays=readAll_('Payment').filter(p=>p.PONo===poNo);
-  const senBlocks=sens.map(function(s){
-    const qc=qcs.find(q=>q.SENNo===s.SENNo);
-    const rc=recv.find(r=>r.SENNo===s.SENNo);
-    const py=pays.find(p=>p.SENNo===s.SENNo);
-    const items=readAll_('SENItems').filter(i=>i.SENNo===s.SENNo)
-      .map(i=>({SKU:i.SKUName,UOM:i.UOM||'',Qty:Number(i.ReceivedQty)||0}));
-    return {
-      senNo:s.SENNo, gateDate:fmtDate_(s.GateDate), gateTime:s.GateTime||'',
-      vehicleNo:s.VehicleNo||'', driver:s.DriverName||'', invoiceNo:s.InvoiceNo||'', status:s.Status,
-      items:items,
-      qc: qc?{status:qc.QCStatus, deduction:Number(qc.DeductionAmount)||0, inspector:qc.Inspector||'', date:fmtDate_(qc.QCDate), remarks:qc.Remarks||''}:null,
-      received: rc?{grnNo:rc.GRNNo, date:fmtDate_(rc.ReceiveDate), receiver:rc.ReceiverName||''}:null,
-      payment: py?{amount:Number(py.Amount)||0, date:fmtDate_(py.PayDate||py.PaymentDate), mode:py.PaymentMode||'', ref:py.RefNo||''}:null
-    };
-  });
-  // top-level stage progress
-  const stages=[
-    {key:'created', label:'PO Created', done:true, date:fmtDate_(po.PODate), sub:'By '+(po.CreatedBy||'—')},
-    {key:'sent',    label:'Sent to Supplier', done:po.Status!==PO_STATUS.DRAFT, date:'', sub:po.Status===PO_STATUS.DRAFT?'Not sent yet':''},
-    {key:'gate',    label:'Gate Entry (SEN)', done:sens.length>0, date:sens.length?fmtDate_(sens[0].GateDate):'', sub:sens.length?sens.length+' inward(s)':'Awaiting material'},
-    {key:'qc',      label:'QC Check', done:qcs.length>0, date:qcs.length?fmtDate_(qcs[0].QCDate):'', sub:qcs.length?qcs.length+' checked':''},
-    {key:'received',label:'Material Received', done:recv.length>0, date:recv.length?fmtDate_(recv[0].ReceiveDate):'', sub:recv.length?recv.length+' GRN(s)':''},
-    {key:'closed',  label:po.Status===PO_STATUS.CLOSED?'Closed':(po.Status===PO_STATUS.RECEIVED?'Fully Received':'In Progress'), done:[PO_STATUS.RECEIVED,PO_STATUS.CLOSED].indexOf(po.Status)>-1, date:'', sub:''}
+function paintDashboard(){
+  const d=STATE.dashboard;
+  const cards=[
+    ['Total Orders',d.totalOrders,'ic-indigo',I.box,'orders'],
+    ['Partial Orders',d.partialOrders,'ic-violet',I.box,'orders'],
+    ['Pending Dispatch',d.pendingDispatch,'ic-amber',I.truck,'dispatch'],
+    ['Dispatch Planned',d.dispatchPlanned,'ic-teal',I.truck,'gate'],
+    ['Vehicle Arrived',d.vehicleArrived,'ic-blue',I.truck,'loading'],
+    ['Loading Pending',d.loadingPending,'ic-amber',I.box,'loading'],
+    ['Invoice Pending',d.invoicePending,'ic-blue',I.box,'invoice'],
+    ['POD Pending',d.podPending,'ic-violet',I.check,'pod'],
+    ['Collection Pending',d.collectionPending,'ic-amber',I.check,'collection'],
+    ['Fully Closed',d.fullyClosed,'ic-green',I.check,'reports']
   ];
-  const _rcvMap=poReceivedBySku_(poNo);
-  const totalRecv=Math.round(Object.keys(_rcvMap).reduce((s,k)=>s+_rcvMap[k],0)*1000)/1000;
-  const vehiclesIn=poVehiclesReceived_(poNo);
-  /* AGLA STEP — chain me jo abhi karna baaki hai */
-  let next=null;
-  const openSen=sens.find(function(s){
-    if(s.Status===SEN_STATUS.PENDING_QC) return true;
-    if(s.Status===SEN_STATUS.QC_PASSED && !recv.some(r=>r.SENNo===s.SENNo)) return true;
-    if(s.Status===SEN_STATUS.QC_REJECTED) return true;
-    if(s.Status===SEN_STATUS.RECEIVED && !pays.some(p=>p.SENNo===s.SENNo)) return true;
-    return false;
+  view.innerHTML=head('Dashboard','Live order-to-collection pipeline')+`
+    <div class="hero"><div class="lbl">Outstanding to collect</div><div class="big tnum">${inrS(d.outstanding)}</div><div class="meta">${d.collectionPending} orders pending collection</div></div>
+    <div class="kpi-grid">${cards.map(c=>`<div class="kpi" data-go="${c[4]}"><div class="ic ${c[2]}">${c[3]}</div><div class="v tnum">${c[1]}</div><div class="l">${c[0]}</div></div>`).join('')}</div>
+    <div class="sec"><h3>Recent Orders</h3><a data-go="orders">See all</a></div>
+    <div id="recent"></div>`;
+  const paintRecent=list=>{document.getElementById('recent').innerHTML = list.slice(0,5).map(orderCard).join('')||'<div class="empty">No orders yet.</div>';};
+  if(STATE.orders&&STATE.orders.length) paintRecent(STATE.orders);   // instant paint from bootstrap cache
+  api('getOrders','All').then(list=>{STATE.orders=list;paintRecent(list);});
+}
+
+function orderCard(o){
+  const idx=o.StageIndex||0, pct=Math.round(idx/STAGES.length*100);
+  const st=o.Status, fill=idx>=STAGES.length?'ok':(idx>=STAGES.length-2?'warn':'');
+  return `<div class="ocard" data-detail="${o.OrderNo}">
+    <div class="top"><div><div class="oid">${o.OrderNo}</div><div class="vend">${o.VendorName}</div></div><span class="badge ${badgeCls(st)}"><span class="bd"></span>${st}</span></div>
+    <div class="mini-bar"><div class="mini-fill ${fill}" style="width:${pct}%"></div></div>
+    <div class="bot"><div class="amt tnum">${inr(o.TotalValue)}</div><div class="arrow">${I.chev}</div></div></div>`;
+}
+
+let orderFilter='All';
+function renderOrders(){
+  view.innerHTML=head('Orders','All orders across every stage','Orders')+`
+    <div class="chips">${['All','Created','Dispatch','Loading','Delivery','Collection'].map(c=>`<button class="chip ${c===orderFilter?'on':''}" data-filter="${c}">${c}</button>`).join('')}</div>
+    <div id="olist"><div class="loading"><div class="spin"></div></div></div>`;
+  api('getOrders',orderFilter).then(list=>{
+    document.getElementById('olist').innerHTML=list.length?list.map(orderCard).join(''):'<div class="empty">No orders in this stage.</div>';
   });
-  if(po.Status===PO_STATUS.DRAFT){
-    next={ action:'send', label:'Send to Supplier', route:'p2p_polist', arg:'' };
-  } else if(openSen){
-    if(openSen.Status===SEN_STATUS.PENDING_QC)       next={ action:'qc',        label:'QC Check — '+openSen.SENNo,          route:'p2p_qc',        arg:openSen.SENNo };
-    else if(openSen.Status===SEN_STATUS.QC_PASSED)   next={ action:'receiving', label:'Material Received — '+openSen.SENNo, route:'p2p_receiving', arg:openSen.SENNo };
-    else if(openSen.Status===SEN_STATUS.QC_REJECTED) next={ action:'return',    label:'Material Return — '+openSen.SENNo,   route:'p2p_return',    arg:openSen.SENNo };
-    else                                            next={ action:'payment',   label:'Payment — '+openSen.SENNo,           route:'p2p_payment',   arg:openSen.SENNo };
-  } else if(po.Status!==PO_STATUS.RECEIVED && po.Status!==PO_STATUS.CLOSED){
-    next={ action:'gate', label:'Gate Entry (SEN)', route:'p2p_gate', arg:po.PONo };
-  }
-  return {
-    next:next,
-    poNo:po.PONo, supplier:po.SupplierName, broker:po.BrokerName||'', poDate:fmtDate_(po.PODate),
-    status:po.Status, totalQty:po.TotalQty, totalValue:po.TotalValue, receivedQty:totalRecv, vehiclesReceived:vehiclesIn,
-    stages:stages, sens:senBlocks
+}
+
+function renderDetail(orderNo){
+  api('getOrderDetail',orderNo).then(d=>{
+    if(!d){view.innerHTML=head('Order')+'<div class="empty">Order not found.</div>';return;}
+    const o=d.order, idx=o.StageIndex;
+    const steps=STAGES.map((label,i)=>{
+      const cls=i<idx?'done':(i===idx?'now':'');
+      const node=i<idx?I.check:(i+1);
+      return `<div class="tstep ${cls}"><div class="tline"><div class="tnode">${node}</div><div class="tbar"></div></div><div class="tcontent"><div class="nm" ${cls===''?'style="color:var(--t3)"':''}>${label}</div><div class="tm">${i<idx?'Completed':(i===idx?'In progress':'Pending')}</div></div></div>`;
+    }).join('');
+    const VNEXT={'Vehicle Arrived':['loading','Continue: Loading'],'Loading Completed':['invoice','Continue: Invoice Entry'],'Invoice Generated':['gateout','Continue: Gate Out'],'Vehicle Dispatched':['pod','Continue: POD'],'Return Pending':['returnentry','Continue: Return Gate Entry'],'Returned':['returnreceived','Continue: Return Received']};
+    const vBtn=v=>{ const n=VNEXT[v.status]; if(!n||!roleCan(n[0])) return ''; return `<button class="btn btn-primary btn-sm" data-act="${n[0]}" data-arg="${v.gateEntryNo}" style="margin-top:10px">${n[1]} →</button>`; };
+    const veh=d.vehicles.length?`<div class="sec"><h3>Vehicles (${d.vehicles.length})</h3></div>`+d.vehicles.map((v,i)=>`
+      <div class="veh ${i===0?'open':''}" data-veh>
+        <div class="vhead" data-vtog><div class="vic">${I.truck}</div><div class="vmeta"><div class="vno">${v.vehicleNo||v.gateEntryNo}</div><div class="vsub">${v.gateEntryNo} · ${v.driver||'—'}</div></div><span class="badge ${badgeCls(v.status)}"><span class="bd"></span>${v.status}</span><div class="vchev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+        <div class="vbody"><div class="vbody-in">${v.invoiceNo?`Invoice ${v.invoiceNo} · ${inr(v.invoiceAmount)}. `:''}${v.gatedOut?'Gated out. ':''}${v.delivered?'Delivered.':'Awaiting next stage.'}${vBtn(v)}</div></div>
+      </div>`).join(''):'';
+    // order-level next actions (plan / gate / collection)
+    const oActs=[];
+    if(o.Status==='Pending Dispatch Planning' && !o.Scheduled) oActs.push(['schedule',o.OrderNo,'Set Delivery Schedule']);
+    if(['Pending Dispatch Planning','Partial Planning','Partially Dispatched'].indexOf(o.Status)>-1) oActs.push(['dispatch',o.OrderNo,'Plan Dispatch']);
+    if(['Fully Planned','Partial Planning'].indexOf(o.Status)>-1) oActs.push(['gate',o.OrderNo,'Create Gate Entry']);
+    if(d.outstanding>0) oActs.push(['collection',o.OrderNo,'Record Collection']);
+    const oActsHtml=oActs.filter(a=>roleCan(a[0])).map(a=>`<button class="btn btn-primary btn-sm" data-act="${a[0]}" data-arg="${a[1]}" style="margin:0 8px 8px 0">${a[2]} →</button>`).join('');
+    const nextCard=oActsHtml?`<div class="card" style="margin-top:14px"><div class="card-h"><h3>Next Action</h3></div><div class="card-p" style="display:flex;flex-wrap:wrap">${oActsHtml}</div></div>`:'';
+    const fin=d.invoiced>0?`<div class="card" style="margin-top:14px"><div class="card-p"><div class="srow">Invoiced <b>${inr(d.invoiced)}</b></div><div class="srow">Collected <b style="color:var(--ok)">${inr(d.collected)}</b></div><div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:10px">Outstanding <b style="color:${d.outstanding>0?'var(--err)':'var(--ok)'}">${inr(d.outstanding)}</b></div></div></div>`:'';
+    view.innerHTML=head(o.OrderNo,o.VendorName+' · '+o.Status,'<a data-go="orders">Orders</a> › '+o.OrderNo)+`
+      <div class="two-col">
+        <div>
+          <div class="card"><div class="card-h"><h3>Order Lifecycle</h3><span class="s">Stage ${Math.min(idx+1,STAGES.length)} of ${STAGES.length}</span></div><div class="card-p"><div class="track">${steps}</div></div></div>
+          ${nextCard}
+          ${veh}
+        </div>
+        <div>
+          <div class="card"><div class="card-h"><h3>Order Summary</h3></div><div class="card-p"><div class="srow">Order Date <b>${o.OrderDate}</b></div><div class="srow">Total Qty <b>${o.TotalQty}</b></div><div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:10px">Order Value <b style="color:var(--indigo)">${inr(o.TotalValue)}</b></div></div></div>
+          ${fin}
+        </div>
+      </div>`;
+  });
+}
+
+/* ---------- NEW ORDER ---------- */
+let nItems=[];
+function renderCreate(){
+  const v=STATE.masters.vendors, sk=STATE.masters.skus;
+  if(!nItems.length) nItems=[{skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9}];
+  view.innerHTML=head('New Order','Order number auto-generates on save','New Order')+`
+    <div class="two-col"><div>
+      <div class="card"><div class="card-p">
+        <div class="grid2">
+          <div class="field"><label>Order Number</label><input class="inp" value="Auto (ORD-${ym()}-###)" readonly style="background:#F6F7FB;color:var(--t2)"></div>
+          <div class="field"><label>Order Date</label><input class="inp" type="date" min="${today()}" id="oDate" value="${today()}"></div>
+        </div>
+        <div class="field"><label>Vendor <span class="rq">*</span></label>
+          <div class="cmb"><input class="inp" id="vendIn" placeholder="Search vendor…" autocomplete="off"><div class="cmb-list"></div></div>
+        </div>
+        <div id="vendCard"></div>
+      </div></div>
+      <div class="sec"><h3>SKU Details</h3></div>
+      <div id="liWrap"></div>
+      <button class="btn btn-add" id="addLi">${I.plus}Add Row</button>
+    </div>
+    <div>
+      <div class="summary" style="position:sticky;top:78px">
+        <h3 style="font-size:14.5px;font-weight:650;margin-bottom:12px">Summary</h3>
+        <div class="srow">Total Quantity <b id="sQty">0</b></div>
+        <div class="srow">Taxable Value <b id="sTaxable">₹0</b></div>
+        <div class="srow">Tax Amount <b id="sTax">₹0</b></div>
+        <div class="srow grand">Grand Total <b id="sGrand">₹0</b></div>
+        <button class="btn btn-primary" id="saveOrder" style="margin-top:14px">${I.check}Save Order</button>
+      </div>
+    </div></div>`;
+  renderLi();
+  makeCombo(document.getElementById('vendIn'), v, x=>x.VendorName, vd=>{
+    document.getElementById('vendCard').innerHTML=`<div class="vendcard"><div class="av">${vd.VendorName.slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.VendorName}</div><div class="sub">${vd.VendorCode} · ${vd.GST}</div></div></div>`;
+  });
+}
+function renderLi(){
+  const wrap=document.getElementById('liWrap'); if(!wrap)return;
+  wrap.innerHTML=nItems.map((it,i)=>`
+    <div class="li">
+      <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp skuIn" data-sku="${i}" placeholder="Search SKU…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}${it.uom?' · <b class="uomtag">'+it.uom+'</b>':''}</div></div><button class="li-del" data-del="${i}">${I.trash}</button></div>
+      <div class="li-grid">
+        <div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-f="qty" data-i="${i}"></div>
+        <div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" value="${it.rate}" data-f="rate" data-i="${i}"></div>
+        <div class="f"><label>SGST %</label><input type="number" value="${it.sgst}" data-f="sgst" data-i="${i}"></div>
+        <div class="f"><label>CGST %</label><input type="number" value="${it.cgst}" data-f="cgst" data-i="${i}"></div>
+      </div>
+      <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)} · Tax ${inr(it.qty*it.rate*(it.sgst+it.cgst)/100)}</span><b>${inr(it.qty*it.rate*(1+(it.sgst+it.cgst)/100))}</b></div>
+    </div>`).join('');
+  recalc();
+  wrap.querySelectorAll('.skuIn').forEach(inp=>{
+    const i=inp.dataset.sku;
+    makeCombo(inp, STATE.masters.skus, x=>x.SKUName, m=>{
+      nItems[i].skuName=m.SKUName; nItems[i].skuCode=m.SKUCode; nItems[i].rate=m.Rate; nItems[i].uom=m.UOM||'';
+      nItems[i].sgst=m.GSTPercent/2; nItems[i].cgst=m.GSTPercent/2; renderLi();
+    });
+  });
+}
+function recalc(){
+  let q=0,tx=0,tax=0;
+  nItems.forEach(it=>{const t=it.qty*it.rate;q+=Number(it.qty)||0;tx+=t;tax+=t*((it.sgst+it.cgst)/100);});
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  set('sQty',q);set('sTaxable',inr(tx));set('sTax',inr(tax));set('sGrand',inr(tx+tax));
+}
+
+/* ---------- DISPATCH PLANNING ---------- */
+/* ---------- DELIVERY SCHEDULE (promise date, before dispatch) ---------- */
+function renderSchedule(arg){
+  view.innerHTML=head('Delivery Schedule','Set a promised delivery date and scheduled quantity before dispatch','Delivery Schedule')+`
+    <div class="field"><label>Order Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="schOrd" placeholder="Search order / vendor…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="schForm"></div>`;
+  api('getSchedulableOrders').then(list=>{
+    if(!list.length) document.getElementById('schForm').innerHTML='<div class="empty">No open orders to schedule.</div>';
+    makeCombo(document.getElementById('schOrd'),list,x=>x.OrderNo+' — '+x.VendorName,o=>loadSchedule(o.OrderNo));
+    if(arg&&list.some(o=>o.OrderNo===arg)){document.getElementById('schOrd').value=arg;loadSchedule(arg);}
+  });
+}
+function loadSchedule(orderNo){
+  api('getScheduleSheet',orderNo).then(d=>{
+    if(!d)return; window._schData=d;
+    document.getElementById('schForm').innerHTML=`
+      <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">Vendor <b>${d.vendorName}</b></div>${d.promisedDate?`<div class="srow">Current promised date <b>${d.promisedDate}</b></div>`:''}</div></div>
+      <div class="grid2">
+        <div class="field"><label>Promised / Scheduled Delivery Date <span class="rq">*</span></label><input class="inp" type="date" min="${today()}" id="schDate" value="${today()}"></div>
+        <div class="field"><label>Promised Time <span class="rq">*</span></label><input class="inp" type="time" id="schTime" value="${d.promisedTime||'09:00'}"></div>
+      </div>
+      <div class="sec"><h3>Order Items — set scheduled quantity</h3></div>
+      <div class="tbl-wrap"><table class="tbl seltbl">
+        <thead><tr><th>SKU</th><th>UOM</th><th class="num">Ordered</th><th class="num">Pending</th><th class="num">Scheduled Qty</th></tr></thead>
+        <tbody>${d.items.map((it,i)=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${it.OrderedQty}</td><td class="num">${it.PendingQty}</td><td class="num"><input class="qin" type="number" value="${it.ScheduledQty}" min="0" max="${it.PendingQty}" data-sch="${i}"></td></tr>`).join('')}</tbody>
+      </table></div>
+      <div class="field" style="margin-top:12px"><label>Remarks</label><textarea class="inp" id="schRem" placeholder="Commitment notes, customer request…"></textarea></div>
+      <button class="btn btn-primary" id="saveSch" style="margin-top:6px">${I.check}Save Schedule</button>`;
+    document.getElementById('saveSch').onclick=doSaveSchedule;
+  });
+}
+function doSaveSchedule(){
+  const d=window._schData; if(!d)return;
+  const date=pval('schDate'); if(!date)return toast('Choose a promised delivery date',true);
+  if(!notPast('schDate','Promised delivery date',true)) return;
+  const items=d.items.map((it,i)=>{const inp=document.querySelector(`[data-sch="${i}"]`);return {skuCode:it.SKUCode,skuName:it.SKUName,orderedQty:it.OrderedQty,scheduledQty:inp?Math.min(+inp.value||0,it.PendingQty):0};}).filter(x=>x.scheduledQty>0);
+  if(!items.length)return toast('Enter a scheduled quantity for at least one SKU',true);
+  busy('saveSch');
+  api('saveSchedule',{orderNo:d.orderNo,vendorName:d.vendorName,promisedDate:date,promisedTime:pval('schTime')||'09:00',remarks:pval('schRem'),items:items})
+    .then(r=>{toast('Schedule saved — '+r.scheduleNo);go('dispatch',d.orderNo);}).catch(err=>toast(err.message||'Failed',true));
+}
+
+function renderDispatch(arg){
+  view.innerHTML=head('Dispatch Planning','Plan dispatch for orders pending planning','Dispatch')+`
+    <div class="field"><label>Pending Order <span class="rq">*</span></label><select class="sel" id="planOrder"><option value="">Select order…</option></select></div>
+    <div id="planForm"></div>`;
+  api('getPendingDispatch').then(list=>{
+    const sel=document.getElementById('planOrder');
+    sel.innerHTML='<option value="">Select order…</option>'+list.map(o=>`<option value="${o.OrderNo}">${o.OrderNo} — ${o.VendorName}</option>`).join('');
+    if(!list.length) document.getElementById('planForm').innerHTML='<div class="empty">No orders pending dispatch planning.</div>';
+    if(arg) presel('planOrder',arg);
+  });
+  document.getElementById('planOrder').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('planForm').innerHTML='';return;}
+    api('getOrderItemsFor',e.target.value).then(items=>{
+      if(!items.length){
+        document.getElementById('planForm').innerHTML='<div class="empty">All items for this order are already fully planned. Nothing left to dispatch-plan.</div>';
+        return;
+      }
+      document.getElementById('planForm').innerHTML=`
+        <div class="grid2">
+          <div class="field"><label>Planned Date <span class="rq">*</span></label><input class="inp" type="date" min="${today()}" id="pDate" value="${today()}"></div>
+          <div class="field"><label>Planned Time</label><input class="inp" type="time" id="pTime" value="09:00"></div>
+        </div>
+        <div class="field"><label>Transporter <span class="rq">*</span></label><select class="sel" id="pTrans">${STATE.masters.transporters.map(t=>`<option>${t.TransporterName}</option>`).join('')}</select></div>
+        <div class="field"><label>Remarks</label><textarea class="inp" id="pRemarks" placeholder="Route notes, handling…"></textarea></div>
+        <div class="sec"><h3>Order Details — tick the SKUs to dispatch</h3></div>
+        <div class="tbl-wrap"><table class="tbl seltbl">
+          <thead><tr><th class="chk-col"><input type="checkbox" id="planAll" checked></th><th>SKU</th><th>UOM</th><th class="num">Ordered</th><th class="num">Loaded</th><th class="num">Remaining</th><th class="num">Plan Qty</th></tr></thead>
+          <tbody>${items.map((it,i)=>`<tr data-row="${i}">
+            <td class="chk-col"><input type="checkbox" class="rowchk" data-plan-chk="${i}" checked></td>
+            <td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td>
+            <td><span class="uomtag">${it.UOM||'—'}</span></td>
+            <td class="num">${it.OrderedQty}</td>
+            <td class="num">${it.LoadedQty||0}</td>
+            <td class="num">${it.RemainingQty}</td>
+            <td class="num"><input class="qin" type="number" value="${it.RemainingQty}" min="0" max="${it.RemainingQty}" data-plan="${i}"></td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+        <button class="btn btn-primary" id="savePlan" style="margin-top:14px" data-order="${e.target.value}" data-items='${JSON.stringify(items)}'>${I.check}Confirm Dispatch Plan</button>`;
+      const pf=document.getElementById('planForm'), all=document.getElementById('planAll');
+      const sync=()=>{ const boxes=[...pf.querySelectorAll('.rowchk')]; boxes.forEach(c=>{ const tr=c.closest('tr'), on=c.checked; tr.classList.toggle('off',!on); const q=tr.querySelector('.qin'); if(q) q.disabled=!on; }); all.checked=boxes.every(c=>c.checked); all.indeterminate=!all.checked&&boxes.some(c=>c.checked); };
+      all.addEventListener('change',()=>{ pf.querySelectorAll('.rowchk').forEach(c=>c.checked=all.checked); sync(); });
+      pf.querySelectorAll('.rowchk').forEach(c=>c.addEventListener('change',sync));
+      sync();
+    });
+  });
+}
+
+/* ---------- GATE ENTRY ---------- */
+function renderGate(arg){
+  view.innerHTML=head('Gate Entry','Capture vehicle arrival against a dispatch plan · GE-'+ym()+'-### auto-generates','Gate Entry')+`
+    <div class="field"><label>Dispatch Plan (one vehicle per plan) <span class="rq">*</span></label><select class="sel" id="gePlan"><option value="">Select plan…</option></select></div>
+    <div id="gePlanInfo"></div>
+    <div class="grid2">
+      <div class="field"><label>Vehicle Number <span class="rq">*</span></label><input class="inp upcase" id="geVeh" placeholder="MH-00-XX-0000"></div>
+      <div class="field"><label>Driver Name <span class="rq">*</span></label><input class="inp upcase" id="geDrv" placeholder="FULL NAME"></div>
+      <div class="field"><label>Mobile No.</label><input class="inp mob10" id="geMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+      <div class="field"><label>Driving License</label><input class="inp upcase" id="geDL" placeholder="DL-0000000000"></div>
+      <div class="field"><label>RC Number</label><input class="inp upcase" id="geRC" placeholder="RC-000000"></div>
+    </div>
+    <button class="btn btn-primary" id="saveGate">${I.check}Record Gate Entry</button>`;
+  api('getDispatchPlanned').then(list=>{
+    window._gePlans=list;
+    document.getElementById('gePlan').innerHTML='<option value="">Select plan…</option>'+list.map(p=>`<option value="${p.PlanNo}">${p.PlanNo} — ${p.OrderNo} · ${p.VendorName}</option>`).join('');
+    if(!list.length) document.getElementById('gePlanInfo').innerHTML='<div class="empty">No open dispatch plans waiting for a vehicle.</div>';
+    if(arg){ const pl=list.find(p=>p.OrderNo===arg); if(pl) presel('gePlan',pl.PlanNo); }
+  });
+  document.getElementById('gePlan').addEventListener('change',e=>{
+    const p=(window._gePlans||[]).find(x=>x.PlanNo===e.target.value);
+    document.getElementById('gePlanInfo').innerHTML = p?`<div class="vendcard"><div class="av">${I.truck}</div><div><div class="nm">${p.OrderNo}</div><div class="sub">${p.Summary||''}</div></div></div>`:'';
+  });
+}
+
+/* ---------- LOADING ---------- */
+function renderLoading(arg){
+  view.innerHTML=head('Vehicle Loading','Record dispatch qty per SKU · balance tracked','Loading')+`
+    <div class="field"><label>Gate Entry (Vehicle Arrived) <span class="rq">*</span></label><select class="sel" id="ldGate"><option value="">Select gate entry…</option></select></div>
+    <div id="ldForm"></div>`;
+  api('getGateEntries','Vehicle Arrived').then(list=>{
+    document.getElementById('ldGate').innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) document.getElementById('ldForm').innerHTML='<div class="empty">No vehicles awaiting loading.</div>';
+    if(arg) presel('ldGate',arg);
+  });
+  document.getElementById('ldGate').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('ldForm').innerHTML='';return;}
+    api('getLoadingSheet',e.target.value).then(d=>{
+      document.getElementById('ldForm').innerHTML=`
+        <div class="card"><div class="card-p"><div class="srow">Vendor <b>${d.vendorName||'—'}</b></div>${d.vendorCode?`<div class="srow">Vendor Code <b>${d.vendorCode}</b></div>`:''}${d.vendorGST?`<div class="srow">GST <b>${d.vendorGST}</b></div>`:''}<div class="srow">Plan <b>${d.planNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">Vehicle <b>${d.vehicleNo}</b></div></div></div>
+        <div class="sec"><h3>Loading Sheet — planned items</h3><span id="ldPct" style="font-weight:700;color:var(--indigo)">0%</span></div>
+        <div class="psub" style="margin:-6px 2px 10px">Partial loading is allowed. Any unloaded balance returns to dispatch planning automatically.</div>
+        <div class="collbar" style="margin-top:0"><div class="collbar-fill" id="ldBar" style="width:0%;background:linear-gradient(90deg,#4F46E5,#6366F1)"></div></div>
+        ${d.skus.map((s,i)=>`<div class="li" style="margin-top:12px"><div class="li-top" style="display:flex;align-items:center;gap:10px"><label style="display:grid;place-items:center;flex:0 0 auto"><input type="checkbox" data-ldchk="${i}" style="width:24px;height:24px;accent-color:var(--indigo)"></label><div style="flex:1"><div class="nm">${s.SKUName} ${s.UOM?'<span class="uomtag">'+s.UOM+'</span>':''}</div><div class="cd">${s.SKUCode} · Planned ${s.PlannedQty} · Balance ${s.BalanceQty}</div></div></div><div class="li-grid" style="grid-template-columns:1fr"><div class="f"><label>Load Qty${s.UOM?' ('+s.UOM+')':''} — max ${s.BalanceQty}</label><input type="number" value="${s.BalanceQty}" min="0" max="${s.BalanceQty}" data-ldqty="${i}"></div></div></div>`).join('')}
+        <button class="btn btn-primary" id="saveLoad" data-gate="${d.gateEntryNo}" data-plan="${d.planNo}" data-order="${d.orderNo}" data-skus='${JSON.stringify(d.skus)}'>${I.check}Complete Loading</button>`;
+    });
+  });
+}
+
+/* ---------- INVOICE ---------- */
+let invFile=null;
+function renderInvoice(arg){
+  invFile=null;
+  view.innerHTML=head('Invoice Entry','Capture invoice for a loaded vehicle','Invoice')+`
+    <div class="field"><label>Gate Entry (Loaded) <span class="rq">*</span></label><select class="sel" id="invGate"><option value="">Select gate entry…</option></select></div>
+    <div id="invInfo"></div>
+    <div class="grid2">
+      <div class="field"><label>Invoice Number <span class="rq">*</span></label><input class="inp" id="invNo" placeholder="INV-000000"></div>
+      <div class="field"><label>Invoice Date</label><input class="inp" type="date" min="${today()}" id="invDate" value="${today()}"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="invAmt" type="number" placeholder="0"></div>
+      <div class="field"><label>Invoice Weight</label><input class="inp tnum" id="invWt" type="number" step="0.001" placeholder="0.000"></div>
+    </div>
+    <div class="sec"><h3>Upload Invoice (PDF / JPG / PNG)</h3></div>
+    <label class="upl" for="invUp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg><div class="t">Tap to upload</div><div class="s">PDF, JPG, PNG · max 10 MB</div></label>
+    <input type="file" id="invUp" accept=".pdf,.jpg,.jpeg,.png" hidden>
+    <div id="invDoc"></div>
+    <button class="btn btn-primary" id="saveInv" style="margin-top:14px">${I.check}Save Invoice</button>`;
+  const info=document.getElementById('invInfo');
+  const fill=ge=>{ if(!ge){info.innerHTML='';return;} api('getInvoiceSheet',ge).then(d=>{
+    if(!d){info.innerHTML='';return;}
+    const rows=d.items.map(it=>`<div class="srow">${it.SKUName} <b class="tnum">${it.Qty} × ${inr(it.Rate)} = ${inr(it.Amount)}</b></div>`).join('');
+    info.innerHTML=`<div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Vendor <b>${d.vendorName}</b></div><div class="srow">Vehicle <b>${d.vehicleNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div style="border-top:1px solid var(--line);margin:9px 0 5px"></div>${rows||'<div class="srow">No loaded items.</div>'}<div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:9px">Suggested (incl. GST) <b style="color:var(--indigo)" class="tnum">${inr(d.suggestedAmount)}</b></div></div></div>`;
+    const amt=document.getElementById('invAmt'); if(!amt.value||Number(amt.value)===0) amt.value=d.suggestedAmount;
+  }); };
+  api('getGateEntries','Loading Completed').then(list=>{
+    const sel=document.getElementById('invGate');
+    sel.innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) info.innerHTML='<div class="empty">No loaded vehicles waiting for invoicing.</div>';
+    if(arg && list.some(g=>g.GateEntryNo===arg)){ sel.value=arg; fill(arg); }
+  });
+  document.getElementById('invGate').addEventListener('change',e=>fill(e.target.value));
+  document.getElementById('invUp').addEventListener('change',e=>handleFile(e,'invDoc',f=>invFile=f));
+}
+
+/* ---------- GATE OUT ---------- */
+function renderGateOut(arg){
+  view.innerHTML=head('Gate Out','Verify and dispatch the vehicle','Gate Out')+`
+    <div class="field"><label>Gate Entry (Invoiced) <span class="rq">*</span></label><select class="sel" id="goGate"><option value="">Select gate entry…</option></select></div>
+    <div class="sec"><h3>Verification Checklist</h3></div>
+    ${['Invoice Verified','LR Verified','Vehicle Verified','Documents Verified','Weighment Done'].map(c=>`<div class="chk" data-chk><div class="chkbox">${I.check}</div><span>${c}</span></div>`).join('')}
+    <button class="btn btn-primary" id="saveGO" disabled>Confirm Gate Out (0/5)</button>`;
+  api('getGateEntries','Invoice Generated').then(list=>{
+    document.getElementById('goGate').innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}" data-veh="${g.VehicleNo}" data-drv="${g.DriverName}">${g.GateEntryNo} — ${g.VehicleNo}</option>`).join('');
+    if(!list.length) document.getElementById('goGate').insertAdjacentHTML('afterend','<div class="empty">No invoiced vehicles waiting for gate out.</div>');
+    if(arg) presel('goGate',arg);
+  });
+}
+
+/* ---------- POD ---------- */
+let podFile=null;
+function renderPOD(arg){
+  podFile=null;
+  view.innerHTML=head('Proof of Delivery','Confirm delivery · mark rejected qty to trigger a return','POD')+`
+    <div class="field"><label>Gate Entry (Dispatched) <span class="rq">*</span></label><select class="sel" id="podGate"><option value="">Select gate entry…</option></select></div>
+    <div id="podItems"></div>
+    <div class="grid2">
+      <div class="field"><label>Delivery Date</label><input class="inp" type="date" min="${today()}" id="podDate" value="${today()}"></div>
+      <div class="field"><label>Receiver Mobile</label><input class="inp mob10" id="podMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+    </div>
+    <div class="field"><label>Receiver Name <span class="rq">*</span></label><input class="inp" id="podRcv" placeholder="Who received the goods"></div>
+    <div class="grid3">
+      <div class="field"><label>Gross Weight</label><input class="inp tnum" id="podGW" type="number" step="0.001" placeholder="0.000"></div>
+      <div class="field"><label>Invoice Weight</label><input class="inp tnum" id="podNW" type="number" step="0.001" placeholder="0.000"></div>
+      <div class="field"><label>Party Net Weight</label><input class="inp tnum" id="podPNW" type="number" step="0.001" placeholder="0.000"></div>
+    </div>
+    <div class="field"><label>Remarks</label><textarea class="inp" id="podRem" placeholder="Delivery notes…"></textarea></div>
+    <div class="sec"><h3>Upload POD (PDF / JPG / PNG)</h3></div>
+    <label class="upl" for="podUp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><div class="t">Signed POD or delivery photo</div><div class="s">PDF, JPG, PNG</div></label>
+    <input type="file" id="podUp" accept=".pdf,.jpg,.jpeg,.png" hidden>
+    <div id="podDoc"></div>
+    <button class="btn btn-primary" id="savePOD" style="margin-top:14px">${I.check}Confirm Delivery</button>`;
+  api('getGateEntries','Vehicle Dispatched').then(list=>{
+    document.getElementById('podGate').innerHTML='<option value="">Select gate entry…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) document.getElementById('podItems').innerHTML='<div class="empty">No dispatched vehicles awaiting POD.</div>';
+    if(arg) presel('podGate',arg);
+  });
+  document.getElementById('podGate').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('podItems').innerHTML='';return;}
+    api('getPODSheet',e.target.value).then(d=>{
+      window._podItems=d.items;
+      const totLoaded=d.items.reduce((s,it)=>s+(it.LoadedQty||0),0);
+      document.getElementById('podItems').innerHTML=`
+        <div class="card"><div class="card-p"><div class="srow">Vehicle <b>${d.vehicleNo}</b></div><div class="srow">Order <b>${d.orderNo}</b></div><div class="srow">On this vehicle <b>${d.items.length} SKU · ${totLoaded} qty loaded</b></div></div></div>
+        <div class="sec"><h3>Delivered vs Rejected</h3></div>
+        <div class="psub" style="margin:-6px 2px 10px">Showing only what <b>this vehicle</b> loaded — not the full order. Rejected qty is returned to the factory and starts the return flow.</div>
+        ${d.items.map((it,i)=>`<div class="li"><div class="li-top"><div><div class="nm">${it.SKUName} ${it.UOM?'<span class="uomtag">'+it.UOM+'</span>':''}</div><div class="cd">${it.SKUCode} · Loaded ${it.LoadedQty}</div></div></div><div class="li-grid" style="grid-template-columns:1fr 1fr"><div class="f"><label>Rejected (returned)</label><input type="number" value="0" min="0" max="${it.LoadedQty}" data-podr="${i}"></div><div class="f"><label>Delivered = Loaded − Rejected</label><input type="number" value="${it.LoadedQty}" data-podd="${i}" readonly tabindex="-1" style="background:var(--surface-2);color:var(--t2)"></div></div></div>`).join('')}`;
+      document.querySelectorAll('[data-podr]').forEach(r=>r.addEventListener('input',()=>{
+        const i=r.dataset.podr, loaded=(window._podItems[i]||{}).LoadedQty||0;
+        let rej=Math.max(0,Math.min(+r.value||0,loaded)); if(String(rej)!==r.value) r.value=rej;
+        const d2=document.querySelector(`[data-podd="${i}"]`); if(d2) d2.value=loaded-rej;
+      }));
+    });
+  });
+  document.getElementById('podUp').addEventListener('change',e=>handleFile(e,'podDoc',f=>podFile=f));
+}
+
+/* ---------- RETURN GATE ENTRY (conditional) ---------- */
+function renderReturnEntry(arg){
+  window._reArg=arg;
+  view.innerHTML=head('Return Gate Entry','Log vehicles returning rejected goods to the factory','Returns')+`
+    <div class="field"><label>Gate Entry with rejected items <span class="rq">*</span></label><select class="sel" id="reGate"><option value="">Select…</option></select></div>
+    <div id="reInfo"></div>
+    <div class="grid2">
+      <div class="field"><label>Return Vehicle No.</label><input class="inp upcase" id="reVeh" placeholder="MH-00-XX-0000"></div>
+      <div class="field"><label>Driver Name</label><input class="inp upcase" id="reDrv" placeholder="FULL NAME"></div>
+    </div>
+    <button class="btn btn-primary" id="saveRE">${I.check}Record Return Gate Entry</button>`;
+  api('getReturnPending').then(list=>{
+    window._rePending=list;
+    document.getElementById('reGate').innerHTML='<option value="">Select…</option>'+list.map(g=>`<option value="${g.GateEntryNo}" data-order="${g.OrderNo}" data-veh="${g.VehicleNo}" data-drv="${g.DriverName}">${g.GateEntryNo} — ${g.VehicleNo} (${g.OrderNo})</option>`).join('');
+    if(!list.length) document.getElementById('reInfo').innerHTML='<div class="empty">No pending returns. This step activates only when POD marks items rejected.</div>';
+    if(window._reArg) presel('reGate',window._reArg);
+  });
+  document.getElementById('reGate').addEventListener('change',e=>{
+    if(!e.target.value){document.getElementById('reInfo').innerHTML='';return;}
+    api('getRejectedItems',e.target.value).then(items=>{
+      document.getElementById('reInfo').innerHTML=`<div class="card"><div class="card-p"><div style="font-size:13px;font-weight:650;margin-bottom:8px">Rejected items coming back</div>${items.map(it=>`<div class="srow">${it.SKUName} <b style="color:var(--err)">${it.RejectedQty}</b></div>`).join('')}</div></div>`;
+    });
+  });
+}
+
+/* ---------- RETURN RECEIVED (conditional) ---------- */
+function renderReturnReceived(){
+  view.innerHTML=head('Return Received','Confirm rejected goods back in store — closes the returned lines','Returns')+`
+    <div class="field"><label>Return to receive <span class="rq">*</span></label><select class="sel" id="rrSel"><option value="">Select…</option></select></div>
+    <div class="field"><label>Receiver Name <span class="rq">*</span></label><input class="inp upcase" id="rrRecv" placeholder="WHO RECEIVED THE GOODS"></div>
+    <div id="rrInfo"></div>
+    <button class="btn btn-primary" id="saveRR">${I.check}Mark Received & Close Returned Lines</button>`;
+  api('getReturnsToReceive').then(list=>{
+    document.getElementById('rrSel').innerHTML='<option value="">Select…</option>'+list.map(r=>`<option value="${r.ReturnNo}" data-gate="${r.GateEntryNo}" data-order="${r.OrderNo}">${r.ReturnNo} — ${r.OrderNo} (${r.VehicleNo||r.GateEntryNo})</option>`).join('');
+    if(!list.length) document.getElementById('rrInfo').innerHTML='<div class="empty">No returns awaiting receipt.</div>';
+  });
+}
+
+/* ---------- COLLECTION ---------- */
+function renderCollection(arg){
+  view.innerHTML=head('Collection','Only orders with a pending collection balance','Collection')+`
+    <div class="field"><label>Order <span class="rq">*</span></label><select class="sel" id="colOrder"><option value="">Select order…</option></select></div>
+    <div id="colBody"></div>`;
+  api('getCollectionOrders').then(eligible=>{
+    document.getElementById('colOrder').innerHTML='<option value="">Select order…</option>'+eligible.map(o=>`<option value="${o.OrderNo}">${o.OrderNo} — ${o.VendorName} · ${inr(o.outstanding)} due</option>`).join('');
+    const pick=(arg&&eligible.some(o=>o.OrderNo===arg))?arg:(eligible[0]&&eligible[0].OrderNo);
+    if(pick){document.getElementById('colOrder').value=pick;loadCollection(pick);}
+    else document.getElementById('colBody').innerHTML='<div class="empty">No orders with pending collection.</div>';
+  });
+  document.getElementById('colOrder').addEventListener('change',e=>{ if(e.target.value) loadCollection(e.target.value); });
+}
+function loadCollection(orderNo){
+  document.getElementById('colBody').innerHTML='<div class="loading"><div class="spin"></div></div>';
+  api('getCollection',orderNo).then(c=>{
+    const pct=c.invoiced?Math.round(c.collected/c.invoiced*100):0;
+    document.getElementById('colBody').innerHTML=`
+      <div class="card"><div class="card-p">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><div style="font-size:13px;color:var(--t2)">${c.vendorName}</div><div style="font-size:12px;color:var(--t3)">${c.invoiceNo||'No invoice yet'}</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:800" class="tnum">${pct}%</div><div style="font-size:11px;color:var(--t2)">collected</div></div></div>
+        <div class="collbar"><div class="collbar-fill" style="width:${pct}%"></div></div>
+        <div class="coll-stats"><div class="coll-stat" style="background:var(--info-bg)"><div class="l">Invoiced</div><div class="v">${inrS(c.invoiced)}</div></div><div class="coll-stat" style="background:var(--ok-bg)"><div class="l" style="color:var(--ok)">Collected</div><div class="v" style="color:var(--ok)">${inrS(c.collected)}</div></div><div class="coll-stat" style="background:var(--err-bg)"><div class="l" style="color:var(--err)">Outstanding</div><div class="v" style="color:var(--err)">${inrS(c.outstanding)}</div></div></div>
+      </div></div>
+      <div class="sec"><h3>Collection History</h3></div>
+      ${c.history.length?c.history.map(h=>`<div class="hrow"><div class="hic" style="background:var(--indigo-50);color:var(--indigo)">${(h.mode||'').slice(0,3).toUpperCase()}</div><div class="hm"><div class="a">${h.mode}${h.deduction?` · <span style="color:var(--err)">less ${inr(h.deduction)}</span>`:''}</div><div class="b">${h.date}${h.ref?' · '+h.ref:''}</div></div><div class="amt">${inr(h.actual||h.amount)}</div></div>`).join(''):'<div class="empty">No collections recorded yet.</div>'}
+      <div class="sec"><h3>Record Payment</h3></div>
+      <div class="grid2">
+        <div class="field"><label>Invoice Amount <span class="rq">*</span></label><input class="inp tnum" id="payAmt" type="number" value="${c.outstanding}"></div>
+        <div class="field"><label>Date</label><input class="inp" type="date" id="payDate" value="${today()}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Deduction Amount</label><input class="inp tnum" id="payDed" type="number" value="0"></div>
+        <div class="field"><label>Actual Received Amount</label><input class="inp tnum" id="payAct" type="number" value="${c.outstanding}" readonly></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Payment Mode <span class="rq">*</span></label><select class="sel" id="payMode"><option>Cash</option><option>Cheque</option><option selected>Bank Transfer</option><option>UPI</option><option>Other</option></select></div>
+        <div class="field"><label>Reference No. <span class="rq">*</span></label><input class="inp" id="payRef" placeholder="Txn / cheque no."></div>
+      </div>
+      <button class="btn btn-primary" id="savePay" data-order="${orderNo}" data-inv="${c.invoiceNo}" data-vendor="${c.vendorName}" data-amount="${c.invoiced}">${I.check}Save Payment</button>`;
+  });
+}
+
+/* ---------- REPORTS ---------- */
+const REPORTS=[['SKULedger','SKU Ledger (all)'],['OrderRegister','Order Register'],['OpenOrders','Open Orders (SKU)'],['ClosedOrders','Closed Orders (SKU)'],['PartialOrders','Partial Orders (SKU)'],['InvoicePending','Invoice Pending (SKU)'],['POD','POD Report (SKU)'],['DispatchPlanning','Dispatch Planning'],['GateEntry','Gate Entry'],['GateOut','Gate Out'],['InvoiceRegister','Invoice Register'],['CollectionRegister','Collection Register'],['Outstanding','Outstanding'],['PartyCollection','Party-wise Collection'],['POReport','PO Report'],['QCStatusReport','QC Status Report'],['GRNReport','GRN / Receiving Report'],['ReturnReport','Return / Rejected Report'],['POStatusReport','PO Status Report'],['StockReport','PM Stock Report'],['PRReport','PR Report'],['QuotationReport','Quotation Report']];
+let curReport='SKULedger', repFilter='';
+const MONEY=/^(Value|Amount|Invoiced|Collected|Outstanding|Rate|InvoiceAmount|CollectionAmount|TotalValue)$/;
+const QTY=/^(Ordered|Planned|Dispatched|Delivered|Rejected|Pending|Loaded|Qty|PlannedQty|DispatchQty)$/;
+function renderReports(){
+  view.innerHTML=head('Reports','SKU-level, filterable, exportable operational data','Reports')+`
+    <div class="grid2">
+      <div class="field"><label>Report</label><select class="sel" id="repSel">${REPORTS.map(r=>`<option value="${r[0]}" ${r[0]===curReport?'selected':''}>${r[1]}</option>`).join('')}</select></div>
+      <div class="field"><label>Filter (SKU, order, vendor, status…)</label><input class="inp" id="repFilter" placeholder="Type to filter rows…" value="${repFilter}"></div>
+    </div>
+    <div class="btn-row" style="margin-bottom:14px">
+      <button class="btn btn-primary btn-sm" id="custBtn">⚙ Customise layout</button>
+      <button class="btn btn-ghost btn-sm" id="expCsv">Export CSV</button>
+      <button class="btn btn-ghost btn-sm" id="expXls">Export Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.print()">Export PDF</button>
+    </div>
+    <div id="custPanel" style="display:none"></div>
+    <div id="repTable"><div class="loading"><div class="spin"></div></div></div>`;
+  loadReport(curReport);
+  document.getElementById('repSel').addEventListener('change',e=>{curReport=e.target.value;repFilter='';document.getElementById('repFilter').value='';loadReport(curReport);});
+  document.getElementById('repFilter').addEventListener('input',e=>{repFilter=e.target.value;paintReport();});
+  document.getElementById('custBtn').addEventListener('click',toggleCustomise);
+}
+let reportData=[];
+let reportAllCols=[];   /* har report ke SAARE possible columns (backend se), data khaali ho tab bhi */
+/* ======= REPORT LAYOUT CUSTOMISATION (per report, saved in browser) ======= */
+function layoutKey(type){ return 'o2c-replayout-'+type; }
+function loadLayout(type){ try{ return JSON.parse(localStorage.getItem(layoutKey(type))||'null'); }catch(e){ return null; } }
+function saveLayout(type,layout){ try{ localStorage.setItem(layoutKey(type),JSON.stringify(layout)); }catch(e){} }
+function clearLayout(type){ try{ localStorage.removeItem(layoutKey(type)); }catch(e){} }
+/* effective columns for current report: saved order/visibility, ya default (sabhi) */
+function effectiveCols(allCols){
+  const lay=loadLayout(curReport);
+  if(!lay||!Array.isArray(lay.cols)) return allCols.map(c=>({name:c,show:true}));
+  const known=lay.cols.filter(x=>allCols.indexOf(x.name)>-1);
+  const missing=allCols.filter(c=>!known.some(x=>x.name===c)).map(c=>({name:c,show:true}));  // naye columns default dikhein
+  return known.concat(missing);
+}
+function toggleCustomise(){
+  const p=document.getElementById('custPanel'); if(!p) return;
+  if(p.style.display==='block'){ p.style.display='none'; return; }
+  const allCols=allReportCols();
+  if(!allCols.length){ toast('Pehle report load hone dein',true); return; }
+  const cur=effectiveCols(allCols);
+  p.style.display='block';
+  p.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="card-p">
+    <div class="sec" style="margin:0 0 6px"><h3>Customise layout</h3>
+      <span style="font-size:11.5px;color:var(--t3)">Column on/off karein, ↑↓ se order badlein. Aapke browser me save rehta hai.</span></div>
+    <div id="custList" class="cust-list">${cur.map((c,i)=>custRow(c,i,cur.length)).join('')}</div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn btn-primary btn-sm" id="custSave">${I.check}Save layout</button>
+      <button class="btn btn-ghost btn-sm" id="custReset">Reset to default</button>
+      <button class="btn btn-ghost btn-sm" id="custClose">Close</button>
+    </div></div></div>`;
+  wireCustomise(allCols);
+}
+function custRow(c,i,total){
+  return `<div class="cust-item" data-ci="${i}">
+    <label class="cust-chk"><input type="checkbox" data-cshow ${c.show?'checked':''}> <span>${c.name}</span></label>
+    <div class="cust-mv">
+      <button class="qbtn" data-cup ${i===0?'disabled':''}>↑</button>
+      <button class="qbtn" data-cdn ${i===total-1?'disabled':''}>↓</button>
+    </div></div>`;
+}
+function readCustList(){
+  return [...document.querySelectorAll('#custList .cust-item')].map(el=>({
+    name:el.querySelector('.cust-chk span').textContent,
+    show:el.querySelector('[data-cshow]').checked
+  }));
+}
+function redrawCustList(cols){
+  document.getElementById('custList').innerHTML=cols.map((c,i)=>custRow(c,i,cols.length)).join('');
+}
+function applyCust(){
+  /* current tick/order ko turant layout me daalo + report dobara draw karo (live preview) */
+  const cols=readCustList();
+  if(!cols.some(c=>c.show)){ toast('Kam se kam ek column on rakhein',true); return; }   // sab off allowed nahi
+  saveLayout(curReport,{cols});     // yaad rakho, taaki dobara khulne par wahi rahe
+  paintReport();                    // niche report format turant update
+}
+function wireCustomise(allCols){
+  const list=document.getElementById('custList');
+  /* CHECKBOX tick/untick → turant column add/remove */
+  list.addEventListener('change',e=>{
+    if(e.target.matches('[data-cshow]')) applyCust();
+  });
+  /* ↑ ↓ order badlo → turant update */
+  list.addEventListener('click',e=>{
+    const item=e.target.closest('.cust-item'); if(!item) return;
+    const cols=readCustList(); const i=+item.dataset.ci;
+    if(e.target.closest('[data-cup]') && i>0){ [cols[i-1],cols[i]]=[cols[i],cols[i-1]]; redrawCustList(cols); applyCust(); }
+    else if(e.target.closest('[data-cdn]') && i<cols.length-1){ [cols[i+1],cols[i]]=[cols[i],cols[i+1]]; redrawCustList(cols); applyCust(); }
+  });
+  document.getElementById('custSave').addEventListener('click',()=>{
+    const cols=readCustList();
+    if(!cols.some(c=>c.show)){ toast('Kam se kam ek column dikhana zaroori hai',true); return; }
+    saveLayout(curReport,{cols}); toast('Layout saved ✓'); paintReport();
+  });
+  document.getElementById('custReset').addEventListener('click',()=>{ clearLayout(curReport); redrawCustList(allCols.map(c=>({name:c,show:true}))); toast('Reset to default'); paintReport(); });
+  document.getElementById('custClose').addEventListener('click',()=>{ document.getElementById('custPanel').style.display='none'; });
+}
+/* filtered+ordered columns jo actually dikhte hain (table + export dono yahi use karte hain) */
+function visibleCols(allCols){ return effectiveCols(allCols).filter(c=>c.show).map(c=>c.name); }
+function loadReport(type){
+  document.getElementById('repTable').innerHTML='<div class="loading"><div class="spin"></div></div>';
+  const p=document.getElementById('custPanel'); if(p){ p.style.display='none'; p.innerHTML=''; }
+  Promise.all([ api('getReport',type), api('getReportColumns',type).catch(()=>[]) ])
+    .then(([rows,cols])=>{ reportData=rows||[]; reportAllCols=(cols&&cols.length)?cols:(reportData[0]?Object.keys(reportData[0]):[]); paintReport(); });
+}
+/* saare possible columns — backend list + agar data me koi extra ho to wo bhi */
+function allReportCols(){
+  const fromData=reportData[0]?Object.keys(reportData[0]):[];
+  const base=(reportAllCols&&reportAllCols.length)?reportAllCols.slice():fromData.slice();
+  fromData.forEach(c=>{ if(base.indexOf(c)<0) base.push(c); });
+  return base;
+}
+function paintReport(){
+  const host=document.getElementById('repTable'); if(!host) return;
+  if(!reportData.length){host.innerHTML='<div class="empty">No data for this report.</div>';return;}
+  const q=(repFilter||'').toLowerCase().trim();
+  const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
+  if(!rows.length){host.innerHTML='<div class="empty">No rows match “'+repFilter+'”.</div>';return;}
+  const cols=visibleCols(allReportCols());
+  const fmt=(c,v)=>{ if(v===undefined||v===null||v==='') return ''; return typeof v==='number'?(MONEY.test(c)?inr(v):v.toLocaleString('en-IN')):v; };
+  const isNum=c=>MONEY.test(c)||QTY.test(c);
+  // totals for numeric columns
+  const totals={}; cols.forEach(c=>{ if(isNum(c)) totals[c]=rows.reduce((s,r)=>s+(Number(r[c])||0),0); });
+  const hasTotals=Object.keys(totals).length>0;
+  const foot=hasTotals?`<tfoot><tr>${cols.map((c,i)=>{ if(i===0) return `<td><b>Total · ${rows.length} rows</b></td>`; return `<td class="num">${totals[c]!==undefined?`<b>${MONEY.test(c)?inr(totals[c]):totals[c].toLocaleString('en-IN')}</b>`:''}</td>`; }).join('')}</tr></tfoot>`:'';
+  host.innerHTML=`<div class="rep-count">${rows.length} row${rows.length>1?'s':''}${q?` (filtered from ${reportData.length})`:''}</div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(c=>`<th class="${isNum(c)?'num':''}">${c}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${isNum(c)?'num':''}">${fmt(c,r[c])}</td>`).join('')}</tr>`).join('')}</tbody>${foot}</table></div>`;
+}
+
+/* ================= PURCHASE-TO-PAYMENT (P2P) ================= */
+function pval(id){const e=document.getElementById(id);return e?e.value:'';}
+const poBadge=s=>({'Draft':'b-gray','Sent to Supplier':'b-info','Partially Received':'b-warn','Fully Received':'b-ok','Closed':'b-ok'}[s]||'b-gray');
+function senCard(d){
+  return `<div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Supplier <b>${d.supplierName}</b></div><div class="srow">PO <b>${d.poNo}</b></div><div class="srow">SEN <b>${d.senNo}</b></div>${d.vehicleNo?`<div class="srow">Vehicle <b>${d.vehicleNo}</b></div>`:''}${d.invoiceNo?`<div class="srow">Supplier Invoice <b>${d.invoiceNo}</b></div>`:''}<div style="border-top:1px solid var(--line);margin:8px 0 4px"></div>${d.items.map(it=>`<div class="srow">${it.SKUName} <b class="tnum">${it.ReceivedQty} × ${inr(it.Rate)}</b></div>`).join('')}<div class="srow" style="border-top:1px solid var(--line);margin-top:5px;padding-top:9px">Value (incl. GST) <b class="tnum" style="color:var(--indigo)">${inr(d.value)}</b></div></div></div>`;
+}
+
+/* ---- P2P dashboard ---- */
+function renderP2PDashboard(){
+  view.innerHTML=head('P2P Dashboard','Purchase → Receipt → Payment pipeline')+`<div id="dv2p2p"><div class="loading"><div class="spin"></div>Loading…</div></div>
+    <div class="sec"><h3>Recent Purchase Orders</h3><a data-go="p2p_polist">See all</a></div>
+    <div id="p2pRecent"><div class="loading"><div class="spin"></div></div></div>`;
+  api('getP2PDashV2').then(d=>{
+    if(current!=='p2p_dashboard') return;
+    dv2Render('dv2p2p', d, p=>[
+      ['Total POs',p.total,'#2563EB','p2p_polist'],
+      ['Draft / To Send',p.draft,'#8B5CF6','p2p_polist'],
+      ['Awaiting Material',p.awaitingMaterial,'#F59E0B','p2p_gate'],
+      ['QC Pending',p.qc,'#14B8A6','p2p_qc'],
+      ['To Receive',p.recv,'#2563EB','p2p_receiving'],
+      ['To Return',p.returns,'#DC2626','p2p_return'],
+      ['Returned',p.returned,'#F97316','p2p_return'],
+      ['Payment Pending',p.payment,'#EC4899','p2p_payment'],
+      ['Fully Closed',p.closed,'#64748B','p2p_polist']
+    ], 'Monthly POs');
+  }).catch(()=>{ const el=document.getElementById('dv2p2p'); if(el) el.innerHTML='<div class="empty">Could not load P2P dashboard.</div>'; });
+  api('getPOs').then(list=>{
+    const el=document.getElementById('p2pRecent'); if(!el) return;
+    el.innerHTML=list.length?list.slice(0,6).map(p=>`<div class="ocard"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}${p.MaterialType==='Packing Material'?' · <b style="color:#0284C7">Packing</b>':''}${p.ExpectedDeliveryDate?' · exp '+p.ExpectedDeliveryDate:''}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div class="arrow">${I.chev}</div></div></div>`).join(''):'<div class="empty">No purchase orders yet.</div>';
+  }).catch(()=>{});
+}
+
+/* ---- PO create ---- */
+let poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}];
+function renderPOCreate(){
+  poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; window._poSup=null;
+  const v=STATE.masters.suppliers||[];
+  view.innerHTML=head('Purchase Order','Raise a PO to a supplier','Purchases')+`
+    <div class="two-col"><div>
+      <div class="card"><div class="card-p">
+        <div class="grid2">
+          <div class="field"><label>PO Date</label><input class="inp" type="date" min="${today()}" id="poDate" value="${today()}"></div>
+          <div class="field"><label>PO Number</label><input class="inp" value="Auto (PO-${ym()}-###)" disabled></div>
+        </div>
+        <div class="field"><label>Material Type</label>
+          <select class="sel" id="poMatType">
+            <option value="Raw Material">Raw Material (direct PO)</option>
+            <option value="Packing Material">Packing Material (selected quotation se)</option>
+          </select></div>
+        <div class="field" id="poQuoteWrap" style="display:none"><label>Selected Quotation <span class="rq">*</span></label>
+          <select class="sel" id="poQuote"><option value="">Select quotation…</option></select>
+          <div class="psub" id="poQuoteHint" style="margin-top:4px">Quotations page par select ki hui quotation yahan aayegi.</div></div>
+        <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="poSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+        <div class="grid2">
+          <div class="field"><label>Broker Name</label><input class="inp" id="poBroker" placeholder="Auto from supplier (editable)"></div>
+          <div class="field"><label>Supplier Email</label><input class="inp" id="poEmail" type="email" placeholder="Auto from supplier (editable)"></div>
+        </div>
+        <div id="poSupCard"></div>
+        <div style="border-top:1px solid var(--line);margin:12px 0"></div>
+        <div class="grid2">
+          <div class="field"><label>Transport Type</label>
+            <select class="sel" id="poTransport">
+              <option value="Tarbo (Truck)">Tarbo (Truck) → POT</option>
+              <option value="Wagons (Rail)">Wagons (Rail) → POW</option>
+            </select></div>
+          <div class="field"><label>No. of Vehicles / Wagons</label><input class="inp tnum" id="poNumVeh" type="number" min="1" value="1"></div>
+          <div class="field"><label>Deduction Condition</label>
+            <select class="sel" id="poDeduction">
+              <option value="">— Select —</option>
+              <option>Bihar Condition- 3.58%</option>
+              <option>UP Condition- 1.33%</option>
+              <option>Rake Condition- 1.1%</option>
+              <option>Gross- No Deduction</option>
+              <option>Others</option>
+            </select></div>
+          <div class="field"><label>Terms &amp; Condition (Packing)</label>
+            <select class="sel" id="poPacking">
+              <option value="">— Select —</option>
+              <option>Jute</option>
+              <option>PP</option>
+              <option>Mix</option>
+              <option>Others</option>
+            </select></div>
+        </div>
+        <div class="field"><label>Remarks</label><input class="inp" id="poRemarks" placeholder="Optional"></div>
+      </div></div>
+      <div class="sec"><h3>Raw Material Details</h3></div>
+      <div id="poLiWrap"></div>
+      <button class="btn btn-add" id="poAddLi">${I.plus}Add Row</button>
+    </div>
+    <div><div class="summary" style="position:sticky;top:78px">
+      <h3 style="font-size:14.5px;font-weight:650;margin-bottom:12px">Summary</h3>
+      <div class="srow">Total Quantity <b id="poSQty">0</b></div>
+      <div class="srow grand">Grand Total <b id="poSGrand">₹0</b></div>
+      <button class="btn btn-primary" id="savePO" style="margin-top:14px">${I.check}Create PO</button>
+    </div></div></div>`;
+  renderPOLines();
+  /* Material type switch: packing → quotation list load karo aur items lock kar do */
+  document.getElementById('poMatType').addEventListener('change',e=>{
+    const isPM=e.target.value==='Packing Material';
+    document.getElementById('poQuoteWrap').style.display=isPM?'block':'none';
+    if(isPM){
+      api('getSelectedQuotes').then(list=>{
+        const s=document.getElementById('poQuote');
+        s.innerHTML='<option value="">Select quotation…</option>'+list.map(q=>`<option value="${q.QuoteNo}">${q.QuoteNo} · ${q.SupplierName} · ${inr(q.TotalValue)}</option>`).join('');
+        window._selQuotes=list;
+        if(!list.length) document.getElementById('poQuoteHint').textContent='Koi selected quotation nahi mili — pehle Quotations page par ek quotation select karein.';
+      });
+    } else { window._poQuote=null; poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; renderPOLines(); }
+  });
+  document.getElementById('poQuote').addEventListener('change',e=>{
+    const q=(window._selQuotes||[]).find(x=>x.QuoteNo===e.target.value);
+    window._poQuote=q||null;
+    if(q){
+      poLines=q.items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,uom:it.uom,qty:it.qty,rate:it.rate,gst:it.gstPercent}));
+      const sup=(STATE.masters.suppliers||[]).find(s=>s.SupplierCode===q.SupplierCode);
+      if(sup){ window._poSup=sup; document.getElementById('poSup').value=sup.SupplierName;
+        const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
+        if(bk) bk.value=sup.BrokerName||''; if(em) em.value=sup.Email||'';
+        document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(sup.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${sup.SupplierName}</div><div class="sub">${sup.SupplierCode} · from ${q.QuoteNo} · PR ${q.PRNo}</div></div></div>`; }
+      renderPOLines(); recalcPO();
+      toast('Quotation se items bhar diye');
+    }
+  });
+  if(!v.length){ document.getElementById('poSupCard').innerHTML='<div class="empty" style="margin-top:8px">Koi supplier nahi mila — pehle Master Data → Supplier me add karein.</div>'; }
+  makeCombo(document.getElementById('poSup'),v,x=>x.SupplierName,vd=>{ window._poSup=vd;
+    const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
+    if(bk) bk.value=vd.BrokerName||''; if(em) em.value=vd.Email||'';
+    document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(vd.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.SupplierName}</div><div class="sub">${vd.SupplierCode} · ${vd.GST||'—'}${vd.BrokerName?' · Broker: '+vd.BrokerName:''}</div></div></div>`; });
+  document.getElementById('poAddLi').onclick=()=>{poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18});renderPOLines();};
+  document.getElementById('savePO').onclick=doSavePO;
+}
+function renderPOLines(){
+  const wrap=document.getElementById('poLiWrap');
+  wrap.innerHTML=poLines.map((it,i)=>`<div class="li">
+    <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp poSkuIn" data-posku="${i}" placeholder="Search raw material…" value="${it.skuName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div><div class="cd">${it.skuCode||'Code auto-fills'}${it.uom?' · <b class="uomtag">'+it.uom+'</b>':''}</div></div><button class="li-del" data-podel="${i}">${I.trash}</button></div>
+    <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr"><div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-pof="qty" data-poi="${i}"></div><div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" value="${it.rate}" data-pof="rate" data-poi="${i}"></div><div class="f"><label>GST %</label><input type="number" value="${it.gst}" data-pof="gst" data-poi="${i}"></div></div>
+    <div class="li-tot"><span style="color:var(--t2)">Taxable ${inr(it.qty*it.rate)}</span><b>${inr(it.qty*it.rate*(1+it.gst/100))}</b></div></div>`).join('');
+  recalcPO();
+  wrap.querySelectorAll('.poSkuIn').forEach(inp=>{ const i=inp.dataset.posku; makeCombo(inp,STATE.masters.rawmaterials||[],x=>x.RMName,m=>{ poLines[i].skuName=m.RMName; poLines[i].skuCode=m.RMCode; poLines[i].rate=m.Rate; poLines[i].uom=m.UOM||''; poLines[i].gst=m.GSTPercent; renderPOLines(); }); });
+  wrap.querySelectorAll('[data-pof]').forEach(inp=>inp.addEventListener('input',e=>{ poLines[e.target.dataset.poi][e.target.dataset.pof]=+e.target.value||0; recalcPO(); }));
+  wrap.querySelectorAll('[data-podel]').forEach(b=>b.addEventListener('click',()=>{ poLines.splice(+b.dataset.podel,1); if(!poLines.length)poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18}); renderPOLines(); }));
+}
+function recalcPO(){ let q=0,g=0; poLines.forEach(it=>{q+=+it.qty||0;g+=(+it.qty||0)*(+it.rate||0)*(1+(+it.gst||0)/100);}); const a=document.getElementById('poSQty'),b=document.getElementById('poSGrand'); if(a)a.textContent=q; if(b)b.textContent=inr(Math.round(g)); }
+function doSavePO(){
+  if(document.getElementById('poDate') && !notPast('poDate','PO date',true)) return;
+  if(!window._poSup)return toast('Select a supplier',true);
+  const items=poLines.filter(it=>it.skuCode&&(+it.qty>0));
+  if(!items.length)return toast('Add at least one SKU with quantity',true);
+  busy('savePO');
+  api('savePO',{materialType:pval('poMatType'),quoteNo:(window._poQuote?window._poQuote.QuoteNo:''),supplierCode:window._poSup.SupplierCode,supplierName:window._poSup.SupplierName,brokerName:pval('poBroker'),supplierEmail:pval('poEmail'),transportType:pval('poTransport'),numVehicles:pval('poNumVeh'),deductionCondition:pval('poDeduction'),packingTerms:pval('poPacking'),remarks:pval('poRemarks'),poDate:pval('poDate'),items:items.map(it=>({skuCode:it.skuCode,skuName:it.skuName,qty:+it.qty,rate:+it.rate,gstPercent:+it.gst}))})
+    .then(r=>{toast('PO created — '+r.poNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true));
+}
+
+/* ---- PO list / send ---- */
+function renderPOList(){
+  view.innerHTML=head('Purchase Orders','Send POs to suppliers and track receipt','Purchases')+`<div id="poList"><div class="loading"><div class="spin"></div></div></div>`;
+  api('getPOs').then(list=>{
+    document.getElementById('poList').innerHTML=list.length?list.map(p=>`<div class="ocard" data-polife="${p.PONo}"><div class="top"><div><div class="oid">${p.PONo}</div><div class="vend">${p.SupplierName} · ${p.PODate}</div></div><span class="badge ${poBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div><div class="bot"><div class="amt tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</div><div style="display:flex;gap:6px">
+      <button class="btn btn-ghost btn-sm" data-popdf="${p.PONo}">📄 View PDF</button>
+      ${p.Status!=='Draft'&&!p.ExpectedDeliveryDate?`<button class="btn btn-ghost btn-sm" data-podeliv="${p.PONo}">📅 Confirm delivery</button>`:''}
+      ${p.Status==='Draft'?`<button class="btn btn-primary btn-sm" data-sendpo="${p.PONo}">Send →</button>`:''}
+    </div></div></div>`).join(''):'<div class="empty">No purchase orders yet. Create one from Purchase Order.</div>';
+  });
+}
+function doSendPO(poNo){
+  /* pehle PO ka poora detail lao, phir preview + PDF + email options dikhao */
+  api('getPODetail',poNo).then(d=>{ if(!d){toast('PO not found',true);return;} showPOSendModal(d); })
+    .catch(err=>toast(err.message||'Failed',true));
+}
+const COMPANY={ name:'SWASTIK ROLLER FLOUR MILL', tagline:'Wheat Processing & Trading',
+  gst:'XXAAAAA0000A1Z0', phone:'+91-00000 00000', email:'email@swastikflourmill.com' };
+/* number → Indian words (PO amount ke liye) */
+function amtWords(n){
+  n=Math.round(Number(n)||0); if(n===0) return 'Zero';
+  const a=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const b=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  const two=x=>x<20?a[x]:b[Math.floor(x/10)]+(x%10?' '+a[x%10]:'');
+  const three=x=>{ const h=Math.floor(x/100), r=x%100; return (h?a[h]+' Hundred'+(r?' ':''):'')+(r?two(r):''); };
+  let out='', crore=Math.floor(n/10000000); n%=10000000;
+  let lakh=Math.floor(n/100000); n%=100000;
+  let thou=Math.floor(n/1000); n%=1000;
+  let hund=n;
+  if(crore) out+=three(crore)+' Crore ';
+  if(lakh) out+=two(lakh)+' Lakh ';
+  if(thou) out+=two(thou)+' Thousand ';
+  if(hund) out+=three(hund);
+  return out.trim();
+}
+function poPdfHtml(d){
+  const p=d.po, items=d.items||[];
+  const GREEN='#1F7A3D', GREENDK='#14532D', CREAM='#F7F5EF', INK='#1a1a1a';
+  const rows=items.map((it,i)=>`<tr>
+    <td style="text-align:center">${i+1}</td>
+    <td><b>${it.SKUName||''}</b>${it.SKUCode?'<div style="font-size:9.5px;color:#888">'+it.SKUCode+'</div>':''}</td>
+    <td style="text-align:right">${(Number(it.POQty||it.Qty||0)).toLocaleString('en-IN')} ${it.UOM||''}</td>
+    <td style="text-align:right">Rs. ${(Number(it.Rate)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+    <td style="text-align:right">${(Number(it.Amount)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('');
+  const infoRow=(k,v)=>`<tr><td class="k">${k}</td><td class="v">${v||'-'}</td></tr>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${p.PONo}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,Helvetica,sans-serif}
+    body{color:${INK};font-size:12px;background:#fff}
+    .page{max-width:800px;margin:0 auto;padding:0}
+    /* header band */
+    .band{background:${GREEN};color:#fff;padding:18px 26px;display:flex;justify-content:space-between;align-items:flex-start}
+    .band .logo{display:flex;gap:12px;align-items:center}
+    .band .mark{width:44px;height:44px;border-radius:8px;background:#fff;color:${GREEN};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px}
+    .band h1{font-size:19px;letter-spacing:.5px;line-height:1.1}
+    .band .tag{font-size:10.5px;opacity:.9;margin-top:2px}
+    .band .meta{font-size:9.5px;opacity:.85;margin-top:5px;line-height:1.5}
+    .band .potitle{text-align:right}
+    .band .potitle .t{font-size:16px;font-weight:800;letter-spacing:1px}
+    .band .potitle .o{font-size:9px;opacity:.85;margin-top:2px;text-transform:uppercase;letter-spacing:1px}
+    /* PO number strip */
+    .strip{display:flex;background:${GREENDK};color:#fff}
+    .strip .c{flex:1;padding:9px 26px;border-right:1px solid rgba(255,255,255,.15)}
+    .strip .c:last-child{border-right:0}
+    .strip .l{font-size:8.5px;opacity:.75;text-transform:uppercase;letter-spacing:.8px}
+    .strip .v{font-size:12.5px;font-weight:700;margin-top:2px}
+    .body{padding:20px 26px}
+    /* party */
+    .parties{display:flex;gap:16px;margin-bottom:16px}
+    .pbox{flex:1;background:${CREAM};border:1px solid #E4E0D5;border-radius:8px;padding:12px 14px}
+    .pbox h3{font-size:9px;text-transform:uppercase;color:${GREEN};letter-spacing:1px;margin-bottom:5px}
+    .pbox .nm{font-weight:700;font-size:13px;margin-bottom:2px}
+    .pbox .ln{font-size:10.5px;color:#555;line-height:1.55}
+    /* items */
+    table.items{width:100%;border-collapse:collapse;margin-bottom:14px;border:1px solid #E4E0D5;border-radius:8px;overflow:hidden}
+    table.items thead th{background:${GREEN};color:#fff;padding:9px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:left}
+    table.items thead th:nth-child(n+3){text-align:right}
+    table.items thead th:first-child{text-align:center}
+    table.items td{padding:9px 8px;border-bottom:1px solid #EEE;font-size:11.5px}
+    table.items tbody tr:last-child td{border-bottom:0}
+    /* conditions + totals */
+    .split{display:flex;gap:16px;margin-bottom:16px}
+    .info{flex:1.3}.money{flex:1}
+    table.info{width:100%;border-collapse:collapse;border:1px solid #E4E0D5;border-radius:8px;overflow:hidden}
+    table.info td{padding:7px 12px;font-size:11px;border-bottom:1px solid #F0EEE7}
+    table.info td.k{background:${CREAM};color:#555;width:45%;font-weight:600}
+    table.info tr:last-child td{border-bottom:0}
+    .mbox{border:1px solid #E4E0D5;border-radius:8px;overflow:hidden}
+    .mbox .r{display:flex;justify-content:space-between;padding:9px 14px;font-size:12px;border-bottom:1px solid #F0EEE7}
+    .mbox .r.net{background:${GREEN};color:#fff;font-weight:800;font-size:14px;border-bottom:0}
+    .words{background:${CREAM};border:1px solid #E4E0D5;border-radius:8px;padding:10px 14px;font-size:11px;margin-bottom:16px}
+    .words b{color:${GREEN}}
+    /* terms */
+    .terms{margin-bottom:18px}
+    .terms h3{font-size:10px;text-transform:uppercase;color:${GREEN};letter-spacing:1px;margin-bottom:6px;border-bottom:1px solid #E4E0D5;padding-bottom:4px}
+    .terms ol{margin-left:16px;font-size:10px;color:#555;line-height:1.7}
+    /* sign */
+    .sign{display:flex;justify-content:space-between;margin-top:26px}
+    .sign .s{width:210px;text-align:center}
+    .sign .s .line{border-top:1px solid #999;margin-bottom:5px;padding-top:34px}
+    .sign .s .lbl{font-size:10px;color:#555}
+    .sign .s .co{font-size:10px;font-weight:700;color:${GREEN}}
+    .foot{margin-top:20px;background:${GREENDK};color:#fff;text-align:center;padding:8px;font-size:9.5px;opacity:.95}
+    @media print{ .body,.band,.strip{-webkit-print-color-adjust:exact;print-color-adjust:exact} }
+  </style></head><body><div class="page">
+    <div class="band">
+      <div class="logo">
+        <div class="mark">SR</div>
+        <div><h1>${COMPANY.name}</h1><div class="tag">${COMPANY.tagline}</div>
+          <div class="meta">GSTIN: ${COMPANY.gst} &nbsp;|&nbsp; ${COMPANY.phone} &nbsp;|&nbsp; ${COMPANY.email}</div></div>
+      </div>
+      <div class="potitle"><div class="t">PURCHASE ORDER</div><div class="o">Original for Supplier</div></div>
+    </div>
+    <div class="strip">
+      <div class="c"><div class="l">PO Number</div><div class="v">${p.PONo}</div></div>
+      <div class="c"><div class="l">PO Date</div><div class="v">${p.PODate}</div></div>
+      <div class="c"><div class="l">Transport Type</div><div class="v">${p.TransportType||'-'}</div></div>
+      <div class="c"><div class="l">No. of Vehicles</div><div class="v">${p.NumVehicles||'-'}</div></div>
+    </div>
+    <div class="body">
+      <div class="parties">
+        <div class="pbox"><h3>Supplier / Party</h3>
+          <div class="nm">${p.SupplierName||''}</div>
+          <div class="ln">${p.SupplierAddress||''}${p.SupplierGST?'<br>GST: '+p.SupplierGST:''}${p.SupplierContact?'<br>'+p.SupplierContact:''}${p.SupplierMobile?' · '+p.SupplierMobile:''}${p.SupplierEmail?'<br>'+p.SupplierEmail:''}</div>
+        </div>
+        <div class="pbox"><h3>Broker</h3>
+          <div class="nm">${p.BrokerName||'-'}</div>
+          <div class="ln">${p.BrokerName?'Through broker for this order':'Direct purchase'}</div>
+        </div>
+      </div>
+      <table class="items">
+        <thead><tr><th style="width:34px">#</th><th>Commodity Description</th><th>Quantity</th><th>Rate</th><th>Amount (Rs.)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="split">
+        <div class="info">
+          <table class="info">
+            ${infoRow('Deduction Condition', p.DeductionCondition)}
+            ${infoRow('Terms &amp; Condition (Packing)', p.PackingTerms)}
+            ${infoRow('Transport Mode', p.TransportType)}
+            ${infoRow('No. of Vehicles / Wagons', p.NumVehicles)}
+            ${infoRow('Remarks', p.Remarks)}
+          </table>
+        </div>
+        <div class="money">
+          <div class="mbox">
+            <div class="r"><span>Gross Amount</span><b>Rs. ${(Number(p.TotalValue)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</b></div>
+            <div class="r net"><span>NET PAYABLE</span><span>Rs. ${(Number(p.TotalValue)||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="words">Amount in words: <b>Rupees ${amtWords(p.TotalValue)} Only</b></div>
+      <div class="terms">
+        <h3>Terms &amp; Conditions</h3>
+        <ol>
+          <li>Goods must conform to the agreed Fair Average Quality (FAQ) standards; rejected stock will be at supplier's cost.</li>
+          <li>Weighment recorded at the mill gate / unloading point shall be treated as final and binding.</li>
+          <li>Deduction conditions and packing terms mentioned above are applicable to this order.</li>
+          <li>Delivery to be completed within the stipulated period; delays must be communicated in advance.</li>
+          <li>Payment will be released as per agreed terms after quality verification and final weighment.</li>
+        </ol>
+      </div>
+      <div class="sign">
+        <div class="s"><div class="line"></div><div class="lbl">Supplier's Acknowledgement / Seal</div></div>
+        <div class="s"><div class="line"></div><div class="co">For ${COMPANY.name}</div><div class="lbl">Authorised Signatory</div></div>
+      </div>
+    </div>
+    <div class="foot">This is a system-generated Purchase Order. PO No. ${p.PONo} | Page 1 of 1</div>
+  </div></body></html>`;
+}
+function openPOPdf(d){
+  const w=window.open('','_blank');
+  if(!w){ toast('Popup blocked — allow popups to open the PDF',true); return; }
+  w.document.write(poPdfHtml(d)); w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); }, 400);   // print dialog → "Save as PDF"
+}
+/* PDF sirf VIEW karo (print dialog nahi) — ek button "Print / Save PDF" ke saath */
+function viewPOPdf(poNo){
+  api('getPODetail',poNo).then(d=>{
+    if(!d){ toast('PO not found',true); return; }
+    const w=window.open('','_blank');
+    if(!w){ toast('Popup blocked — allow popups to view the PDF',true); return; }
+    const bar=`<div style="position:sticky;top:0;background:#14532D;padding:10px 16px;display:flex;gap:10px;justify-content:flex-end;z-index:99">
+      <button onclick="window.print()" style="background:#fff;color:#14532D;border:0;border-radius:6px;padding:8px 16px;font-weight:700;cursor:pointer;font-family:Arial">🖨 Print / Save as PDF</button>
+      <button onclick="window.close()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:6px;padding:8px 16px;cursor:pointer;font-family:Arial">Close</button>
+    </div>`;
+    const htmlDoc=poPdfHtml(d).replace('<body>','<body><style>@media print{.viewbar{display:none}}</style><div class="viewbar">'+bar+'</div>');
+    w.document.write(htmlDoc); w.document.close(); w.focus();
+  }).catch(err=>toast(err.message||'Failed',true));
+}
+/* Step 5 — supplier se expected delivery date confirm karke bharna */
+function askDeliveryDate(poNo){
+  const html=`<div class="modal-bg" id="ddBg"><div class="modal" style="max-width:420px">
+    <div class="modal-h"><h3>Confirm delivery — ${poNo}</h3><button class="modal-x" id="ddX">&times;</button></div>
+    <div class="modal-b">
+      <div class="field"><label>Expected arrival date <span class="rq">*</span></label><input class="inp" type="date" id="ddDate" min="${today()}" value="${today()}"></div>
+      <div class="psub">Supplier se confirm karke ye date bhariye.</div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-primary btn-sm" id="ddSave">${I.check}Save</button>
+        <button class="btn btn-ghost btn-sm" id="ddCancel">Cancel</button></div>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const close=()=>{ const b=document.getElementById('ddBg'); if(b) b.remove(); };
+  document.getElementById('ddX').onclick=close;
+  document.getElementById('ddCancel').onclick=close;
+  document.getElementById('ddBg').onclick=e=>{ if(e.target.id==='ddBg') close(); };
+  document.getElementById('ddSave').onclick=()=>{
+    const dt=pval('ddDate'); if(!dt) return toast('Date daaliye',true);
+    if(dt<today()) return toast('Past date nahi chalegi',true);
+    api('confirmPODelivery',{poNo:poNo,expectedDate:dt}).then(()=>{ toast('Delivery date confirm ho gayi'); close(); renderPOList(); })
+      .catch(e=>toast(e.message||'Failed',true));
+  };
+}
+/* PO lifecycle timeline modal */
+function showPOLifecycle(poNo){
+  api('getPOLifecycle',poNo).then(L=>{
+    if(!L){ toast('PO not found',true); return; }
+    const dot=(done)=>`<div class="lc-dot ${done?'on':''}">${done?'✓':''}</div>`;
+    const stages=L.stages.map((s,i)=>`<div class="lc-stage">
+      ${dot(s.done)}
+      <div class="lc-body">
+        <div class="lc-lbl ${s.done?'':'pend'}">${s.label}</div>
+        ${s.date?`<div class="lc-sub">${s.date}${s.sub?' · '+s.sub:''}</div>`:(s.sub?`<div class="lc-sub">${s.sub}</div>`:'')}
+      </div>
+    </div>${i<L.stages.length-1?`<div class="lc-line ${s.done?'on':''}"></div>`:''}`).join('');
+    const senBlocks=L.sens.length?L.sens.map(s=>`
+      <div class="lc-sen">
+        <div class="lc-sen-h"><b>${s.senNo}</b> <span class="badge ${poBadge(s.status)}" style="font-size:10px">${s.status}</span></div>
+        <div class="lc-sen-b">
+          <div class="srow">Gate In <b>${s.gateDate} ${s.gateTime}</b></div>
+          ${s.vehicleNo?`<div class="srow">Vehicle <b>${s.vehicleNo}</b>${s.driver?' · '+s.driver:''}</div>`:''}
+          ${s.invoiceNo?`<div class="srow">Supplier Invoice <b>${s.invoiceNo}</b></div>`:''}
+          ${s.items.map(it=>`<div class="srow" style="color:var(--t2)">• ${it.SKU} — ${it.Qty} ${it.UOM}</div>`).join('')}
+          ${s.qc?`<div class="lc-step ${s.qc.status==='QC Passed'?'ok':(s.qc.status==='QC Rejected'?'bad':'')}">QC: ${s.qc.status}${s.qc.deduction?' · Deduction ₹'+s.qc.deduction.toLocaleString('en-IN'):''}${s.qc.date?' · '+s.qc.date:''}</div>`:'<div class="lc-step pend">QC pending</div>'}
+          ${s.received?`<div class="lc-step ok">Received: ${s.received.grnNo} · ${s.received.date}${s.received.receiver?' · '+s.received.receiver:''}</div>`:''}
+          ${s.payment?`<div class="lc-step ok">Paid: ₹${s.payment.amount.toLocaleString('en-IN')} · ${s.payment.mode}${s.payment.date?' · '+s.payment.date:''}</div>`:''}
+        </div>
+      </div>`).join(''):'<div class="empty" style="padding:14px">Abhi tak koi material inward nahi hua.</div>';
+    const html=`<div class="modal-bg" id="lcBg"><div class="modal" style="max-width:600px">
+      <div class="modal-h"><h3>PO Lifecycle — ${L.poNo}</h3><button class="modal-x" id="lcX">&times;</button></div>
+      <div class="modal-b">
+        <div class="srow">Supplier <b>${L.supplier}</b>${L.broker?' · Broker: '+L.broker:''}</div>
+        <div class="srow">PO Date <b>${L.poDate}</b> · Status <span class="badge ${poBadge(L.status)}">${L.status}</span></div>
+        <div class="srow">Value <b class="tnum">${inr(L.totalValue)}</b> · Ordered ${(L.totalQty||0).toLocaleString('en-IN')}</div>
+        <div class="srow">Received (net) <b class="tnum">${(L.receivedQty||0).toLocaleString('en-IN')}</b> · Pending ${Math.max((L.totalQty||0)-(L.receivedQty||0),0).toLocaleString('en-IN')} · Vehicles in ${L.vehiclesReceived||0}</div>
+        <div class="lc-wrap">${stages}</div>
+        <div class="sec" style="margin:6px 0 8px"><h3>Inward Details</h3></div>
+        ${senBlocks}
+        ${L.next?`<div class="lc-next">
+          <div class="lc-next-l">Agla step</div>
+          <button class="btn btn-primary" id="lcNext" style="width:100%">${L.next.label} →</button>
+        </div>`:`<div class="lc-next"><div class="lc-next-l" style="text-align:center;padding:8px 0">✓ Is PO ke sabhi steps complete ho chuke hain</div></div>`}
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-ghost btn-sm" id="lcPdf">📄 View PO PDF</button>
+          <button class="btn btn-ghost btn-sm" id="lcClose">Close</button>
+        </div>
+      </div></div></div>`;
+    document.body.insertAdjacentHTML('beforeend',html);
+    const close=()=>{ const b=document.getElementById('lcBg'); if(b) b.remove(); };
+    document.getElementById('lcX').onclick=close;
+    document.getElementById('lcClose').onclick=close;
+    document.getElementById('lcBg').onclick=e=>{ if(e.target.id==='lcBg') close(); };
+    document.getElementById('lcPdf').onclick=()=>viewPOPdf(poNo);
+    const nb=document.getElementById('lcNext');
+    if(nb) nb.onclick=()=>{
+      close();
+      if(L.next.action==='send'){ doSendPO(poNo); return; }        // Draft → seedha Send modal
+      if(!canView(L.next.route)){ toast('Aapke paas is page ki permission nahi hai',true); return; }
+      go(L.next.route, L.next.arg||undefined);                      // baaki → us page par SEN/PO pre-selected
+    };
+  }).catch(err=>toast(err.message||'Failed',true));
+}
+function poEmailBody(d){
+  const p=d.po;
+  const NL='\n';
+  const lines=(d.items||[]).map(it=>'  - '+(it.SKUName||'')+' - '+(it.POQty||it.Qty||0)+' '+(it.UOM||'')+' @ Rs.'+(Number(it.Rate)||0).toLocaleString('en-IN')).join(NL);
+  return 'Dear '+(p.SupplierName||'')+','+NL+NL+
+    'Please find our Purchase Order '+p.PONo+' dated '+p.PODate+'.'+NL+NL+
+    'Items:'+NL+lines+NL+NL+
+    'Transport: '+(p.TransportType||'-')+' | Vehicles/Wagons: '+(p.NumVehicles||'-')+NL+
+    'Deduction: '+(p.DeductionCondition||'-')+' | Packing: '+(p.PackingTerms||'-')+NL+
+    (p.BrokerName?('Broker: '+p.BrokerName+NL):'')+NL+
+    'Total Quantity: '+(p.TotalQty||0)+NL+
+    'Net Payable: Rs. '+(Number(p.TotalValue)||0).toLocaleString('en-IN')+NL+NL+
+    'Kindly confirm receipt and expected delivery date. The detailed PO (PDF) is attached.'+NL+NL+
+    'Regards,'+NL+COMPANY.name;
+}
+function showPOSendModal(d){
+  const p=d.po;
+  const email=p.SupplierEmail||'';
+  const subject=`Purchase Order ${p.PONo} — ${COMPANY.name}`;
+  const html=`<div class="modal-bg" id="poSendBg"><div class="modal" style="max-width:520px">
+    <div class="modal-h"><h3>Send PO — ${p.PONo}</h3><button class="modal-x" id="poSendX">&times;</button></div>
+    <div class="modal-b">
+      <div class="srow">Supplier <b>${p.SupplierName}</b></div>
+      ${p.BrokerName?`<div class="srow">Broker <b>${p.BrokerName}</b></div>`:''}
+      <div class="srow">Total <b class="tnum">${inr(p.TotalValue)} · ${p.TotalQty} qty</b></div>
+      <div class="field" style="margin-top:10px"><label>Supplier Email</label>
+        <input class="inp" id="poSendEmail" type="email" value="${email}" placeholder="supplier@company.com"></div>
+      <div style="font-size:12px;color:var(--t3);margin-top:6px">
+        1) <b>PDF</b> → print window khulega → "Save as PDF" chuno.<br>
+        2) <b>Email</b> → aapke mail app me draft ban jayega → PDF attach karke bhej dein.
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-primary btn-sm" id="poGenPdf">📄 PDF</button>
+        <button class="btn btn-primary btn-sm" id="poOpenMail">✉ Email</button>
+      </div>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <button class="btn btn-ok btn-sm" id="poMarkSent" style="width:100%">${I.check}Mark as Sent to Supplier</button>
+      </div>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const close=()=>{ const b=document.getElementById('poSendBg'); if(b) b.remove(); };
+  document.getElementById('poSendX').onclick=close;
+  document.getElementById('poSendBg').onclick=e=>{ if(e.target.id==='poSendBg') close(); };
+  document.getElementById('poGenPdf').onclick=()=>openPOPdf(d);
+  document.getElementById('poOpenMail').onclick=()=>{
+    const em=(document.getElementById('poSendEmail').value||'').trim();
+    if(!em){ toast('Email address daaliye',true); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ toast('Valid email address daaliye',true); return; }
+    d.po.SupplierEmail=em;
+    const sub='Purchase Order '+p.PONo+' - '+COMPANY.name;
+    /* anchor click sabse bharosemand hai — window.location.href kayi browsers me block ho jata hai */
+    const url='mailto:'+em+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(poEmailBody(d));
+    const a=document.createElement('a');
+    a.href=url; a.style.display='none'; document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ a.remove(); }, 500);
+    toast('Mail app khul raha hai — na khule to email copy karke bhej dein');
+  };
+  document.getElementById('poMarkSent').onclick=()=>{
+    api('sendPO',p.PONo).then(()=>{ toast('PO marked as sent'); close(); renderPOList(); })
+      .catch(err=>toast(err.message||'Failed',true));
   };
 }
 
 /* ---- Gate Entry (SEN) ---- */
-function getPOsForGate(){
-  return readAll_('PO').filter(p=>[PO_STATUS.SENT,PO_STATUS.PARTIAL,PO_STATUS.DRAFT].indexOf(p.Status)>-1)
-    .map(p=>({PONo:p.PONo,SupplierName:p.SupplierName,remaining:poItemsFor(p.PONo).reduce((s,i)=>s+i.RemainingQty,0)}))
-    .filter(p=>p.remaining>0);
-}
-function getPOSheet(poNo){
-  const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return null;
-  return {poNo:poNo, supplierName:po.SupplierName, supplierCode:po.SupplierCode, poDate:fmtDate_(po.PODate), items:poItemsFor(poNo).filter(i=>i.RemainingQty>0)};
-}
-function saveGateEntryIn(p){
-  const po_=readAll_('PO').find(x=>x.PONo===p.poNo);
-  if(!po_) throw new Error('PO not found.');
-  if(po_.Status===PO_STATUS.DRAFT) throw new Error('Pehle PO supplier ko bhejein (Send to Supplier), tabhi gate entry ho sakti hai.');
-  if(po_.Status===PO_STATUS.CLOSED) throw new Error('Ye PO close ho chuka hai.');
-  const senNo=nextSeqYearly_('SEN','SENNo','SEN-','CreatedAt',4); const now=new Date();
-  append_('SEN',{SENNo:senNo,PONo:p.poNo,SupplierName:p.supplierName,GateDate:now,GateTime:fmtTime_(now),VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',DriverMobile:p.driverMobile||'',InvoiceNo:p.invoiceNo||'',Status:SEN_STATUS.PENDING_QC,CreatedAt:now});
-  appendMany_('SENItems',(p.items||[]).filter(it=>Number(it.receivedQty)>0).map(it=>({SENNo:senNo,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),POQty:Number(it.poQty)||0,ReceivedQty:Number(it.receivedQty)||0})));
-  recomputePOStatus_(p.poNo);
-  try{
-    const _n=new Date(), _rq=(p.items||[]).reduce((s,it)=>s+(Number(it.receivedQty)||0),0);
-    const _deadline=fmsPOSentDeadline_(p.poNo);   // PO sent + 7 calendar days
-    fmsInit_('FMS_P2P_Inbound',{ Timestamp:_n, PONo:p.poNo, SupplierName:p.supplierName, SENNo:senNo, ReceivedQty:_rq,
-      GatePlanned:_deadline||'', GateActual:_n, GateStatus:'Done', GateTimeDelay:_deadline?fmsDelay_(_deadline,_n):'',
-      QCPlanned:fmsPlannedSafe_(_n,FMS_TAT_P2P.qc), QCStatus:'Pending' });
-    fmsStep_('FMS_P2P_PO','PONo',p.poNo,'FGate',_n,null);   // first material arrival at PO level
-  }catch(fe){ fmsLog_('saveGateEntryIn FMS hook', fe); }
-  return {senNo:senNo};
-}
-function getSENs(status){
-  let rows=readAll_('SEN').reverse();
-  if(status) rows=rows.filter(s=>s.Status===status);
-  return rows.map(s=>({SENNo:s.SENNo,PONo:s.PONo,SupplierName:s.SupplierName,GateDate:fmtDate_(s.GateDate),VehicleNo:s.VehicleNo,Status:s.Status}));
-}
-function getSENSheet(senNo){
-  const sen=readAll_('SEN').find(s=>s.SENNo===senNo); if(!sen) return null;
-  const rate={}; readAll_('POItems').filter(i=>i.PONo===sen.PONo).forEach(i=>rate[i.SKUCode]={rate:Number(i.Rate)||0,gst:Number(i.GSTPercent)||0});
-  let value=0;
-  const items=readAll_('SENItems').filter(i=>i.SENNo===senNo).map(i=>{
-    const r=rate[i.SKUCode]||{rate:0,gst:0}, q=Number(i.ReceivedQty)||0;
-    value+=q*r.rate*(1+r.gst/100);
-    return {SKUCode:i.SKUCode,SKUName:i.SKUName,UOM:i.UOM||uomOf_(i.SKUCode),POQty:i.POQty,ReceivedQty:q,Rate:r.rate};
+function renderGateIn(arg){
+  view.innerHTML=head('Gate Entry — Inbound','A unique SEN number is generated on entry · pick the PO to auto-fill','Purchases')+`
+    <div class="field"><label>Purchase Order <span class="rq">*</span></label><div class="cmb"><input class="inp" id="genPO" placeholder="Search PO number / supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="genForm"></div>`;
+  api('getPOsForGate').then(list=>{
+    if(!list.length) document.getElementById('genForm').innerHTML='<div class="empty">No open POs. Create and send a PO first. Fully-received POs are hidden automatically.</div>';
+    makeCombo(document.getElementById('genPO'),list,x=>x.PONo+' — '+x.SupplierName,po=>loadGatePO(po.PONo));
+    if(arg&&list.some(p=>p.PONo===arg)){document.getElementById('genPO').value=arg;loadGatePO(arg);}
   });
-  const qc=readAll_('QC').find(q=>q.SENNo===senNo)||{};
-  const po=readAll_('PO').find(p=>p.PONo===sen.PONo)||{};
-  const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
-  const totalPOQty=readAll_('POItems').filter(i=>i.PONo===sen.PONo).reduce((s,i)=>s+(Number(i.Qty)||0),0);
-  return {senNo:senNo,poNo:sen.PONo,supplierName:sen.SupplierName,vehicleNo:sen.VehicleNo,driverName:sen.DriverName||'',invoiceNo:sen.InvoiceNo,status:sen.Status,
-          gateDate:fmtDate_(sen.GateDate),gateTime:sen.GateTime||'',driverMobile:sen.DriverMobile||'',
-          poDate:fmtDate_(po.PODate),brokerName:po.BrokerName||'',totalPOQty:totalPOQty,poValue:Number(po.TotalValue)||0,
-          transportType:po.TransportType||'',numVehicles:po.NumVehicles||0,deductionCondition:po.DeductionCondition||'',packingTerms:po.PackingTerms||'',
-          supplierCode:po.SupplierCode||'',supplierGST:sup.GST||'',supplierAddress:sup.Address||'',supplierContact:sup.ContactPerson||'',supplierMobile:sup.Mobile||'',supplierEmail:sup.Email||'',
-          items:items,qcStatus:qc.QCStatus||'',deduction:Number(qc.DeductionAmount)||0,value:Math.round(value)};
+}
+function loadGatePO(poNo){
+  api('getPOSheet',poNo).then(d=>{
+    if(!d)return; window._genData=d;
+    document.getElementById('genForm').innerHTML=`
+      <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Supplier <b>${d.supplierName}</b></div><div class="srow">PO Date <b>${d.poDate}</b></div><div class="srow">PO <b>${d.poNo}</b></div></div></div>
+      <div class="grid2">
+        <div class="field"><label>Vehicle Number</label><input class="inp" id="genVeh" placeholder="MH-00-XX-0000"></div>
+        <div class="field"><label>Driver Name</label><input class="inp" id="genDrv"></div>
+        <div class="field"><label>Driver Mobile No.</label><input class="inp mob10" id="genMob" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+        <div class="field"><label>Supplier Invoice No.</label><input class="inp" id="genInv" placeholder="INV-000000"></div>
+      </div>
+      <div class="sec"><h3>Material Details</h3><span style="font-size:11.5px;color:var(--t3)">Actual weighment Receiving page par hoga</span></div>
+      <div class="tbl-wrap"><table class="tbl seltbl"><thead><tr><th>SKU</th><th>UOM</th><th class="num">PO Qty</th></tr></thead>
+      <tbody>${d.items.map(it=>`<tr><td><div class="nm">${it.SKUName}</div><div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${(it.POQty||0).toLocaleString('en-IN')}</td></tr>`).join('')}</tbody></table></div>
+      <button class="btn btn-primary" id="saveGen" style="margin-top:14px">${I.check}Record Gate Entry & Generate SEN</button>`;
+    document.getElementById('saveGen').onclick=doSaveGateIn;
+  });
+}
+function doSaveGateIn(){
+  const d=window._genData; if(!d)return;
+  /* qty ab gate par nahi li jaati — poori remaining qty inward maani jaati hai, actual weighment Receiving par */
+  const items=d.items.map(it=>({skuCode:it.SKUCode,skuName:it.SKUName,poQty:it.POQty,receivedQty:it.RemainingQty})).filter(x=>x.receivedQty>0);
+  if(!items.length)return toast('Is PO par koi pending quantity nahi hai',true);
+  if(!checkMobileField('genMob','Driver mobile',false)) return;
+  busy('saveGen');
+  api('saveGateEntryIn',{poNo:d.poNo,supplierName:d.supplierName,vehicleNo:pval('genVeh'),driverName:pval('genDrv'),driverMobile:pval('genMob'),invoiceNo:pval('genInv'),items:items})
+    .then(r=>{toast('Gate entry recorded — '+r.senNo);go('p2p_qc');}).catch(err=>toast(err.message||'Failed',true));
 }
 
 /* ---- QC ---- */
-function getSENsForQC(){ return getSENs(SEN_STATUS.PENDING_QC); }
-function saveQC(p){
-  const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
-  if(sen.Status!==SEN_STATUS.PENDING_QC) throw new Error('Is SEN ka QC pehle ho chuka hai (status: '+sen.Status+').');
-  append_('QC',{SENNo:p.senNo,PONo:sen.PONo,QCStatus:p.qcStatus,DeductionAmount:Number(p.deductionAmount)||0,HL:p.hl||'',Moisture:p.moisture||'',Infestation:p.infestation||'',Gluten:p.gluten||'',ForeignMatter:p.foreignMatter||'',KB:p.kb||'',Inspector:p.inspector||currentUser_().name,Remarks:p.remarks||'',QCDate:new Date()});
-  const next=(p.qcStatus===QC_STATUS.REJECT)?SEN_STATUS.QC_REJECTED:SEN_STATUS.QC_PASSED;
-  updateWhere_('SEN','SENNo',p.senNo,{Status:next});
-  recomputePOStatus_(sen.PONo);
-  { const now=new Date(), row=fmsRow_('FMS_P2P_Inbound','SENNo',p.senNo);
-    if(row && !row.QCActual){
-      const upd={ QCResult:p.qcStatus, QCActual:now, QCStatus:'Done', QCTimeDelay:fmsDelay_(row.QCPlanned,now) };
-      if(p.qcStatus===QC_STATUS.REJECT){ upd.ReturnPlanned=fmsPlanned_(now,FMS_TAT_P2P.ret); upd.ReturnStatus='Pending'; }
-      else { upd.RecvPlanned=fmsPlanned_(now,FMS_TAT_P2P.recv); upd.RecvStatus='Pending'; }
-      fmsSet_('FMS_P2P_Inbound','SENNo',p.senNo,upd);
-    } }
-  return {ok:true,next:next};
+let qcChoice='';
+function renderQC(arg){
+  view.innerHTML=head('QC Check','Inspect a gate entry (SEN) and set the QC result','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="qcSEN" placeholder="Search SEN / PO / supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="qcForm"></div>`;
+  api('getSENsForQC').then(list=>{
+    if(!list.length) document.getElementById('qcForm').innerHTML='<div class="empty">No gate entries pending QC.</div>';
+    makeCombo(document.getElementById('qcSEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadQC(s.SENNo));
+    if(arg)loadQC(arg);
+  });
+}
+function loadQC(senNo){
+  api('getSENSheet',senNo).then(d=>{
+    if(!d)return; window._qcData=d; qcChoice='';
+    document.getElementById('qcForm').innerHTML=`${senCard(d)}
+      <div class="sec"><h3>QC Result</h3></div>
+      <div class="qc-opts">${['Accept','Accept with Deduction','Reject'].map(o=>`<button class="qc-opt" data-qc="${o}">${o}</button>`).join('')}</div>
+      <div id="qcParams" style="display:none">
+        <div class="sec"><h3>Quality Parameters</h3></div>
+        <div class="grid3">
+          <div class="field"><label>HL (Hectoliter Weight)</label><input class="inp tnum" id="qcHL" type="number" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Moisture (%)</label><input class="inp tnum" id="qcMoist" type="number" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Infestation</label><input class="inp" id="qcInfest" placeholder="Nil / Low / High"></div>
+          <div class="field"><label>Gluten (%)</label><input class="inp tnum" id="qcGluten" type="number" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Foreign Matter</label><input class="inp" id="qcFM" placeholder="e.g. 0.5%"></div>
+          <div class="field"><label>KB</label><input class="inp" id="qcKB" placeholder="KB value"></div>
+        </div>
+      </div>
+      <div id="qcDeduct" style="display:none"><div class="field"><label>Deduction Amount (₹)</label><input class="inp tnum" type="number" id="qcDed" placeholder="0"></div></div>
+      <div class="field"><label>Remarks</label><textarea class="inp" id="qcRem" placeholder="Inspection notes…"></textarea></div>
+      <button class="btn btn-primary" id="saveQC">${I.check}Submit QC</button>`;
+    document.querySelectorAll('[data-qc]').forEach(b=>b.onclick=()=>{ qcChoice=b.dataset.qc;
+      document.querySelectorAll('.qc-opt').forEach(x=>x.classList.toggle('on',x===b));
+      document.getElementById('qcDeduct').style.display=qcChoice==='Accept with Deduction'?'block':'none';
+      /* Accept ya Accept with Deduction par quality parameters dikhao */
+      document.getElementById('qcParams').style.display=(qcChoice==='Accept'||qcChoice==='Accept with Deduction')?'block':'none';
+    });
+    document.getElementById('saveQC').onclick=doSaveQC;
+  });
+}
+function doSaveQC(){
+  if(!window._qcData)return; if(!qcChoice)return toast('Select a QC result',true);
+  busy('saveQC');
+  api('saveQC',{senNo:window._qcData.senNo,qcStatus:qcChoice,deductionAmount:qcChoice==='Accept with Deduction'?(+pval('qcDed')||0):0,
+    hl:pval('qcHL'),moisture:pval('qcMoist'),infestation:pval('qcInfest'),gluten:pval('qcGluten'),foreignMatter:pval('qcFM'),kb:pval('qcKB'),
+    remarks:pval('qcRem')})
+    .then(()=>{toast('QC saved — '+qcChoice);go(qcChoice==='Reject'?'p2p_return':'p2p_receiving');}).catch(err=>toast(err.message||'Failed',true));
 }
 
 /* ---- Material Received ---- */
-function getSENsForReceiving(){ return getSENs(SEN_STATUS.QC_PASSED); }
-function saveReceiving(p){
-  const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
-  if(sen.Status!==SEN_STATUS.QC_PASSED) throw new Error('Receiving allowed only after QC Accept / Accept with Deduction.');
-  const grn=nextNumber_('Receiving','GRNNo','GRN');
-  append_('Receiving',{GRNNo:grn,SENNo:p.senNo,PONo:sen.PONo,ReceiveDate:new Date(),ReceiverName:p.receiverName||'',FactoryGrossWeight:Number(p.factoryGross)||0,FactoryTareWeight:Number(p.factoryTare)||0,FactoryNetWeight:Number(p.factoryNet)||0,PartyNetWeight:Number(p.partyNet)||0,Remarks:p.remarks||'',Status:'Received'});
-  updateWhere_('SEN','SENNo',p.senNo,{Status:SEN_STATUS.RECEIVED});
-  recomputePOStatus_(sen.PONo);
-  fmsStep_('FMS_P2P_Inbound','SENNo',p.senNo,'Recv',new Date(),null);
-  try{ const _r=fmsRow_('FMS_P2P_PO','PONo',sen.PONo);
-    if(_r && !_r.PayPlanned) fmsSet_('FMS_P2P_PO','PONo',sen.PONo,{ PayPlanned:fmsPlannedSafe_(new Date(),FMS_TAT_P2P_PO.pay), PayStatus:'Pending' });
-  }catch(e){ fmsLog_('recv pay arm', e); }
-  return {grnNo:grn};
+function renderReceiving(arg){
+  view.innerHTML=head('Material Received','Post GRN for QC-passed gate entries','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="rcSEN" placeholder="Search SEN…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="rcForm"></div>`;
+  api('getSENsForReceiving').then(list=>{
+    if(!list.length)document.getElementById('rcForm').innerHTML='<div class="empty">No QC-passed gate entries to receive. Only Accept / Accept with Deduction reach here.</div>';
+    makeCombo(document.getElementById('rcSEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadRc(s.SENNo));
+    if(arg)loadRc(arg);
+  });
 }
+function rcDetailCard(d){
+  return `<div class="card" style="margin-bottom:12px"><div class="card-p">
+    <div class="sec" style="margin:0 0 8px"><h3>${d.senNo} · Purchase Details</h3>
+      <span class="badge ${poBadge(d.status)}" style="font-size:11px">${d.status}</span></div>
+    <div class="dgrid">
+      <div><span class="dk">PO Number</span><span class="dv">${d.poNo}</span></div>
+      <div><span class="dk">PO Date</span><span class="dv">${d.poDate||'—'}</span></div>
+      <div><span class="dk">SEN Number</span><span class="dv">${d.senNo}</span></div>
+      <div><span class="dk">Gate In</span><span class="dv">${d.gateDate||'—'} ${d.gateTime||''}</span></div>
+      <div><span class="dk">Supplier</span><span class="dv">${d.supplierName}</span></div>
+      <div><span class="dk">Broker</span><span class="dv">${d.brokerName||'—'}</span></div>
+      <div><span class="dk">Supplier Code</span><span class="dv">${d.supplierCode||'—'}</span></div>
+      <div><span class="dk">GST</span><span class="dv">${d.supplierGST||'—'}</span></div>
+      <div><span class="dk">Contact</span><span class="dv">${d.supplierContact||'—'}${d.supplierMobile?' · '+d.supplierMobile:''}</span></div>
+      <div><span class="dk">Total PO Qty</span><span class="dv">${(d.totalPOQty||0).toLocaleString('en-IN')}</span></div>
+      <div><span class="dk">Vehicle</span><span class="dv">${d.vehicleNo||'—'}${d.driverName?' · '+d.driverName:''}</span></div>
+      <div><span class="dk">Supplier Invoice</span><span class="dv">${d.invoiceNo||'—'}</span></div>
+      ${d.transportType?`<div><span class="dk">Transport</span><span class="dv">${d.transportType}${d.numVehicles?' · '+d.numVehicles+' veh':''}</span></div>`:''}
+      ${d.deductionCondition?`<div><span class="dk">Deduction Cond.</span><span class="dv">${d.deductionCondition}</span></div>`:''}
+      ${d.packingTerms?`<div><span class="dk">Packing</span><span class="dv">${d.packingTerms}</span></div>`:''}
+    </div>
+    <div style="border-top:1px solid var(--line);margin:10px 0 6px"></div>
+    <table class="tbl" style="width:100%"><thead><tr><th>Item</th><th>UOM</th><th class="num">Received Qty</th><th class="num">PO Rate</th></tr></thead>
+    <tbody>${d.items.map(it=>`<tr><td>${it.SKUName}<div class="cd">${it.SKUCode}</div></td><td><span class="uomtag">${it.UOM||'—'}</span></td><td class="num">${(it.ReceivedQty||0).toLocaleString('en-IN')}</td><td class="num">${inr(it.Rate)}</td></tr>`).join('')}</tbody></table>
+    <div class="srow" style="border-top:1px solid var(--line);margin-top:8px;padding-top:9px">Value (incl. GST) <b class="tnum" style="color:var(--indigo)">${inr(d.value)}</b>${d.qcStatus?` · QC: <b>${d.qcStatus}</b>${d.deduction?' · Deduction '+inr(d.deduction):''}`:''}</div>
+  </div></div>`;
+}
+function loadRc(senNo){
+  api('getSENSheet',senNo).then(d=>{ if(!d)return; window._rcData=d;
+    document.getElementById('rcForm').innerHTML=`${rcDetailCard(d)}
+      <div class="sec"><h3>Weighment (KG)</h3></div>
+      <div class="grid2">
+        <div class="field"><label>Factory Gross Weight (KG)</label><input class="inp tnum" id="rcGross" type="number" step="0.001" placeholder="0.000"></div>
+        <div class="field"><label>Factory Tare Weight (KG)</label><input class="inp tnum" id="rcTare" type="number" step="0.001" placeholder="0.000"></div>
+        <div class="field"><label>Factory Net Weight (KG)</label><input class="inp tnum" id="rcNet" type="number" step="0.001" placeholder="Auto = Gross − Tare"></div>
+        <div class="field"><label>Party Net Weight (KG)</label><input class="inp tnum" id="rcPartyNet" type="number" step="0.001" placeholder="0.000"></div>
+      </div>
+      <div class="grid2"><div class="field"><label>Received By</label><input class="inp" id="rcBy" placeholder="Store keeper"></div><div class="field"><label>Date</label><input class="inp" type="date" id="rcDate" value="${today()}"></div></div>
+      <div class="field"><label>Remarks</label><textarea class="inp" id="rcRem"></textarea></div>
+      <button class="btn btn-primary" id="saveRc">${I.check}Confirm Material Received</button>`;
+    document.getElementById('saveRc').onclick=doSaveReceiving;
+    /* Net = Gross − Tare auto */
+    const recalc=()=>{ const g=+pval('rcGross')||0, t=+pval('rcTare')||0, net=document.getElementById('rcNet'); if(net && !net.dataset.touched) net.value=Math.max(g-t,0).toFixed(3); };
+    ['rcGross','rcTare'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',recalc); });
+    const netEl=document.getElementById('rcNet'); if(netEl) netEl.addEventListener('input',()=>{ netEl.dataset.touched='1'; });
+  });
+}
+function doSaveReceiving(){ if(!window._rcData)return; busy('saveRc');
+  api('saveReceiving',{senNo:window._rcData.senNo,receiverName:pval('rcBy'),
+    factoryGross:+pval('rcGross')||0,factoryTare:+pval('rcTare')||0,factoryNet:+pval('rcNet')||0,partyNet:+pval('rcPartyNet')||0,
+    remarks:pval('rcRem')}).then(r=>{toast('Material received — '+r.grnNo);go('p2p_payment');}).catch(err=>toast(err.message||'Failed',true)); }
 
 /* ---- Material Return ---- */
-function getSENsForReturn(){ return getSENs(SEN_STATUS.QC_REJECTED); }
-function saveReturn(p){
-  const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
-  if(sen.Status!==SEN_STATUS.QC_REJECTED) throw new Error('Return allowed only for QC Reject.');
-  const pr=nextNumber_('PurchaseReturn','PRNo','PRN');
-  append_('PurchaseReturn',{PRNo:pr,SENNo:p.senNo,PONo:sen.PONo,ReturnDate:new Date(),Reason:p.reason||'',Status:'Returned'});
-  updateWhere_('SEN','SENNo',p.senNo,{Status:SEN_STATUS.RETURNED});
-  recomputePOStatus_(sen.PONo);   // rejected qty reopens for re-supply
-  fmsStep_('FMS_P2P_Inbound','SENNo',p.senNo,'Return',new Date(),null,null,'Done',{ReturnReason:p.reason||''});
-  return {prNo:pr};
+function renderMatReturn(arg){
+  view.innerHTML=head('Material Return','Return QC-rejected material to the supplier','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="rtSEN" placeholder="Search SEN…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="rtForm"></div>`;
+  api('getSENsForReturn').then(list=>{
+    if(!list.length)document.getElementById('rtForm').innerHTML='<div class="empty">No QC-rejected gate entries to return. Only Reject reaches here.</div>';
+    makeCombo(document.getElementById('rtSEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadRt(s.SENNo));
+    if(arg)loadRt(arg);
+  });
 }
+function loadRt(senNo){
+  api('getSENSheet',senNo).then(d=>{ if(!d)return; window._rtData=d;
+    document.getElementById('rtForm').innerHTML=`${senCard(d)}<div class="field"><label>Return Reason</label><textarea class="inp" id="rtReason" placeholder="Why the material was rejected…"></textarea></div><button class="btn btn-primary" id="saveRt">${I.check}Confirm Material Return</button>`;
+    document.getElementById('saveRt').onclick=doSaveReturn;
+  });
+}
+function doSaveReturn(){ if(!window._rtData)return; busy('saveRt'); api('saveReturn',{senNo:window._rtData.senNo,reason:pval('rtReason')}).then(r=>{toast('Material returned — '+r.prNo);go('p2p_polist');}).catch(err=>toast(err.message||'Failed',true)); }
 
 /* ---- Payment ---- */
-function getSENsForPayment(){
-  const paid={}; readAll_('Payment').forEach(pm=>paid[pm.SENNo]=(paid[pm.SENNo]||0)+(Number(pm.Amount)||0));
-  return readAll_('SEN').filter(s=>s.Status===SEN_STATUS.RECEIVED||s.Status===SEN_STATUS.PAID)
-    .map(s=>{ const sh=getSENSheet(s.SENNo); const payable=Math.max((sh.value||0)-(sh.deduction||0),0); const pd=paid[s.SENNo]||0;
-      return {SENNo:s.SENNo,PONo:s.PONo,SupplierName:s.SupplierName,payable:payable,paid:pd,outstanding:Math.max(payable-pd,0)}; })
-    .filter(x=>x.outstanding>0);
-}
-function savePayment(p){
-  const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
-  const hasGRN=readAll_('Receiving').some(r=>r.SENNo===p.senNo);
-  if(!hasGRN) throw new Error('Pehle Material Received (GRN) karein, uske baad payment.');
-  const payNo=nextNumber_('Payment','PayNo','PAY');
-  append_('Payment',{PayNo:payNo,PONo:sen.PONo,SENNo:p.senNo,SupplierName:sen.SupplierName,Amount:Number(p.amount)||0,PayDate:new Date(),PaymentMode:p.paymentMode||'',RefNo:p.refNo||'',Remarks:p.remarks||'',CreatedAt:new Date()});
-  if(!getSENsForPayment().some(x=>x.SENNo===p.senNo)) updateWhere_('SEN','SENNo',p.senNo,{Status:SEN_STATUS.PAID});
-  fmsStep_('FMS_P2P_PO','PONo',sen.PONo,'Pay',new Date(),null);
-  return {payNo:payNo};
-}
-
-function getP2PDashboard(){
-  const pos=readAll_('PO'), sens=readAll_('SEN'); const cntSEN=s=>sens.filter(x=>x.Status===s).length;
-  return { totalPO:pos.length,
-    poOpen:pos.filter(p=>[PO_STATUS.DRAFT,PO_STATUS.SENT,PO_STATUS.PARTIAL].indexOf(p.Status)>-1).length,
-    pendingQC:cntSEN(SEN_STATUS.PENDING_QC), toReceive:cntSEN(SEN_STATUS.QC_PASSED),
-    toReturn:cntSEN(SEN_STATUS.QC_REJECTED), toPay:getSENsForPayment().length };
-}
-
-
-
-
-
-
-
-
-/* ================= DASHBOARD V2 (pipeline + charts) ================= */
-function dashMonthKey_(d){ const t=(d instanceof Date)?d:new Date(d); return isNaN(t)?null:{y:t.getFullYear(),m:t.getMonth(),w:Math.min(Math.floor((t.getDate()-1)/7),4)}; }
-/* dateCols: pehla bhara hua date use hota hai — reporting Order Date se, CreatedAt sirf fallback */
-function dashSeries_(rows, dateCols, valCol){
-  if(typeof dateCols==='string') dateCols=[dateCols];
-  const yr=new Date().getFullYear();
-  const monthly=Array.from({length:12},()=>({count:0,value:0}));
-  const weekly=Array.from({length:12},()=>[0,0,0,0,0]);
-  rows.forEach(function(r){
-    let k=null;
-    for(const dc of dateCols){ if(r[dc]){ k=dashMonthKey_(r[dc]); if(k) break; } }
-    if(!k||k.y!==yr) return;
-    const v=Number(r[valCol])||0;
-    monthly[k.m].count++; monthly[k.m].value+=v; weekly[k.m][k.w]+=v;
+function renderPayment(arg){
+  view.innerHTML=head('Payment','Pay suppliers for received material','Purchases')+`
+    <div class="field"><label>SEN Number <span class="rq">*</span></label><div class="cmb"><input class="inp" id="pySEN" placeholder="Search SEN…" autocomplete="off"><div class="cmb-list"></div></div></div>
+    <div id="pyForm"></div>`;
+  api('getSENsForPayment').then(list=>{
+    window._pyList=list;
+    if(!list.length)document.getElementById('pyForm').innerHTML='<div class="empty">No received SENs with an outstanding balance.</div>';
+    makeCombo(document.getElementById('pySEN'),list,x=>x.SENNo+' — '+x.PONo+' · '+x.SupplierName,s=>loadPy(s.SENNo));
+    if(arg)loadPy(arg);
   });
-  return {monthly:monthly, weekly:weekly, year:yr};
 }
-function getO2CDashV2(){
-  const orders=readAll_('Orders'), scheds=readAll_('Schedule'), plans=readAll_('Planning');
-  const gates=readAll_('GateEntry'), loads=readAll_('LoadItems'), invs=readAll_('Invoice');
-  const gouts=readAll_('GateOut'), pods=readAll_('POD'), podItems=readAll_('PODItems');
-  const rets=readAll_('Returns'), colls=readAll_('Collection');
-  const has=function(arr,col,val){ return arr.some(function(x){ return String(x[col])===String(val); }); };
-  const CLOSED=[ORDER_STATUS.COLLECTED,'Closed'];
-  const p={};
-  p.total=orders.length;
-  p.schedule=orders.filter(function(o){ return !has(scheds,'OrderNo',o.OrderNo) && CLOSED.indexOf(o.Status)<0; }).length;
-  p.planned=plans.filter(function(pl){ return !has(gates,'PlanNo',pl.PlanNo); }).length;
-  p.arrived=gates.filter(function(g){ return !has(gouts,'GateEntryNo',g.GateEntryNo); }).length;   // vehicles inside premises
-  p.loading=gates.filter(function(g){ return !has(loads,'GateEntryNo',g.GateEntryNo); }).length;   // waiting to load
-  p.invoice=gates.filter(function(g){ return has(loads,'GateEntryNo',g.GateEntryNo) && !has(invs,'GateEntryNo',g.GateEntryNo); }).length;   // loaded, awaiting invoice
-  p.gateout=gates.filter(function(g){ return has(invs,'GateEntryNo',g.GateEntryNo) && !has(gouts,'GateEntryNo',g.GateEntryNo); }).length;
-  p.pod=gates.filter(function(g){ return has(gouts,'GateEntryNo',g.GateEntryNo) && !has(pods,'GateEntryNo',g.GateEntryNo); }).length;
-  p.rejected=podItems.filter(function(x){ return (Number(x.RejectedQty)||0)>0; }).length;
-  p.returnGate=pods.filter(function(x){ return podItems.some(function(pi){ return pi.PODNo===x.PODNo && (Number(pi.RejectedQty)||0)>0; }) && !has(rets,'GateEntryNo',x.GateEntryNo); }).length;
-  p.returnsRecv=rets.filter(function(r){ return r.Status==='Received'; }).length;
-  p.collection=orders.filter(function(o){ return o.Status===ORDER_STATUS.DELIVERED || (has(invs,'OrderNo',o.OrderNo) && CLOSED.indexOf(o.Status)<0); }).length;
-  p.closed=orders.filter(function(o){ return CLOSED.indexOf(o.Status)>=0; }).length;
-  const donutPending=orders.length-p.closed;
-  return { pipeline:p, series:dashSeries_(orders,['OrderDate','CreatedAt'],'TotalValue'), donut:{pending:donutPending, closed:p.closed} };
+function loadPy(senNo){
+  api('getSENSheet',senNo).then(d=>{ if(!d)return;
+    const info=(window._pyList||[]).find(x=>x.SENNo===senNo)||{}; window._pyData={senNo:senNo};
+    document.getElementById('pyForm').innerHTML=`${senCard(d)}
+      <div class="card" style="margin-bottom:12px"><div class="card-p"><div class="srow">Payable <b class="tnum">${inr(info.payable||0)}</b></div><div class="srow">Already Paid <b class="tnum">${inr(info.paid||0)}</b></div><div class="srow">Outstanding <b class="tnum" style="color:var(--indigo)">${inr(info.outstanding||0)}</b></div></div></div>
+      <div class="grid2"><div class="field"><label>Amount <span class="rq">*</span></label><input class="inp tnum" type="number" id="pyAmt" value="${info.outstanding||0}"></div><div class="field"><label>Mode</label><select class="sel" id="pyMode"><option>NEFT</option><option>RTGS</option><option>Cheque</option><option>Cash</option><option>UPI</option></select></div></div>
+      <div class="field"><label>Reference No.</label><input class="inp" id="pyRef"></div>
+      <button class="btn btn-primary" id="savePy">${I.check}Record Payment</button>`;
+    document.getElementById('savePy').onclick=doSavePayment;
+  });
 }
-function getP2PDashV2(){
-  const pos=readAll_('PO'), sens=readAll_('SEN'), pays=readAll_('Payment'), prs=readAll_('PurchaseReturn');
-  const has=function(arr,col,val){ return arr.some(function(x){ return String(x[col])===String(val); }); };
-  const p={};
-  p.total=pos.length;
-  p.draft=pos.filter(function(x){ return x.Status===PO_STATUS.DRAFT; }).length;
-  p.awaitingMaterial=pos.filter(function(x){ return x.Status===PO_STATUS.SENT || x.Status===PO_STATUS.PARTIAL; }).length;
-  p.qc=sens.filter(function(s){ return s.Status===SEN_STATUS.PENDING_QC; }).length;
-  p.recv=sens.filter(function(s){ return s.Status===SEN_STATUS.QC_ACCEPTED || s.Status===SEN_STATUS.QC_DEDUCTION; }).length;
-  p.returns=sens.filter(function(s){ return s.Status===SEN_STATUS.QC_REJECTED; }).length;
-  p.returned=prs.length;
-  p.payment=sens.filter(function(s){ return s.Status===SEN_STATUS.RECEIVED; }).length;
-  p.closed=pos.filter(function(x){ return x.Status===PO_STATUS.RECEIVED || x.Status===PO_STATUS.CLOSED; }).length;
-  return { pipeline:p, series:dashSeries_(pos,['PODate','CreatedAt'],'TotalValue'), donut:{pending:p.total-p.closed, closed:p.closed} };
-}
+function doSavePayment(){ if(!window._pyData)return; const amt=+pval('pyAmt')||0; if(amt<=0)return toast('Enter an amount',true); busy('savePy'); api('savePayment',{senNo:window._pyData.senNo,amount:amt,paymentMode:pval('pyMode'),refNo:pval('pyRef')}).then(r=>{toast('Payment recorded — '+r.payNo);go('p2p_payment');}).catch(err=>toast(err.message||'Failed',true)); }
 
-/* ---- Storage layer overrides (replace Sheets I/O; domain logic below is untouched) ---- */
-function invalidate_(){ }
-function xcGet_(){ return null; } function xcPut_(){ } function xcBust_(){ }
-function ss_(){ return null; }
-function getSheet_(name){ throw new Error('not used'); }
-function readAll_(name){ return SBStore.rows(name).map(function(r){ var o={}; for(var k in r) if(k!=='id') o[k]=r[k]; return o; }); }
-function append_(name,obj){ var row={}; (SHEETS[name]||Object.keys(obj)).forEach(function(h){ row[h]=obj[h]!==undefined?obj[h]:''; });
-  SBStore.rows(name).push(row); SBStore.push({kind:'insert',t:name,rows:[row]}); }
-function appendMany_(name,objs){ if(!objs||!objs.length) return; var rows=objs.map(function(o){ var row={}; (SHEETS[name]||Object.keys(o)).forEach(function(h){ row[h]=o[h]!==undefined?o[h]:''; }); return row; });
-  Array.prototype.push.apply(SBStore.rows(name),rows); SBStore.push({kind:'insert',t:name,rows:rows}); }
-function updateWhere_(name,col,val,updates){ SBStore.rows(name).forEach(function(r){ if(String(r[col])===String(val)) Object.keys(updates).forEach(function(k){ r[k]=updates[k]; }); });
-  SBStore.push({kind:'update',t:name,col:col,val:val,set:updates}); }
-function deleteWhere_(name,col,val){ var a=SBStore.rows(name); for(var i=a.length-1;i>=0;i--){ if(String(a[i][col])===String(val)) a.splice(i,1); }
-  SBStore.push({kind:'delete',t:name,col:col,val:val}); }
-
-/* ---- File uploads → Supabase Storage bucket "uploads" ---- */
-function uploadFile_(base64, name, mime){
-  try{
-    var safe=String(name||'file').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-80);
-    var path=new Date().toISOString().slice(0,10)+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+safe;
-    SBStore.push({kind:'upload', path:path, base64:base64, mime:mime||'application/octet-stream'});
-    return String(window.SUPABASE_URL||'').trim().replace(/\/+$/,'')+'/storage/v1/object/public/uploads/'+path;
-  }catch(e){ console.error('[upload]',e); return ''; }
-}
-
-/* ---- FMS storage over tables (banded sheets are rendered by the Sheets mirror, not here) ---- */
-function fmsEnsure_(){ }
-function fmsReadAll_(name){ return readAll_(name); }
-function fmsAppend_(name,obj){ append_(name,obj); }
-function fmsFind_(name,keyCol,keyVal){ var a=SBStore.rows(name); for(var i=0;i<a.length;i++){ if(String(a[i][keyCol])===String(keyVal)) return i; } return -1; }
-function fmsUpdate_(name,keyCol,keyVal,updates){ if(fmsFind_(name,keyCol,keyVal)<0) return false; updateWhere_(name,keyCol,keyVal,updates); return true; }
-function fmsLog_(where,err){ try{ console.error('[FMS]',where,err); }catch(e){} }
-
-
-
-/* ---- API dispatcher used by the app ---- */
-var SB_FNS={getPOLifecycle:getPOLifecycle,saveSupplier:saveSupplier,saveRawMaterial:saveRawMaterial,deleteSupplier:deleteSupplier,deleteRawMaterial:deleteRawMaterial,getReportColumns:getReportColumns,emailExists:emailExists,resetPasswordWithOtp:resetPasswordWithOtp,authenticate:authenticate,getLoginRoles:getLoginRoles,updateUser:updateUser,saveUserPermissions:saveUserPermissions,bulkImport:bulkImport,getBulkTemplate:getBulkTemplate,getO2CDashV2:getO2CDashV2,getP2PDashV2:getP2PDashV2,deleteSKU:deleteSKU,deleteTransporter:deleteTransporter,deleteUser:deleteUser,deleteVendor:deleteVendor,doGet:doGet,getBackendVersion:getBackendVersion,getBootstrap:getBootstrap,getCollection:getCollection,getCollectionOrders:getCollectionOrders,getCurrentUser:getCurrentUser,getDashboard:getDashboard,getDispatchPlanned:getDispatchPlanned,getFMSO2C:getFMSO2C,getFMSO2CDispatch:getFMSO2CDispatch,getFMSO2COrder:getFMSO2COrder,getFMSP2P:getFMSP2P,getFMSP2PInbound:getFMSP2PInbound,getFMSP2PPO:getFMSP2PPO,getGateEntries:getGateEntries,getInvoiceSheet:getInvoiceSheet,getLoadingSheet:getLoadingSheet,getMasters:getMasters,getOrderDetail:getOrderDetail,getOrderItemsFor:getOrderItemsFor,getOrders:getOrders,getP2PDashboard:getP2PDashboard,getPODSheet:getPODSheet,getPODetail:getPODetail,getPOSheet:getPOSheet,getPOs:getPOs,getPOsForGate:getPOsForGate,getPendingDispatch:getPendingDispatch,getRejectedItems:getRejectedItems,getReport:getReport,getReturnFlags:getReturnFlags,getReturnPending:getReturnPending,getReturnsToReceive:getReturnsToReceive,getSENSheet:getSENSheet,getSENs:getSENs,getSENsForPayment:getSENsForPayment,getSENsForQC:getSENsForQC,getSENsForReceiving:getSENsForReceiving,getSENsForReturn:getSENsForReturn,getSchedulableOrders:getSchedulableOrders,getScheduleSheet:getScheduleSheet,getUsers:getUsers,poItemsFor:poItemsFor,saveCollection:saveCollection,saveGateEntry:saveGateEntry,saveGateEntryIn:saveGateEntryIn,saveGateOut:saveGateOut,saveInvoice:saveInvoice,saveLoading:saveLoading,saveOrder:saveOrder,savePO:savePO,savePOD:savePOD,savePayment:savePayment,savePlanning:savePlanning,saveQC:saveQC,saveReceiving:saveReceiving,saveReturn:saveReturn,saveReturnGateEntry:saveReturnGateEntry,saveReturnReceived:saveReturnReceived,saveSKU:saveSKU,saveSchedule:saveSchedule,saveTransporter:saveTransporter,saveUser:saveUser,saveVendor:saveVendor,sendPO:sendPO};
-
-var SBAPI={
-  ready:null,
-  init:function(){ if(!this.ready) this.ready=SBStore.loadAll(); return this.ready; },
-  call:async function(fn,payload){
-    await SBAPI.init();
-    if(typeof SB_FNS[fn]!=='function') throw new Error('Unknown API: '+fn);
-    var result=SB_FNS[fn](payload);   // runs against memory — instant
-    SBStore.flush();                  // writes drain in the background; screen doesn't wait
-    return result;
-  },
-  refresh:function(){ this.ready=SBStore.loadAll(); return this.ready; }
+/* ---------- MASTERS ---------- */
+let masterTab='Vendor';
+const MASTER_CFG={
+  Vendor:{fn:'saveVendor',delFn:'deleteVendor',key:'vendors',idCol:'VendorCode',req:['VendorCode','VendorName'],cols:['VendorCode','VendorName','ContactPerson','Mobile','GST','CreditDays','Address']},
+  SKU:{fn:'saveSKU',delFn:'deleteSKU',key:'skus',idCol:'SKUCode',req:['SKUCode','SKUName'],cols:['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate']},
+  Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']},
+  Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','BrokerName','Email','ContactPerson','Mobile','GST','CreditDays','Address']},
+  'Raw Material':{fn:'saveRawMaterial',delFn:'deleteRawMaterial',key:'rawmaterials',idCol:'RMCode',req:['RMCode','RMName'],cols:['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate']},
+  'Packing Material':{fn:'savePackingMaterial',delFn:'deletePackingMaterial',key:'packingmaterials',idCol:'PMCode',req:['PMCode','PMName'],cols:['PMCode','PMName','Category','UOM','GSTPercent','Rate','MOQ','ReorderLevel','CurrentStock']}
 };
-window.SBAPI=SBAPI;
-/* Background sync: refresh only when idle (no queued writes), the tab is visible, and
- * the user isn't mid-typing. Keeps multi-user data fresh without causing lag. */
-setInterval(function(){
-  if(!SBStore.isLoaded()) return;
-  if(SBStore.pending()>0) return;                                  // never fight with in-flight writes
-  if(typeof document!=='undefined' && document.hidden) return;      // tab in background
-  SBStore.loadAll().catch(function(){});
-}, 300000);
-/* Warn if the browser is closed while writes are still draining. */
-if(typeof window!=='undefined' && window.addEventListener){
-  window.addEventListener('beforeunload', function(e){
-    if(SBStore.pending()>0){ e.preventDefault(); e.returnValue=''; return ''; }
+function masterFields(tab){
+  if(tab==='Vendor') return `<div class="grid2">
+    <div class="field"><label>Vendor Code <span class="rq">*</span></label><input class="inp" id="mf_VendorCode" placeholder="VND-0000"></div>
+    <div class="field"><label>Vendor Name <span class="rq">*</span></label><input class="inp" id="mf_VendorName" placeholder="Company name"></div>
+    <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
+    <div class="field"><label>Mobile</label><input class="inp mob10" id="mf_Mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+    <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
+    <div class="field"><label>Payment Terms (Credit Days)</label><input class="inp" type="number" id="mf_CreditDays" placeholder="e.g. 30"></div>
+    </div><div class="field"><label>Address</label><textarea class="inp" id="mf_Address" placeholder="Street, city"></textarea></div>`;
+  if(tab==='SKU') return `<div class="grid2">
+    <div class="field"><label>SKU Code <span class="rq">*</span></label><input class="inp" id="mf_SKUCode" placeholder="SKU-0000"></div>
+    <div class="field"><label>SKU Name <span class="rq">*</span></label><input class="inp" id="mf_SKUName"></div>
+    <div class="field"><label>Brand</label><input class="inp" id="mf_Brand"></div>
+    <div class="field"><label>Category</label><input class="inp" id="mf_Category"></div>
+    <div class="field"><label>UOM</label><input class="inp" id="mf_UOM" placeholder="Kg / Nos / Ton"></div>
+    <div class="field"><label>GST %</label><input class="inp" type="number" id="mf_GSTPercent" value="18"></div>
+    <div class="field"><label>Rate</label><input class="inp" type="number" id="mf_Rate" placeholder="0"></div>
+    </div>`;
+  if(tab==='Supplier') return `<div class="grid2">
+    <div class="field"><label>Supplier Code <span class="rq">*</span></label><input class="inp" id="mf_SupplierCode" placeholder="SUP-0000"></div>
+    <div class="field"><label>Supplier Name <span class="rq">*</span></label><input class="inp" id="mf_SupplierName" placeholder="Company name"></div>
+    <div class="field"><label>Broker Name</label><input class="inp" id="mf_BrokerName" placeholder="Broker / agent (optional)"></div>
+    <div class="field"><label>Email ID</label><input class="inp" id="mf_Email" type="email" placeholder="supplier@company.com"></div>
+    <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
+    <div class="field"><label>Mobile</label><input class="inp mob10" id="mf_Mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+    <div class="field"><label>GST Number</label><input class="inp" id="mf_GST" placeholder="22ABCDE1234F1Z5"></div>
+    <div class="field"><label>Payment Terms (Credit Days)</label><input class="inp" type="number" id="mf_CreditDays" placeholder="e.g. 30"></div>
+    </div><div class="field"><label>Address</label><textarea class="inp" id="mf_Address" placeholder="Street, city"></textarea></div>`;
+  if(tab==='Packing Material') return `<div class="grid2">
+    <div class="field"><label>PM Code <span class="rq">*</span></label><input class="inp" id="mf_PMCode" placeholder="PM-0000"></div>
+    <div class="field"><label>PM Name <span class="rq">*</span></label><input class="inp" id="mf_PMName" placeholder="PP Bag 50 KG"></div>
+    <div class="field"><label>Category</label><input class="inp" id="mf_Category" placeholder="Bags / Thread / Tape"></div>
+    <div class="field"><label>UOM</label><input class="inp" id="mf_UOM" placeholder="Nos / Kg / Roll"></div>
+    <div class="field"><label>Rate</label><input class="inp tnum" type="number" id="mf_Rate" placeholder="0"></div>
+    <div class="field"><label>GST %</label><input class="inp tnum" type="number" id="mf_GSTPercent" value="18"></div>
+    <div class="field"><label>MOQ (min order qty)</label><input class="inp tnum" type="number" id="mf_MOQ" placeholder="0"></div>
+    <div class="field"><label>Reorder Level</label><input class="inp tnum" type="number" id="mf_ReorderLevel" placeholder="0"></div>
+    <div class="field"><label>Current Stock</label><input class="inp tnum" type="number" id="mf_CurrentStock" placeholder="0"></div>
+    </div>`;
+  if(tab==='Raw Material') return `<div class="grid2">
+    <div class="field"><label>Raw Material Code <span class="rq">*</span></label><input class="inp" id="mf_RMCode" placeholder="RM-0000"></div>
+    <div class="field"><label>Raw Material Name <span class="rq">*</span></label><input class="inp" id="mf_RMName"></div>
+    <div class="field"><label>Brand</label><input class="inp" id="mf_Brand"></div>
+    <div class="field"><label>Category</label><input class="inp" id="mf_Category"></div>
+    <div class="field"><label>UOM</label><input class="inp" id="mf_UOM" placeholder="Kg / Nos / Ton"></div>
+    <div class="field"><label>GST %</label><input class="inp" type="number" id="mf_GSTPercent" value="18"></div>
+    <div class="field"><label>Rate</label><input class="inp" type="number" id="mf_Rate" placeholder="0"></div>
+    </div>`;
+  return `<div class="grid2">
+    <div class="field"><label>Transporter Name <span class="rq">*</span></label><input class="inp" id="mf_TransporterName"></div>
+    <div class="field"><label>Contact Number</label><input class="inp mob10" id="mf_ContactNumber" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+    </div>`;
+}
+function renderMasters(){
+  const m=STATE.masters;
+  const seg=['Vendor','SKU','Transporter','Supplier','Raw Material','Packing Material'].map(t=>`<button class="${t===masterTab?'on':''}" data-mtab="${t}">${t}</button>`).join('');
+  let body='';
+  if(masterTab==='Vendor') body=m.vendors.map(v=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#16A34A,#22C55E)">${(v.VendorName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${v.VendorName}</div><div class="b">${v.VendorCode} · ${v.GST||'—'}</div></div><button class="row-del" data-mdel="${v.VendorCode}" title="Remove vendor">${I.trash}</button></div>`).join('');
+  else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%${s.UOM?' · '+s.UOM:''}</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName}${s.BrokerName?' <span class="uomtag" style="background:rgba(124,58,237,.12);color:#7C3AED;border-color:rgba(124,58,237,.25)">Broker: '+s.BrokerName+'</span>':''}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.Email?' · '+s.Email:''}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Packing Material') body=(m.packingmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0284C7,#38BDF8)">${I.box}</div><div class="um"><div class="a">${r.PMName}</div><div class="b">${r.PMCode} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''} · stock ${(Number(r.CurrentStock)||0).toLocaleString('en-IN')}${r.MOQ?' · MOQ '+r.MOQ:''}</div></div><button class="row-del" data-mdel="${r.PMCode}" title="Remove">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Raw Material') body=(m.rawmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#EA580C,#FB923C)">${I.box}</div><div class="um"><div class="a">${r.RMName}</div><div class="b">${r.RMCode} · ${r.Brand||'—'} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''}</div></div><button class="row-del" data-mdel="${r.RMCode}" title="Remove raw material">${I.trash}</button></div>`).join('');
+  else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
+  view.innerHTML=head('Master Data','Vendors, SKUs and transporters','Master Data')+`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div class="seg" style="margin:0">${seg}</div>
+      <div class="btn-row" style="margin:0">
+        <button class="btn btn-primary btn-sm" id="bulkBtn">⬆ Bulk Upload</button>
+        <button class="btn btn-ghost btn-sm" id="addMaster">${I.plus}Add ${masterTab}</button>
+      </div>
+    </div>
+    <div id="mFormWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 4px"><h3>Add ${masterTab}</h3></div>
+      <div id="mFields"></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-sm" id="saveMaster">${I.check}Save ${masterTab}</button>
+        <button class="btn btn-ghost btn-sm" id="cancelMaster">Cancel</button>
+      </div>
+    </div></div></div>
+    <div id="bulkWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 6px"><h3>Bulk Upload — ${masterTab}</h3>
+        <a href="#" id="dlTemplate">Sample file download</a></div>
+      <div class="bulk-drop" id="bulkDrop">
+        <div style="font-size:26px">📄</div>
+        <div style="font-weight:700;margin-top:6px">Excel ya CSV file yahan chuno</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:3px">.xlsx, .xls ya .csv — pehli row me column names honi chahiye</div>
+      </div>
+      <input type="file" id="bulkFile" accept=".csv,.xlsx,.xls" style="display:none">
+      <div class="bulk-res" id="bulkRes"></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-primary btn-sm" id="bulkGo" disabled>${I.check}Import</button>
+        <button class="btn btn-ghost btn-sm" id="bulkCancel">Close</button>
+      </div>
+    </div></div></div>
+    ${body||'<div class="empty">No records yet.</div>'}`;
+  const wrap=document.getElementById('mFormWrap'), addBtn=document.getElementById('addMaster');
+  addBtn.onclick=()=>{ document.getElementById('mFields').innerHTML=masterFields(masterTab); wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
+  document.getElementById('cancelMaster').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
+  document.getElementById('saveMaster').onclick=doSaveMaster;
+  /* ---- bulk upload wiring ---- */
+  const bw=document.getElementById('bulkWrap');
+  document.getElementById('bulkBtn').onclick=()=>{ bw.style.display='block'; BULK_ROWS=[]; document.getElementById('bulkRes').innerHTML=''; document.getElementById('bulkGo').disabled=true; bw.scrollIntoView({behavior:'smooth',block:'center'}); };
+  document.getElementById('bulkCancel').onclick=()=>{ bw.style.display='none'; };
+  document.getElementById('bulkDrop').onclick=()=>document.getElementById('bulkFile').click();
+  document.getElementById('bulkFile').onchange=e=>readBulkFile(e.target.files[0]);
+  document.getElementById('bulkGo').onclick=doBulkImport;
+  document.getElementById('dlTemplate').onclick=e=>{ e.preventDefault(); downloadTemplate(); };
+}
+/* ================= BULK UPLOAD ================= */
+const BULK_TABLE={Vendor:'VendorMaster',SKU:'SKUMaster',Transporter:'TransporterMaster',Supplier:'SupplierMaster','Raw Material':'RawMaterialMaster','Packing Material':'PackingMaterialMaster'};
+const BULK_COLS={
+  VendorMaster:['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
+  SKUMaster:['SKUCode','SKUName','Brand','Category','UOM','Rate','GSTPercent'],
+  TransporterMaster:['TransporterCode','TransporterName','ContactPerson','ContactNumber','Address'],
+  SupplierMaster:['SupplierCode','SupplierName','BrokerName','Email','Address','ContactPerson','Mobile','GST','CreditDays'],
+  RawMaterialMaster:['RMCode','RMName','Brand','Category','UOM','Rate','GSTPercent'],
+  PackingMaterialMaster:['PMCode','PMName','Category','UOM','Rate','GSTPercent','MOQ','ReorderLevel','CurrentStock']
+};
+const BULK_REQ={VendorMaster:['VendorCode','VendorName'],SKUMaster:['SKUCode','SKUName'],TransporterMaster:['TransporterCode','TransporterName'],SupplierMaster:['SupplierCode','SupplierName'],RawMaterialMaster:['RMCode','RMName'],PackingMaterialMaster:['PMCode','PMName']};
+let BULK_ROWS=[];
+function downloadTemplate(){
+  const t=BULK_TABLE[masterTab], cols=BULK_COLS[t];
+  const sample=cols.map(c=>BULK_REQ[t].indexOf(c)>-1?('SAMPLE-'+c):'').join(',');
+  const csv=cols.join(',')+'\n'+sample+'\n';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=masterTab+'-template.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+function readBulkFile(file){
+  if(!file) return;
+  const res=document.getElementById('bulkRes'), go=document.getElementById('bulkGo');
+  res.innerHTML='Reading…'; go.disabled=true; BULK_ROWS=[];
+  const t=BULK_TABLE[masterTab], cols=BULK_COLS[t];
+  const finish=rows=>{
+    if(!rows.length){ res.innerHTML='<span class="er">File khaali hai ya padhi nahi ja saki.</span>'; return; }
+    const found=Object.keys(rows[0]||{});
+    const missing=BULK_REQ[t].filter(rq=>found.indexOf(rq)<0);
+    if(missing.length){ res.innerHTML='<span class="er">Ye column(s) file me nahi mile: <b>'+missing.join(', ')+'</b><br>Sample file download karke usi format me bhejein.</span>'; return; }
+    BULK_ROWS=rows;
+    res.innerHTML='<span class="ok">✓ '+rows.length+' rows padhi gayi.</span> Columns: '+found.filter(f=>cols.indexOf(f)>-1).join(', ')+
+      '<br><span style="color:var(--t3)">Pehli row: '+cols.slice(0,3).map(cn=>cn+'=' + (rows[0][cn]||'—')).join(' · ')+'</span>';
+    go.disabled=false;
+  };
+  const name=(file.name||'').toLowerCase();
+  if(name.endsWith('.csv')){
+    const r=new FileReader();
+    r.onload=()=>finish(parseCSV(r.result));
+    r.onerror=()=>res.innerHTML='<span class="er">File read failed.</span>';
+    r.readAsText(file);
+  } else {
+    if(typeof XLSX==='undefined'){ res.innerHTML='<span class="er">Excel reader load nahi hua. File ko CSV me save karke try karein.</span>'; return; }
+    const r=new FileReader();
+    r.onload=()=>{ try{
+        const wb=XLSX.read(new Uint8Array(r.result),{type:'array'});
+        finish(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}));
+      }catch(err){ res.innerHTML='<span class="er">Excel padhi nahi ja saki: '+err.message+'</span>'; } };
+    r.readAsArrayBuffer(file);
+  }
+}
+function parseCSV(text){
+  const lines=String(text).replace(/\r/g,'').split('\n').filter(l=>l.trim());
+  if(!lines.length) return [];
+  const split=l=>{ const out=[]; let cur='',q=false;
+    for(let i=0;i<l.length;i++){ const ch=l[i];
+      if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else if(ch==='"') q=true; else if(ch===','){ out.push(cur); cur=''; } else cur+=ch; }
+    out.push(cur); return out.map(s=>s.trim()); };
+  const head=split(lines[0]);
+  return lines.slice(1).map(l=>{ const v=split(l), o={}; head.forEach((h,i)=>o[h]=v[i]!==undefined?v[i]:''); return o; });
+}
+function doBulkImport(){
+  if(!BULK_ROWS.length) return;
+  const t=BULK_TABLE[masterTab];
+  busy('bulkGo');
+  api('bulkImport',{table:t,rows:BULK_ROWS}).then(r=>{
+    const res=document.getElementById('bulkRes');
+    res.innerHTML='<span class="ok">✓ '+r.imported+' imported</span>'+
+      (r.duplicates?' · <span style="color:var(--warn)">'+r.duplicates+' duplicate skip kiye</span>':'')+
+      (r.errors&&r.errors.length?'<br><span class="er">'+r.errors.join('<br>')+'</span>':'');
+    toast(r.imported+' '+masterTab+' imported');
+    api('getMasters').then(m=>{ STATE.masters=m; BULK_ROWS=[]; setTimeout(()=>renderMasters(),900); });
+  }).catch(e=>toast(e.message||'Import failed',true));
+}
+function doSaveMaster(){
+  const cfg=MASTER_CFG[masterTab], obj={};
+  cfg.cols.forEach(c=>{ const el=document.getElementById('mf_'+c); if(el) obj[c]= el.type==='number' ? (+el.value||0) : el.value.trim(); });
+  for(const r of cfg.req){ if(!obj[r]){ toast(r.replace(/([A-Z])/g,' $1').trim()+' is required',true); return; } }
+  for(const mc of ['Mobile','ContactNumber']){ if(cfg.cols.indexOf(mc)>-1 && !checkMobileField('mf_'+mc, mc.replace(/([A-Z])/g,' $1').trim(), false)) return; }
+  busy('saveMaster');
+  api(cfg.fn,obj).then(list=>{
+    STATE.masters[cfg.key]=list;
+    toast(masterTab+' added');
+    renderMasters();
+  }).catch(err=>toast(err.message||'Save failed',true));
+}
+function delMaster(key){
+  const cfg=MASTER_CFG[masterTab];
+  askConfirm('Remove this '+masterTab.toLowerCase()+' — “'+key+'”?',()=>{
+    api(cfg.delFn,key).then(list=>{ STATE.masters[cfg.key]=list; toast(masterTab+' removed'); renderMasters(); })
+      .catch(err=>toast(err.message||'Failed',true));
   });
 }
+
+/* ---------- USERS ---------- */
+const USER_ROLES=['Sales','Dispatch Executive','Security','Billing Executive','Accounts','Admin'];
+function renderUsers(){
+  view.innerHTML=head('User Management','Kaun login kar sakta hai aur kis page par kya kar sakta hai','User Management')+`
+    <div id="uFormWrap" style="display:none"><div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 4px"><h3>Add User</h3></div>
+      <div class="grid2">
+        <div class="field"><label>Email <span class="rq">*</span></label><input class="inp" id="uf_Email" type="email" placeholder="person@company.com"></div>
+        <div class="field"><label>Name <span class="rq">*</span></label><input class="inp" id="uf_Name" placeholder="Full name"></div>
+        <div class="field"><label>Role <span class="rq">*</span></label><select class="sel" id="uf_Role">${USER_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+        <div class="field"><label>Password <span class="rq">*</span></label><input class="inp" id="uf_Pw" type="password" placeholder="Min 4 characters"></div>
+      </div>
+      <div class="field"><label>Start with</label><select class="sel" id="uf_Preset">
+        <option value="none">No access (baad me tick karenge)</option>
+        <option value="view">View only — sab pages</option>
+        <option value="edit">View/Edit — sab pages</option>
+      </select></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-sm" id="saveUser">${I.check}Save User</button>
+        <button class="btn btn-ghost btn-sm" id="cancelUser">Cancel</button>
+      </div>
+    </div></div></div>
+    <div class="sec" style="margin-top:2px"><h3>Permissions</h3>
+      <span style="font-size:11.5px;color:var(--t3)">Har cell me chuno: View/Edit · View only · No access</span></div>
+    <div class="pmx-wrap" id="uMatrix"><div class="loading"><div class="spin"></div></div></div>
+    <button class="btn btn-add" id="addUser" style="margin-top:10px">${I.plus}Add User</button>`;
+  const wrap=document.getElementById('uFormWrap'), addBtn=document.getElementById('addUser');
+  addBtn.onclick=()=>{ wrap.style.display='block'; addBtn.style.display='none'; wrap.scrollIntoView({behavior:'smooth',block:'center'}); };
+  document.getElementById('cancelUser').onclick=()=>{ wrap.style.display='none'; addBtn.style.display=''; };
+  document.getElementById('saveUser').onclick=doSaveUser;
+  loadUsers();
+}
+function loadUsers(){
+  api('getUsers').then(list=>{
+    const el=document.getElementById('uMatrix'); if(!el) return;
+    if(!list.length){ el.innerHTML='<div class="empty">No users yet.</div>'; return; }
+    const head1=PERM_GROUPS.map(g=>`<th class="grp" colspan="${g.items.length}">${g.g}</th>`).join('');
+    const head2=PERM_GROUPS.map(g=>g.items.map(i=>`<th>${i[1]}</th>`).join('')).join('');
+    el.innerHTML=`<table class="pmx"><thead>
+      <tr><th class="u" rowspan="2">User</th>${head1}<th rowspan="2">Actions</th></tr>
+      <tr>${head2}</tr></thead><tbody>
+      ${list.map(u=>{
+        const isAdmin=isAdminRole(u.Role);
+        return `<tr data-urow="${u.Email}">
+          <td class="u"><div class="un">${u.Name||u.Email}</div>
+            <div class="ue">${u.Email}</div>
+            <div class="ue">${u.Role}${u.Status!=='Active'?' · <span style="color:var(--err)">Disabled</span>':''}${u.HasPassword?'':' · <span style="color:var(--warn)">No password</span>'}</div>
+            <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">
+              <button class="qbtn" data-uall="edit" data-e="${u.Email}">All Edit</button>
+              <button class="qbtn" data-uall="view" data-e="${u.Email}">All View</button>
+              <button class="qbtn" data-uall="none" data-e="${u.Email}">Clear</button>
+            </div></td>
+          ${PERM_MODULES.map(mid=>{
+            const v=isAdmin?'edit':((u.Permissions&&u.Permissions[mid])||'none');
+            return `<td><select class="psel p-${v}" data-e="${u.Email}" data-m="${mid}" ${isAdmin?'disabled title="Admin ko hamesha full access"':''}>
+              ${PERM_OPTS.map(o=>`<option value="${o[0]}" ${o[0]===v?'selected':''}>${o[1]}</option>`).join('')}</select></td>`;
+          }).join('')}
+          <td><div style="display:flex;gap:5px;flex-wrap:wrap">
+            <button class="rowsave" data-usave="${u.Email}" disabled>Save</button>
+            <button class="qbtn" data-upw="${u.Email}">Password</button>
+            <button class="qbtn" data-utog="${u.Email}" data-st="${u.Status==='Active'?'Disabled':'Active'}">${u.Status==='Active'?'Disable':'Enable'}</button>
+            <button class="row-del" data-udel="${u.Email}" title="Remove user">${I.trash}</button>
+          </div></td></tr>`;
+      }).join('')}</tbody></table>`;
+  }).catch(e=>{ const el=document.getElementById('uMatrix'); if(el) el.innerHTML='<div class="empty">Could not load users. '+(e.message||'')+'</div>'; });
+}
+function markDirty(email){ const b=document.querySelector(`[data-usave="${email}"]`); if(b){ b.disabled=false; b.textContent='Save *'; } }
+function collectPerms(email){
+  const o={}; document.querySelectorAll(`.psel[data-e="${email}"]`).forEach(s=>{ if(s.value!=='none') o[s.dataset.m]=s.value; });
+  return o;
+}
+function savePerms(email){
+  const b=document.querySelector(`[data-usave="${email}"]`); if(b){ b.disabled=true; b.textContent='…'; }
+  api('saveUserPermissions',{email:email,perms:collectPerms(email)})
+    .then(()=>{ toast('Permissions saved'); if(b) b.textContent='Saved'; })
+    .catch(err=>{ toast(err.message||'Failed',true); if(b){ b.disabled=false; b.textContent='Save *'; } });
+}
+async function setUserPw(email){
+  const pw=prompt('New password for '+email+' (min 4 characters):');
+  if(pw===null) return;
+  if(pw.length<4) return toast('Password must be at least 4 characters',true);
+  try{ await api('updateUser',{email:email, pwHash:await pwHash(pw)}); toast('Password updated'); }
+  catch(e){ toast(e.message||'Failed',true); }
+}
+async function doSaveUser(){
+  const Email=document.getElementById('uf_Email').value.trim();
+  const Name=document.getElementById('uf_Name').value.trim();
+  const Role=document.getElementById('uf_Role').value;
+  const pw=document.getElementById('uf_Pw').value||'';
+  const preset=document.getElementById('uf_Preset').value;
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(Email)) return toast('A valid email is required',true);
+  if(!Name) return toast('Name is required',true);
+  if(pw.length<4) return toast('Password must be at least 4 characters',true);
+  const perms={}; if(preset!=='none') PERM_MODULES.forEach(m=>perms[m]=preset);
+  busy('saveUser');
+  try{
+    await api('saveUser',{Email:Email,Name:Name,Role:Role,pwHash:await pwHash(pw),perms:perms});
+    toast('User added'); renderUsers();
+  }catch(err){ toast(err.message||'Save failed',true); }
+}
+function delUser(email){
+  askConfirm('Remove user “'+email+'”?',()=>{
+    api('deleteUser',email).then(()=>{ toast('User removed'); renderUsers(); }).catch(err=>toast(err.message||'Failed',true));
+  });
+}
+
+/* ================= PACKING MATERIAL: STOCK · PR · QUOTATION ================= */
+function renderPMStock(){
+  view.innerHTML=head('PM Stock Report','Packing material ka current stock vs MOQ','Stock Report')+
+    `<div class="btn-row" style="margin-bottom:12px">
+       <button class="btn btn-primary btn-sm" id="stkSave">${I.check}Save stock</button>
+       <button class="btn btn-ghost btn-sm" id="stkPR">Low-stock se PR banao →</button>
+     </div>
+     <div class="psub" style="margin:-6px 2px 12px">Stock abhi manually update hota hai. Aage aapke IMS se automatic aa jayega.</div>
+     <div id="stkTable"><div class="loading"><div class="spin"></div></div></div>`;
+  document.getElementById('stkSave').onclick=doSaveStock;
+  document.getElementById('stkPR').onclick=()=>go('p2p_pr');
+  api('getStockReport').then(rows=>{
+    const el=document.getElementById('stkTable'); if(!el) return;
+    if(!rows.length){ el.innerHTML='<div class="empty">Koi packing material nahi mila — pehle Master Data → Packing Material me add karein.</div>'; return; }
+    window._stkRows=rows;
+    const low=rows.filter(r=>r.LowStock).length;
+    el.innerHTML=(low?`<div class="vo-banner" style="background:var(--warn-bg);color:var(--warn)">⚠ ${low} item low stock par hai — PR banana chahiye</div>`:'')+
+      `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+        <th>Packing Material</th><th>UOM</th><th class="num">Current Stock</th><th class="num">Reorder Level</th><th class="num">MOQ</th><th class="num">Rate</th><th>Status</th></tr></thead>
+      <tbody>${rows.map((r,i)=>`<tr class="${r.LowStock?'lowrow':''}">
+        <td><div class="nm">${r.PMName}</div><div class="cd">${r.PMCode}${r.Category?' · '+r.Category:''}</div></td>
+        <td><span class="uomtag">${r.UOM||'—'}</span></td>
+        <td class="num"><input class="qin" type="number" step="0.001" value="${r.CurrentStock}" data-stk="${i}"></td>
+        <td class="num">${r.ReorderLevel.toLocaleString('en-IN')}</td>
+        <td class="num">${r.MOQ.toLocaleString('en-IN')}</td>
+        <td class="num">${inr(r.Rate)}</td>
+        <td>${r.LowStock?'<span class="badge b-warn"><span class="bd"></span>Low — order '+r.SuggestedQty.toLocaleString('en-IN')+'</span>':'<span class="badge b-ok"><span class="bd"></span>OK</span>'}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }).catch(e=>{ const el=document.getElementById('stkTable'); if(el) el.innerHTML='<div class="empty">'+(e.message||'Load failed')+'</div>'; });
+}
+function doSaveStock(){
+  const rows=(window._stkRows||[]).map((r,i)=>{ const el=document.querySelector(`[data-stk="${i}"]`); return { PMCode:r.PMCode, CurrentStock:el?(+el.value||0):r.CurrentStock }; });
+  if(!rows.length) return;
+  busy('stkSave');
+  api('updateStock',{rows:rows}).then(r=>{ toast(r.updated+' items ka stock update hua'); renderPMStock(); })
+    .catch(e=>toast(e.message||'Failed',true));
+}
+
+/* ---------- PURCHASE REQUISITION ---------- */
+let prLines=[];
+function renderPR(){
+  view.innerHTML=head('Purchase Requisition','Low stock ke hisaab se PR banaiye','Purchase Requisition')+
+    `<div class="card" style="margin-bottom:14px"><div class="card-p">
+      <div class="sec" style="margin:0 0 8px"><h3>New PR</h3>
+        <button class="btn btn-ghost btn-sm" id="prAutoFill">⚡ Low-stock items bharo</button></div>
+      <div class="grid2">
+        <div class="field"><label>PR Date</label><input class="inp" type="date" id="prDate" value="${today()}"></div>
+        <div class="field"><label>Remarks</label><input class="inp" id="prRem" placeholder="Optional"></div>
+      </div>
+      <div id="prLines"></div>
+      <button class="btn btn-add btn-sm" id="prAdd" style="margin-top:6px">${I.plus}Add item</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" id="savePR">${I.check}Generate PR</button></div>
+    </div></div>
+    <div class="sec"><h3>Recent Requisitions</h3></div>
+    <div id="prList"><div class="loading"><div class="spin"></div></div></div>`;
+  prLines=[{pmCode:'',pmName:'',requiredQty:0}];
+  api('getStockReport').then(rows=>{ window._pmList=rows; renderPRLines(); });
+  document.getElementById('prAdd').onclick=()=>{ prLines.push({pmCode:'',pmName:'',requiredQty:0}); renderPRLines(); };
+  document.getElementById('savePR').onclick=doSavePR;
+  document.getElementById('prAutoFill').onclick=()=>{
+    const low=(window._pmList||[]).filter(r=>r.LowStock);
+    if(!low.length){ toast('Abhi koi item low stock par nahi hai'); return; }
+    prLines=low.map(r=>({pmCode:r.PMCode,pmName:r.PMName,requiredQty:r.SuggestedQty}));
+    renderPRLines(); toast(low.length+' low-stock items bhar diye');
+  };
+  loadPRList();
+}
+function renderPRLines(){
+  const wrap=document.getElementById('prLines'); if(!wrap) return;
+  const pm=window._pmList||[];
+  wrap.innerHTML=prLines.map((it,i)=>{
+    const m=pm.find(x=>x.PMCode===it.pmCode)||{};
+    return `<div class="li">
+      <div class="li-top"><div style="flex:1"><div class="cmb"><input class="inp prSkuIn" data-prsku="${i}" placeholder="Search packing material…" value="${it.pmName||''}" style="height:40px;font-size:13.5px;margin-bottom:3px" autocomplete="off"><div class="cmb-list"></div></div>
+        <div class="cd">${it.pmCode||'Code auto-fills'}${m.UOM?' · <b class="uomtag">'+m.UOM+'</b>':''}${m.CurrentStock!==undefined?' · stock '+m.CurrentStock.toLocaleString('en-IN'):''}${m.MOQ?' · MOQ '+m.MOQ.toLocaleString('en-IN'):''}</div></div>
+        <button class="li-del" data-prdel="${i}">${I.trash}</button></div>
+      <div class="li-grid" style="grid-template-columns:1fr 2fr">
+        <div class="f"><label>Required Qty${m.UOM?' ('+m.UOM+')':''}</label><input type="number" value="${it.requiredQty}" data-prf="requiredQty" data-pri="${i}"></div>
+        <div class="f"><label>Remarks</label><input value="${it.remarks||''}" data-prf="remarks" data-pri="${i}"></div>
+      </div></div>`;
+  }).join('');
+  wrap.querySelectorAll('.prSkuIn').forEach(inp=>{ const i=inp.dataset.prsku;
+    makeCombo(inp,pm,x=>x.PMName,m=>{ prLines[i].pmCode=m.PMCode; prLines[i].pmName=m.PMName; if(!prLines[i].requiredQty) prLines[i].requiredQty=m.SuggestedQty||m.MOQ||0; renderPRLines(); }); });
+  wrap.querySelectorAll('[data-prf]').forEach(inp=>inp.addEventListener('input',e=>{
+    const f=e.target.dataset.prf, i=e.target.dataset.pri;
+    prLines[i][f]= f==='requiredQty' ? (+e.target.value||0) : e.target.value; }));
+  wrap.querySelectorAll('[data-prdel]').forEach(b=>b.onclick=()=>{ if(prLines.length>1){ prLines.splice(+b.dataset.prdel,1); renderPRLines(); } });
+}
+function doSavePR(){
+  const items=prLines.filter(l=>l.pmCode && +l.requiredQty>0);
+  if(!items.length) return toast('Kam se kam ek item aur uski qty daaliye',true);
+  if(!notPast('prDate','PR date',true)) return;
+  busy('savePR');
+  api('savePR',{prDate:pval('prDate'),remarks:pval('prRem'),items:items})
+    .then(r=>{ toast('PR bana — '+r.prNo); renderPR(); })
+    .catch(e=>toast(e.message||'Failed',true));
+}
+function loadPRList(){
+  api('getPRs').then(list=>{
+    const el=document.getElementById('prList'); if(!el) return;
+    el.innerHTML=list.length?list.map(p=>`<div class="ocard" data-prgo="${p.PRNo}">
+      <div class="top"><div><div class="oid">${p.PRNo}</div><div class="vend">${p.PRDate} · ${p.RequestedBy}</div></div>
+        <span class="badge ${prBadge(p.Status)}"><span class="bd"></span>${p.Status}</span></div>
+      <div class="bot"><div class="amt tnum">${p.Items} items · ${p.TotalQty.toLocaleString('en-IN')} qty${p.Quotations?' · '+p.Quotations+' quotation(s)':''}</div>
+        <button class="btn btn-ghost btn-sm" data-prquote="${p.PRNo}">Quotations →</button></div></div>`).join('')
+      :'<div class="empty">Abhi koi PR nahi bana.</div>';
+  });
+}
+function prBadge(s){ return s==='Open'?'b-warn':(s==='Quotations Received'?'b-info':(s==='PO Created'?'b-ok':'b-mut')); }
+
+/* ---------- QUOTATIONS ---------- */
+let qLines=[];
+function renderQuotes(arg){
+  view.innerHTML=head('Quotations','Suppliers ke rate daaliye aur compare karke select kijiye','Quotations')+
+    `<div class="field"><label>Purchase Requisition <span class="rq">*</span></label>
+      <select class="sel" id="qPR"><option value="">Select PR…</option></select></div>
+     <div id="qCompare"></div>
+     <div id="qFormWrap" style="display:none"><div class="card" style="margin:14px 0"><div class="card-p">
+       <div class="sec" style="margin:0 0 8px"><h3>Add Quotation</h3></div>
+       <div class="grid2">
+         <div class="field"><label>Supplier <span class="rq">*</span></label><div class="cmb"><input class="inp" id="qSup" placeholder="Search supplier…" autocomplete="off"><div class="cmb-list"></div></div></div>
+         <div class="field"><label>Quote Date</label><input class="inp" type="date" id="qDate" value="${today()}"></div>
+         <div class="field"><label>Valid Until</label><input class="inp" type="date" id="qValid"></div>
+         <div class="field"><label>Delivery Days</label><input class="inp tnum" type="number" id="qDays" placeholder="e.g. 7"></div>
+       </div>
+       <div id="qLines"></div>
+       <div class="field"><label>Remarks</label><input class="inp" id="qRem" placeholder="Optional"></div>
+       <div class="btn-row" style="margin-top:10px">
+         <button class="btn btn-primary btn-sm" id="saveQuote">${I.check}Save quotation</button>
+         <button class="btn btn-ghost btn-sm" id="qCancel">Cancel</button></div>
+     </div></div></div>`;
+  api('getOpenPRs').then(list=>{
+    const s=document.getElementById('qPR'); if(!s) return;
+    s.innerHTML='<option value="">Select PR…</option>'+list.map(p=>`<option value="${p.PRNo}">${p.PRNo} · ${p.PRDate} · ${p.Status}</option>`).join('');
+    if(arg && list.some(p=>p.PRNo===arg)){ s.value=arg; loadCompare(arg); }
+  });
+  document.getElementById('qPR').addEventListener('change',e=>{ if(e.target.value) loadCompare(e.target.value); else { document.getElementById('qCompare').innerHTML=''; document.getElementById('qFormWrap').style.display='none'; } });
+}
+function loadCompare(prNo){
+  api('getQuotationsFor',prNo).then(d=>{
+    window._qData=d;
+    const el=document.getElementById('qCompare'); if(!el) return;
+    const rows=d.prItems;
+    el.innerHTML=`<div class="sec" style="margin-top:14px"><h3>Comparison — ${prNo}</h3>
+        <button class="btn btn-ghost btn-sm" id="qAdd">${I.plus}Add quotation</button></div>`+
+      (d.quotes.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item</th><th class="num">Req Qty</th>
+        ${d.quotes.map(q=>`<th class="num">${q.SupplierName}<div class="cd">${q.QuoteNo}</div></th>`).join('')}</tr></thead>
+        <tbody>${rows.map(it=>`<tr><td><div class="nm">${it.PMName}</div><div class="cd">${it.PMCode} · ${it.UOM}</div></td>
+          <td class="num">${it.RequiredQty.toLocaleString('en-IN')}</td>
+          ${d.quotes.map(q=>{ const qi=q.items.find(x=>x.PMCode===it.PMCode);
+            return `<td class="num">${qi?inr(qi.Rate)+'<div class="cd">'+qi.Qty.toLocaleString('en-IN')+' · GST '+qi.GSTPercent+'%</div>':'—'}</td>`; }).join('')}</tr>`).join('')}
+        <tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Total (incl. GST)</b></td>
+          ${d.quotes.map(q=>`<td class="num"><b>${inr(q.TotalValue)}</b></td>`).join('')}</tr>
+        <tr><td colspan="2">Delivery days</td>${d.quotes.map(q=>`<td class="num">${q.DeliveryDays||'—'}</td>`).join('')}</tr>
+        <tr><td colspan="2">Status</td>${d.quotes.map(q=>`<td class="num"><span class="badge ${q.Status==='Selected'?'b-ok':(q.Status==='Not Selected'?'b-mut':'b-info')}">${q.Status}</span></td>`).join('')}</tr>
+        <tr><td colspan="2"></td>${d.quotes.map(q=>`<td class="num">${q.Status==='Selected'?'<span style="color:var(--ok);font-weight:700">✓ Selected</span>':`<button class="btn btn-primary btn-sm" data-qsel="${q.QuoteNo}">Select this</button>`}</td>`).join('')}</tr>
+        </tbody></table></div>`
+      :'<div class="empty">Is PR par abhi koi quotation nahi aayi.</div>');
+    document.getElementById('qAdd').onclick=()=>openQuoteForm(prNo);
+  });
+}
+function openQuoteForm(prNo){
+  const d=window._qData||{prItems:[]};
+  qLines=d.prItems.map(it=>({pmCode:it.PMCode,pmName:it.PMName,uom:it.UOM,qty:it.RequiredQty,rate:0,gstPercent:18}));
+  document.getElementById('qFormWrap').style.display='block';
+  renderQLines();
+  makeCombo(document.getElementById('qSup'),STATE.masters.suppliers||[],x=>x.SupplierName,s=>{ window._qSup=s; });
+  document.getElementById('saveQuote').onclick=()=>doSaveQuote(prNo);
+  document.getElementById('qCancel').onclick=()=>{ document.getElementById('qFormWrap').style.display='none'; };
+  document.getElementById('qFormWrap').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function renderQLines(){
+  const wrap=document.getElementById('qLines'); if(!wrap) return;
+  wrap.innerHTML=qLines.map((it,i)=>`<div class="li">
+    <div class="li-top"><div style="flex:1"><div class="nm">${it.pmName}</div><div class="cd">${it.pmCode}${it.uom?' · '+it.uom:''}</div></div></div>
+    <div class="li-grid" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="f"><label>Qty${it.uom?' ('+it.uom+')':''}</label><input type="number" value="${it.qty}" data-qf="qty" data-qi="${i}"></div>
+      <div class="f"><label>Rate / ${it.uom||'Unit'}</label><input type="number" step="0.01" value="${it.rate}" data-qf="rate" data-qi="${i}"></div>
+      <div class="f"><label>GST %</label><input type="number" value="${it.gstPercent}" data-qf="gstPercent" data-qi="${i}"></div>
+    </div></div>`).join('');
+  wrap.querySelectorAll('[data-qf]').forEach(inp=>inp.addEventListener('input',e=>{ qLines[e.target.dataset.qi][e.target.dataset.qf]=+e.target.value||0; }));
+}
+function doSaveQuote(prNo){
+  if(!window._qSup) return toast('Supplier select kijiye',true);
+  const items=qLines.filter(l=>+l.qty>0 && +l.rate>0);
+  if(!items.length) return toast('Kam se kam ek item ka qty aur rate daaliye',true);
+  busy('saveQuote');
+  api('saveQuotation',{prNo:prNo,supplierCode:window._qSup.SupplierCode,supplierName:window._qSup.SupplierName,
+    quoteDate:pval('qDate'),validUntil:pval('qValid'),deliveryDays:pval('qDays'),remarks:pval('qRem'),items:items})
+    .then(r=>{ toast('Quotation saved — '+r.quoteNo); window._qSup=null; document.getElementById('qFormWrap').style.display='none'; loadCompare(prNo); })
+    .catch(e=>toast(e.message||'Failed',true));
+}
+
+/* ---------- MORE (mobile) ---------- */
+function renderMore(){
+  const EXCLUDE=['dashboard','orders','create','more'];
+  const tiles=MODULES.filter(m=>allowed(m)&&EXCLUDE.indexOf(m.id)<0);
+  const colByGroup={Operations:'ic-indigo',Finance:'ic-amber',Returns:'ic-red',Purchases:'ic-teal',Admin:'ic-red'};
+  const order=['Operations','Finance','Returns','Purchases','Admin'];
+  const labels={Operations:'Order to Collection',Finance:'Finance',Returns:'Returns',Purchases:'Purchase to Payment',Admin:'Administration'};
+  const groups={}; tiles.forEach(t=>{(groups[t.group||'Other']=groups[t.group||'Other']||[]).push(t);});
+  const keys=order.filter(g=>groups[g]).concat(Object.keys(groups).filter(g=>order.indexOf(g)<0));
+  let body='';
+  keys.forEach(g=>{ body+=`<div class="sec"><h3>${labels[g]||g}</h3></div><div class="menu-grid">${groups[g].map(t=>`<div class="mtile" data-go="${t.id}"><div class="mi ${colByGroup[g]||'ic-indigo'}">${t.ic}</div><span>${t.label}</span></div>`).join('')}</div>`; });
+  view.innerHTML=head('More','All modules')+`
+    <div class="urow" style="padding:15px"><div class="ua" style="background:linear-gradient(135deg,#F59E0B,#D97706);width:46px;height:46px">${(STATE.user.name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase()}</div><div class="um"><div class="a" style="font-size:15px">${STATE.user.name}</div><div class="b">${STATE.user.role}</div></div></div>
+    ${body}`;
+}
+
+/*****************************************************************
+ * GLOBAL EVENTS
+ *****************************************************************/
+document.addEventListener('change',e=>{
+  const p=e.target.closest('.psel');
+  if(p){ p.className='psel p-'+p.value; markDirty(p.dataset.e); }
+});
+document.addEventListener('input',e=>{
+  const t=e.target; if(!t) return;
+  if(t.classList&&t.classList.contains('upcase')&&t.value){ const p=t.selectionStart; t.value=t.value.toUpperCase(); try{t.setSelectionRange(p,p);}catch(_){}}
+  if(t.classList&&t.classList.contains('mob10')){ t.value=t.value.replace(/\D/g,'').slice(0,10); }
+  if(t.id==='payAmt'||t.id==='payDed'){                    // Actual Received = Invoice Amount − Deduction
+    const a=+(document.getElementById('payAmt')||{}).value||0, d=+(document.getElementById('payDed')||{}).value||0;
+    const act=document.getElementById('payAct'); if(act) act.value=Math.max(a-d,0);
+  }
+});
+document.addEventListener('click',e=>{
+  const g=e.target.closest('[data-go]'); if(g){go(g.dataset.go);return;}
+  const nt=e.target.closest('[data-navtoggle]'); if(nt){toggleNav(nt.dataset.navtoggle);return;}
+  const ac=e.target.closest('[data-act]'); if(ac){go(ac.dataset.act, ac.dataset.arg||undefined);return;}
+  const d=e.target.closest('[data-detail]'); if(d){go('detail',d.dataset.detail);return;}
+  const f=e.target.closest('[data-filter]'); if(f){orderFilter=f.dataset.filter;go('orders');return;}
+  const vt=e.target.closest('[data-vtog]'); if(vt){vt.closest('[data-veh]').classList.toggle('open');return;}
+  const mt=e.target.closest('[data-mtab]'); if(mt){masterTab=mt.dataset.mtab;renderMasters();return;}
+  const md=e.target.closest('[data-mdel]'); if(md){delMaster(md.dataset.mdel);return;}
+  const ud=e.target.closest('[data-udel]'); if(ud){delUser(ud.dataset.udel);return;}
+  const us=e.target.closest('[data-usave]'); if(us){savePerms(us.dataset.usave);return;}
+  const upw=e.target.closest('[data-upw]'); if(upw){setUserPw(upw.dataset.upw);return;}
+  const utg=e.target.closest('[data-utog]'); if(utg){ api('updateUser',{email:utg.dataset.utog,status:utg.dataset.st}).then(()=>{toast('Updated');renderUsers();}).catch(err=>toast(err.message||'Failed',true)); return; }
+  const ual=e.target.closest('[data-uall]'); if(ual){ const v=ual.dataset.uall, em=ual.dataset.e;
+    document.querySelectorAll(`.psel[data-e="${em}"]`).forEach(s=>{ if(s.disabled) return; s.value=v; s.className='psel p-'+v; });
+    markDirty(em); return; }
+  const qs=e.target.closest('[data-qsel]'); if(qs){ askConfirm('Is quotation ko select karein? Baaki reject ho jayengi.',()=>{ api('selectQuotation',qs.dataset.qsel).then(r=>{ toast('Quotation selected'); loadCompare(r.prNo); }).catch(err=>toast(err.message||'Failed',true)); }); return; }
+  const pq=e.target.closest('[data-prquote]'); if(pq){ go('p2p_quote',pq.dataset.prquote); return; }
+  const pd=e.target.closest('[data-podeliv]'); if(pd){ askDeliveryDate(pd.dataset.podeliv); return; }
+  const sp=e.target.closest('[data-sendpo]'); if(sp){ doSendPO(sp.dataset.sendpo); return; }
+  const ppdf=e.target.closest('[data-popdf]'); if(ppdf){ viewPOPdf(ppdf.dataset.popdf); return; }
+  const plife=e.target.closest('[data-polife]'); if(plife){ showPOLifecycle(plife.dataset.polife); return; }
+  const del=e.target.closest('[data-del]'); if(del){nItems.splice(+del.dataset.del,1);if(!nItems.length)nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
+  if(e.target.closest('#addLi')){nItems.push({skuCode:'',skuName:'',qty:1,rate:0,sgst:9,cgst:9});renderLi();return;}
+
+  const chk=e.target.closest('[data-chk]'); if(chk){chk.classList.toggle('on');refreshGO();return;}
+
+  if(e.target.closest('#saveOrder')){doSaveOrder();return;}
+  if(e.target.closest('#savePlan')){doSavePlan(e.target.closest('#savePlan'));return;}
+  if(e.target.closest('#saveGate')){doSaveGate();return;}
+  if(e.target.closest('#saveLoad')){doSaveLoad(e.target.closest('#saveLoad'));return;}
+  if(e.target.closest('#saveInv')){doSaveInvoice();return;}
+  if(e.target.closest('#saveGO')){doSaveGateOut();return;}
+  if(e.target.closest('#savePOD')){doSavePOD();return;}
+  if(e.target.closest('#saveRE')){doSaveRE();return;}
+  if(e.target.closest('#saveRR')){doSaveRR();return;}
+  if(e.target.closest('#savePay')){doSavePay(e.target.closest('#savePay'));return;}
+
+  const t=e.target.closest('[data-toast]'); if(t){toast(t.dataset.toast);return;}
+});
+
+document.addEventListener('input',e=>{
+  // SKU name → code autofill
+  const sk=e.target.dataset.sku;
+  if(sk!==undefined){const m=STATE.masters.skus.find(x=>x.SKUName===e.target.value);if(m){nItems[sk].skuName=m.SKUName;nItems[sk].skuCode=m.SKUCode;nItems[sk].rate=m.Rate;nItems[sk].uom=m.UOM||'';nItems[sk].sgst=m.GSTPercent/2;nItems[sk].cgst=m.GSTPercent/2;renderLi();}else{nItems[sk].skuName=e.target.value;}return;}
+  const f=e.target.dataset.f,i=e.target.dataset.i;
+  if(f!==undefined&&i!==undefined){nItems[i][f]=+e.target.value||0;recalc();
+    const li=e.target.closest('.li').querySelector('.li-tot');const it=nItems[i];
+    li.querySelector('span').textContent='Taxable '+inr(it.qty*it.rate)+' · Tax '+inr(it.qty*it.rate*(it.sgst+it.cgst)/100);
+    li.querySelector('b').textContent=inr(it.qty*it.rate*(1+(it.sgst+it.cgst)/100));return;}
+});
+document.addEventListener('change',e=>{
+  if(e.target.dataset.ldchk!==undefined||e.target.dataset.ldqty!==undefined){
+    const checks=document.querySelectorAll('[data-ldchk]');let n=0;checks.forEach(c=>{if(c.checked)n++;});
+    const pct=checks.length?Math.round(n/checks.length*100):0;
+    const bar=document.getElementById('ldBar'),lbl=document.getElementById('ldPct');if(bar)bar.style.width=pct+'%';if(lbl)lbl.textContent=pct+'%';
+  }
+});
+
+/* ---- save handlers ---- */
+function doSaveOrder(){
+  const vend=document.getElementById('vendIn').value;
+  const vd=STATE.masters.vendors.find(x=>x.VendorName===vend);
+  if(!vd) return toast('Select a valid vendor',true);
+  if(!notPast('oDate','Order date',true)) return;
+  if(!nItems.some(it=>it.skuCode&&it.qty>0)) return toast('Add at least one SKU',true);
+  busy('saveOrder');
+  api('saveOrder',{vendorCode:vd.VendorCode,vendorName:vd.VendorName,orderDate:document.getElementById('oDate').value,items:nItems.filter(it=>it.skuCode)})
+    .then(r=>{toast('Order '+r.orderNo+' saved');nItems=[];go('orders');refreshDash();})
+    .catch(err=>toast(err.message||'Save failed',true));
+}
+function doSavePlan(btn){
+  const items=JSON.parse(btn.dataset.items);
+  items.forEach((it,i)=>{const chk=document.querySelector(`[data-plan-chk="${i}"]`);const inp=document.querySelector(`[data-plan="${i}"]`);const on=chk?chk.checked:true;it.plannedQty=on?Math.min(+inp.value||0,it.RemainingQty):0;it.skuCode=it.SKUCode;it.skuName=it.SKUName;});
+  const sel=items.filter(it=>it.plannedQty>0);
+  if(!sel.length)return toast('Tick at least one SKU with a quantity to plan',true);
+  if(!notPast('pDate','Planned date',true)) return;
+  busy('savePlan');
+  api('savePlanning',{orderNo:btn.dataset.order,plannedDate:document.getElementById('pDate').value,plannedTime:document.getElementById('pTime').value,transporterName:document.getElementById('pTrans').value,remarks:document.getElementById('pRemarks').value,items:sel})
+    .then(r=>{toast('Dispatch planned ('+r.planNo+')');go('gate');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveGate(){
+  const planNo=document.getElementById('gePlan').value;
+  const plan=(window._gePlans||[]).find(x=>x.PlanNo===planNo);
+  if(!plan)return toast('Select a dispatch plan',true);
+  if(!document.getElementById('geVeh').value)return toast('Vehicle number required',true);
+  if(!checkMobileField('geMob','Mobile No.',false)) return;
+  busy('saveGate');
+  api('saveGateEntry',{planNo:planNo,orderNo:plan.OrderNo,vehicleNo:document.getElementById('geVeh').value,driverName:document.getElementById('geDrv').value,dlNo:document.getElementById('geDL').value,rcNo:document.getElementById('geRC').value})
+    .then(r=>{toast('Gate entry '+r.gateEntryNo+' recorded');go('loading');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveLoad(btn){
+  const skus=JSON.parse(btn.dataset.skus);
+  const items=skus.map((s,i)=>({skuCode:s.SKUCode,skuName:s.SKUName,plannedQty:s.PlannedQty,dispatchQty:Math.min(+document.querySelector(`[data-ldqty="${i}"]`).value||0, s.BalanceQty)}));
+  if(!items.some(it=>it.dispatchQty>0))return toast('Enter load qty',true);
+  busy('saveLoad');
+  api('saveLoading',{gateEntryNo:btn.dataset.gate,planNo:btn.dataset.plan,orderNo:btn.dataset.order,items})
+    .then(()=>{toast('Loading completed');go('invoice');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveInvoice(){
+  const sel=document.getElementById('invGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  if(!notPast('invDate','Invoice date',true)) return;
+  if(!document.getElementById('invNo').value)return toast('Invoice number required',true);
+  busy('saveInv');
+  api('saveInvoice',{gateEntryNo:sel.value,orderNo:opt.dataset.order,invoiceNo:document.getElementById('invNo').value,invoiceDate:document.getElementById('invDate').value,invoiceAmount:document.getElementById('invAmt').value,invoiceWeight:+(document.getElementById('invWt')||{}).value||0,file:invFile})
+    .then(()=>{toast('Invoice saved');go('gateout');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveGateOut(){
+  const sel=document.getElementById('goGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  const on=document.querySelectorAll('[data-chk].on').length;
+  if(on<5)return toast('Complete all 5 verifications (including Weighment Done)',true);
+  busy('saveGO');
+  api('saveGateOut',{gateEntryNo:sel.value,orderNo:opt.dataset.order,vehicleNo:opt.dataset.veh,driverName:opt.dataset.drv,invoiceNo:'',checks:{invoice:true,lr:true,vehicle:true,docs:true,weighment:true}})
+    .then(()=>{toast('Vehicle gated out');go('pod');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSavePOD(){
+  const sel=document.getElementById('podGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  if(!document.getElementById('podRcv').value)return toast('Receiver name required',true);
+  if(!checkMobileField('podMob','Receiver mobile',false)) return;
+  const its=(window._podItems||[]).map((it,i)=>{
+    const rEl=document.querySelector(`[data-podr="${i}"]`);
+    const loaded=it.LoadedQty||0;
+    const rej=Math.max(0,Math.min(rEl?+rEl.value||0:0, loaded));
+    return {skuCode:it.SKUCode,skuName:it.SKUName,loadedQty:loaded,deliveredQty:loaded-rej,rejectedQty:rej};
+  });
+  busy('savePOD');
+  api('savePOD',{gateEntryNo:sel.value,orderNo:opt.dataset.order,deliveryDate:document.getElementById('podDate').value,
+    receiverName:document.getElementById('podRcv').value,receiverMobile:document.getElementById('podMob').value,
+    grossWeight:+(document.getElementById('podGW')||{}).value||0,
+    netWeight:+(document.getElementById('podNW')||{}).value||0,
+    partyNetWeight:+(document.getElementById('podPNW')||{}).value||0,
+    remarks:document.getElementById('podRem').value,file:podFile,items:its})
+    .then(r=>{toast(r&&r.hasReturn?('Partial delivery — '+r.rejected+' returned, go to Return Gate Entry'):'Delivery confirmed');refreshReturns();go(r&&r.hasReturn?'returnentry':'collection');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveRE(){
+  const sel=document.getElementById('reGate');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a gate entry',true);
+  busy('saveRE');
+  api('saveReturnGateEntry',{gateEntryNo:sel.value,orderNo:opt.dataset.order,vehicleNo:document.getElementById('reVeh').value||opt.dataset.veh,driverName:document.getElementById('reDrv').value||opt.dataset.drv})
+    .then(r=>{toast('Return logged ('+r.returnNo+')');refreshReturns();go('returnreceived');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSaveRR(){
+  const sel=document.getElementById('rrSel');const opt=sel.selectedOptions[0];
+  if(!sel.value)return toast('Select a return',true);
+  const recv=(document.getElementById('rrRecv')||{}).value||'';
+  if(!recv.trim())return toast('Receiver Name is required',true);
+  busy('saveRR');
+  api('saveReturnReceived',{returnNo:sel.value,gateEntryNo:opt.dataset.gate,orderNo:opt.dataset.order,receiverName:recv.trim().toUpperCase()})
+    .then(()=>{toast('Received — returned lines for '+opt.dataset.order+' closed');refreshReturns();go('orders');refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+function doSavePay(btn){
+  const amt=+document.getElementById('payAmt').value||0;
+  if(amt<=0)return toast('Enter amount',true);
+  busy('savePay');
+  const _ref=document.getElementById('payRef').value.trim();
+  if(!_ref)return toast('Reference No. is required',true);
+  api('saveCollection',{orderNo:btn.dataset.order,invoiceNo:btn.dataset.inv,vendorName:btn.dataset.vendor,invoiceAmount:btn.dataset.amount,
+    collectionDate:document.getElementById('payDate').value,amount:amt,
+    deductionAmount:+(document.getElementById('payDed')||{}).value||0,
+    actualReceived:+(document.getElementById('payAct')||{}).value||0,
+    mode:document.getElementById('payMode').value,refNo:_ref})
+    .then(()=>{toast('Payment '+inr(amt)+' recorded');loadCollection(btn.dataset.order);refreshDash();})
+    .catch(err=>toast(err.message||'Failed',true));
+}
+
+function refreshGO(){
+  const on=document.querySelectorAll('[data-chk].on').length;const btn=document.getElementById('saveGO');if(!btn)return;
+  btn.disabled=on<4;btn.textContent=on<4?`Confirm Gate Out (${on}/4)`:'Confirm Gate Out ✓';
+}
+
+/* ---- file → base64 ---- */
+function handleFile(e,target,cb){
+  const file=e.target.files[0];if(!file)return;
+  const ext=(file.name.split('.').pop()||'').toUpperCase();
+  const reader=new FileReader();
+  reader.onload=()=>{cb({base64:reader.result.split(',')[1],name:file.name,mime:file.type});
+    const col=ext==='PDF'?'#DC2626':(ext==='PNG'?'#2563EB':'#0D9488');
+    document.getElementById(target).innerHTML=`<div class="doc"><div class="di" style="background:${col}">${ext}</div><div class="dm"><div class="a">${file.name}</div><div class="b">${(file.size/1024).toFixed(0)} KB · ready</div></div><span class="badge b-ok">${I.check}</span></div>`;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ---- export ---- */
+document.addEventListener('click',e=>{
+  if(e.target.id==='expCsv'||e.target.id==='expXls'){
+    if(!reportData.length)return;
+    const q=(repFilter||'').toLowerCase().trim();
+    const rows=q?reportData.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().indexOf(q)>-1)):reportData;
+    if(!rows.length)return;
+    const cols=visibleCols(allReportCols());
+    const csv=[cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]==null?'':r[c]).replace(/"/g,'""')}"`).join(','))].join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=curReport+(e.target.id==='expXls'?'.xls':'.csv');a.click();
+    toast('Exported '+a.download);
+  }
+});
+
+/* ---- helpers ---- */
+function busy(id){const b=document.getElementById(id);if(b){b.disabled=true;b.innerHTML='<div class="spin" style="width:18px;height:18px;border-width:2px;margin:0"></div>';}}
+function askConfirm(msg,onYes){
+  let ov=document.getElementById('confirmOv');
+  if(!ov){ ov=document.createElement('div'); ov.id='confirmOv'; ov.className='cfm'; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="cfm-card"><div class="cfm-msg">${msg}</div><div class="cfm-row"><button class="btn btn-ghost btn-sm" id="cfmNo">Cancel</button><button class="btn btn-danger btn-sm" id="cfmYes">Remove</button></div></div>`;
+  ov.style.display='flex';
+  document.getElementById('cfmNo').onclick=()=>{ov.style.display='none';};
+  document.getElementById('cfmYes').onclick=()=>{ov.style.display='none';onYes();};
+}
+function refreshDash(){return api('getDashboard').then(d=>{STATE.dashboard=d;});}
+let toastT;
+function toast(msg,isErr){const t=document.getElementById('toast');document.getElementById('toastMsg').textContent=msg;t.classList.toggle('err',!!isErr);document.getElementById('toastIc').innerHTML=isErr?'<path d="M18 6L6 18M6 6l12 12"/>':'<path d="M20 6L9 17l-5-5"/>';t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
+function today(){return new Date().toISOString().slice(0,10);}
+/* Mobile: exactly 10 digits, Indian mobiles start 6-9. '' allowed (optional field). */
+function validMobile(v){ v=String(v||'').trim(); return v==='' || /^[6-9]\d{9}$/.test(v); }
+function checkMobileField(id,label,required){
+  const el=document.getElementById(id); if(!el) return true;
+  const v=String(el.value||'').trim();
+  if(!v){ if(required){ toast((label||'Mobile')+' is required',true); el.focus(); return false; } return true; }
+  if(!/^\d{10}$/.test(v)){ toast((label||'Mobile')+': exactly 10 digits chahiye (abhi '+v.replace(/\D/g,'').length+')',true); el.focus(); return false; }
+  if(!/^[6-9]/.test(v)){ toast((label||'Mobile')+': valid mobile 6-9 se shuru hota hai',true); el.focus(); return false; }
+  return true;
+}
+/* Past-date guard: date >= today. '' allowed unless required. */
+function notPast(id,label,required){
+  const el=document.getElementById(id); if(!el) return true;
+  const v=el.value;
+  if(!v){ if(required){ toast((label||'Date')+' is required',true); el.focus(); return false; } return true; }
+  if(v<today()){ toast((label||'Date')+' past me nahi ho sakti — aaj ya aage ki date chunein',true); el.focus(); return false; }
+  return true;
+}
+function ym(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
+
+/* sidebar mobile */
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show');}
+function toggleSidebar(){
+  if(window.innerWidth<=900){
+    const sb=document.getElementById('sidebar'), open=sb.classList.toggle('open');
+    document.getElementById('overlay').classList.toggle('show',open);
+  } else {
+    document.body.classList.toggle('nav-hidden');
+  }
+}
+document.getElementById('ham').addEventListener('click',toggleSidebar);
+document.getElementById('overlay').addEventListener('click',closeSidebar);
+
+/*****************************************************************
+ * BOOT — role-based login gate
+ *****************************************************************/
+async function pwHash(pw){
+  try{
+    const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode('o2c$'+pw));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){ let h=5381; const s='o2c$'+pw; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0; return 'f'+h.toString(16); }
+}
+async function doLogin(){
+  const email=(document.getElementById('loginEmail').value||'').trim();
+  const pw=document.getElementById('loginPw').value||'';
+  const role=document.getElementById('loginRole').value;
+  const err=document.getElementById('lgErr');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent='Enter a valid email address.'; return; }
+  if(!pw){ err.textContent='Enter your password.'; return; }
+  if(!role){ err.textContent='Please choose your role.'; return; }
+  err.textContent='';
+  const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='Signing in…';
+  try{
+    STATE.user={email:email,name:email,role:role,perms:{}};             // temp, taaki api() chal sake
+    const u=await api('authenticate',{email:email, pwHash:await pwHash(pw), role:role});
+    STATE.user={email:u.email,name:u.name,role:u.role,perms:u.perms||{}};
+    PERMS=STATE.user.perms; saveSession(STATE.user);
+    const b=await api('getBootstrap');
+    STATE.masters=b.masters; STATE.dashboard=b.dashboard; STATE.orders=b.orders; STATE.showReturns=!!b.showReturns;
+    document.getElementById('login').style.display='none';
+    setUser(STATE.user); buildNav(); go(defaultRoute());
+  }catch(e){
+    STATE.user=null; btn.disabled=false; btn.textContent='Sign in →';
+    err.textContent=(e&&e.message)||'Could not sign in.';
+  }
+}
+/* ================= SESSION (refresh par logged-in raho) ================= */
+const SESS_KEY='o2c-session', SESS_HOURS=12;
+function saveSession(u){ try{ localStorage.setItem(SESS_KEY, JSON.stringify({u:u, t:Date.now()})); }catch(e){} }
+function clearSession(){ try{ localStorage.removeItem(SESS_KEY); }catch(e){} }
+function readSession(){
+  try{ const s=JSON.parse(localStorage.getItem(SESS_KEY)||'null');
+    if(!s||!s.u||!s.t) return null;
+    if(Date.now()-s.t > SESS_HOURS*3600000){ clearSession(); return null; }   // purana session hata do
+    return s.u;
+  }catch(e){ return null; }
+}
+function logout(){
+  clearSession(); STATE.user=null; PERMS={};
+  document.getElementById('loginPw').value='';
+  document.getElementById('lgErr').textContent='';
+  document.getElementById('login').style.display='';
+  document.getElementById('loginBtn').disabled=false;
+  document.getElementById('loginBtn').textContent='Sign in →';
+}
+/* Page load par: agar session hai to seedha andar le jao (permissions DB se taaza karke) */
+async function restoreSession(){
+  const u=readSession(); if(!u) return false;
+  try{
+    STATE.user=u; PERMS=u.perms||{};
+    const b=await api('getBootstrap');
+    const fresh=(await api('getUsers')).find(x=>String(x.Email).toLowerCase()===String(u.email).toLowerCase());
+    if(!fresh || fresh.Status!=='Active'){ clearSession(); return false; }    // hataya/disable kiya gaya user
+    STATE.user={email:fresh.Email,name:fresh.Name||fresh.Email,role:fresh.Role,perms:fresh.Permissions||{}};
+    PERMS=STATE.user.perms; saveSession(STATE.user);
+    STATE.masters=b.masters; STATE.dashboard=b.dashboard; STATE.orders=b.orders; STATE.showReturns=!!b.showReturns;
+    document.getElementById('login').style.display='none';
+    setUser(STATE.user); buildNav(); go(defaultRoute());
+    return true;
+  }catch(e){ clearSession(); return false; }
+}
+
+/* ================= FORGOT PASSWORD (email OTP) =================
+ * OTP Supabase Auth bhejta hai aur wahi verify karta hai (server-side) —
+ * code browser me kabhi nahi banta, isliye ise bypass nahi kiya ja sakta.  */
+function sbBase(){ return String(window.SUPABASE_URL||'').trim().replace(/\/+$/,''); }
+async function sbAuth(path, body){
+  const r=await fetch(sbBase()+'/auth/v1/'+path,{ method:'POST',
+    headers:{'apikey':window.SUPABASE_KEY,'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error(j.msg||j.error_description||j.message||('Request failed ('+r.status+')'));
+  return j;
+}
+function fpShow(on){
+  document.getElementById('fpBox').style.display=on?'block':'none';
+  ['loginEmail','loginPw','loginRole'].forEach(id=>{ const el=document.getElementById(id); if(el) el.closest('.lg-field').style.display=on?'none':''; });
+  document.getElementById('loginBtn').style.display=on?'none':'';
+  document.getElementById('fpLink').parentElement.style.display=on?'none':'';
+  document.querySelector('.lg-hint').style.display=on?'none':'';
+  if(on){ document.getElementById('fpEmail').value=document.getElementById('loginEmail').value||''; }
+}
+async function fpSendCode(){
+  const em=(document.getElementById('fpEmail').value||'').trim();
+  const err=document.getElementById('fpErr'), ok=document.getElementById('fpOk');
+  err.textContent=''; ok.textContent='';
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ err.textContent='Valid email daaliye.'; return; }
+  const btn=document.getElementById('fpSend'); btn.disabled=true; btn.textContent='Sending…';
+  try{
+    STATE.user={email:em,name:em,role:'',perms:{}};                 // taaki api() chal sake
+    const known=await api('emailExists',{email:em});
+    if(!known) throw new Error('Ye email registered nahi hai. Apne admin se poochhein.');
+    await sbAuth('otp',{ email:em, create_user:true });
+    ok.textContent='Code bhej diya — apna email (aur spam folder) dekhein.';
+    document.getElementById('fpStep2').style.display='block';
+    btn.style.display='none';
+    document.getElementById('fpVerify').style.display='';
+  }catch(e){ err.textContent=e.message||'Code bhejne me dikkat aayi.'; btn.disabled=false; btn.textContent='Send code →'; }
+  finally{ STATE.user=null; }
+}
+async function fpVerifyCode(){
+  const em=(document.getElementById('fpEmail').value||'').trim();
+  const otp=(document.getElementById('fpOtp').value||'').trim();
+  const p1=document.getElementById('fpPw1').value||'', p2=document.getElementById('fpPw2').value||'';
+  const err=document.getElementById('fpErr'), ok=document.getElementById('fpOk');
+  err.textContent=''; ok.textContent='';
+  if(otp.length<6){ err.textContent='6-digit code daaliye.'; return; }
+  if(p1.length<4){ err.textContent='Password kam se kam 4 characters ka ho.'; return; }
+  if(p1!==p2){ err.textContent='Dono passwords same nahi hain.'; return; }
+  const btn=document.getElementById('fpVerify'); btn.disabled=true; btn.textContent='Checking…';
+  try{
+    /* Supabase code ke type alag ho sakte hain (naya user = signup, purana = email/magiclink).
+       Isliye teeno try karte hain — jo chale wahi sahi.  */
+    let done=false, lastErr=null;
+    for(const ty of ['email','signup','magiclink','recovery']){
+      try{ await sbAuth('verify',{ type:ty, email:em, token:otp }); done=true; break; }
+      catch(ex){ lastErr=ex; }
+    }
+    if(!done) throw (lastErr||new Error('Code galat ya expire ho gaya.'));
+    STATE.user={email:em,name:em,role:'',perms:{}};
+    await api('resetPasswordWithOtp',{ email:em, pwHash:await pwHash(p1) });
+    ok.textContent='✓ Password badal gaya. Ab naye password se sign in karein.';
+    setTimeout(()=>{ fpShow(false); document.getElementById('loginEmail').value=em; document.getElementById('loginPw').focus(); }, 1400);
+  }catch(e){ err.textContent=e.message||'Code galat ya expire ho gaya.'; btn.disabled=false; btn.textContent='Update password →'; }
+  finally{ STATE.user=null; }
+}
+document.getElementById('fpLink').addEventListener('click',e=>{ e.preventDefault(); fpShow(true); });
+document.getElementById('fpBack').addEventListener('click',e=>{ e.preventDefault(); fpShow(false); });
+document.getElementById('fpSend').addEventListener('click',fpSendCode);
+document.getElementById('fpVerify').addEventListener('click',fpVerifyCode);
+document.getElementById('logoutBtn').addEventListener('click',()=>askConfirm('Sign out from OrderFlow?',logout));
+document.getElementById('uav2').addEventListener('click',()=>askConfirm('Sign out from OrderFlow?',logout));
+document.getElementById('loginPw').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('loginBtn').addEventListener('click',doLogin);
+document.getElementById('loginEmail').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+
+/* App khulte hi: agar pichhla session zinda hai to seedha andar */
+(function boot(){
+  if(!readSession()) return;
+  const lg=document.getElementById('login');
+  if(lg) lg.insertAdjacentHTML('afterbegin','<div id="bootMsg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--canvas);z-index:5"><div class="loading"><div class="spin"></div>Signing you in…</div></div>');
+  restoreSession().then(ok=>{ const b=document.getElementById('bootMsg'); if(b) b.remove(); });
+})();
+
+/*****************************************************************
+ * MOCK BACKEND (preview only — real data comes from Sheets)
+ *****************************************************************/
+const MOCK=(function(){
+  function ymM(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
+  const YM=ymM(), pad=n=>String(n).padStart(3,'0');
+  const pad4=n=>String(n).padStart(4,'0');
+  const FY=(()=>{const d=new Date();let y=d.getFullYear();if(d.getMonth()>=3)y++;return 'SRFM'+String(y).slice(-2);})();
+  const DDMMYY=(()=>{const d=new Date(),p=x=>String(x).padStart(2,'0');return p(d.getDate())+p(d.getMonth()+1)+String(d.getFullYear()).slice(-2);})();
+  const masters={
+    vendors:[{VendorCode:'VND-0142',VendorName:'Bharat Steel Co.',GST:'27ABCDE1234F1Z5'},{VendorCode:'VND-0138',VendorName:'Surya Cements Ltd',GST:'27FGHIJ5678K2Z9'},{VendorCode:'VND-0129',VendorName:'Vega Polymers',GST:'29KLMNO9012P3Z1'},{VendorCode:'VND-0117',VendorName:'Maple Traders',GST:'24PQRST3456U4Z7'}],
+    skus:[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Brand:'BharatTMT',UOM:'MT',GSTPercent:18,Rate:62000},{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Brand:'BharatTMT',UOM:'MT',GSTPercent:18,Rate:61500},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',Brand:'BharatMS',UOM:'MT',GSTPercent:18,Rate:58000},{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',Brand:'BharatMS',UOM:'MT',GSTPercent:18,Rate:54000}],
+    transporters:[{TransporterName:'Mahalaxmi Logistics',ContactNumber:'98220 11200'},{TransporterName:'Speedways Carriers',ContactNumber:'98220 44521'},{TransporterName:'Konark Transport',ContactNumber:'98220 78812'}]
+  };
+  const users=[{Email:'admin@example.com',Name:'Rajesh Kumar',Role:'Admin'},{Email:'sales@example.com',Name:'Amit Rao',Role:'Sales'},{Email:'dispatch@example.com',Name:'Dev P.',Role:'Dispatch Executive'},{Email:'security@example.com',Name:'Vikram S.',Role:'Security'},{Email:'billing@example.com',Name:'Neha Jain',Role:'Billing Executive'},{Email:'accounts@example.com',Name:'Priya Sharma',Role:'Accounts'}];
+  const o1='ORD-'+YM+'-001',o2='ORD-'+YM+'-002',o3='ORD-'+YM+'-003',o4='ORD-'+YM+'-004',o5='ORD-'+YM+'-005';
+  // ---------- tables (mirror the sheets) ----------
+  let orders=[
+    {OrderNo:o1,OrderDate:'18 Jun 2026',VendorName:'Vega Polymers',VendorCode:'VND-0129',TotalQty:21,TotalValue:1493880,Status:'Vehicle Dispatched'},
+    {OrderNo:o2,OrderDate:'21 Jun 2026',VendorName:'Surya Cements Ltd',VendorCode:'VND-0138',TotalQty:12,TotalValue:214500,Status:'Partially Collected'},
+    {OrderNo:o3,OrderDate:'22 Jun 2026',VendorName:'Bharat Steel Co.',VendorCode:'VND-0142',TotalQty:24,TotalValue:1748760,Status:'Vehicle Arrived'},
+    {OrderNo:o4,OrderDate:'15 Jun 2026',VendorName:'Maple Traders',VendorCode:'VND-0117',TotalQty:6,TotalValue:105000,Status:'Fully Collected'},
+    {OrderNo:o5,OrderDate:'23 Jun 2026',VendorName:'Orion Hardware',VendorCode:'VND-0117',TotalQty:15,TotalValue:984120,Status:'Partial Planning'}
+  ];
+  let orderItems={};
+  orderItems[o1]=[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Qty:12,Rate:62000},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',Qty:9,Rate:58000}];
+  orderItems[o2]=[{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Qty:12,Rate:61500}];
+  orderItems[o3]=[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Qty:12,Rate:62000},{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Qty:12,Rate:61500}];
+  orderItems[o4]=[{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',Qty:6,Rate:54000}];
+  orderItems[o5]=[{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',Qty:9,Rate:54000},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',Qty:6,Rate:58000}];
+  let plans=[
+    {PlanNo:'PLN-'+YM+'-001',OrderNo:o1,Status:'Closed',items:[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',PlannedQty:12},{SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',PlannedQty:9}]},
+    {PlanNo:'PLN-'+YM+'-002',OrderNo:o2,Status:'Closed',items:[{SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',PlannedQty:12}]},
+    {PlanNo:'PLN-'+YM+'-003',OrderNo:o3,Status:'Open',items:[{SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',PlannedQty:12}]},   // only 1 of 2 items planned; vehicle GE-003 attached
+    {PlanNo:'PLN-'+YM+'-004',OrderNo:o5,Status:'Open',items:[{SKUCode:'CHN-75MM',SKUName:'MS Channel 75mm',PlannedQty:9}]}    // open, no vehicle yet → shows in Gate Entry; ANG-50x50 still to plan
+  ];
+  let gates=[
+    {GateEntryNo:'GE-'+YM+'-001',PlanNo:'PLN-'+YM+'-001',OrderNo:o1,VehicleNo:'MH-12-GH-4521',DriverName:'Ramesh P.',Status:'Vehicle Dispatched'},
+    {GateEntryNo:'GE-'+YM+'-002',PlanNo:'PLN-'+YM+'-002',OrderNo:o2,VehicleNo:'MH-31-KL-7782',DriverName:'Imran K.',Status:'Delivered'},
+    {GateEntryNo:'GE-'+YM+'-003',PlanNo:'PLN-'+YM+'-003',OrderNo:o3,VehicleNo:'MH-14-AB-9087',DriverName:'Suresh M.',Status:'Vehicle Arrived'}
+  ];
+  let loadItems=[
+    {GateEntryNo:'GE-'+YM+'-001',PlanNo:'PLN-'+YM+'-001',OrderNo:o1,SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',PlannedQty:12,DispatchQty:12},
+    {GateEntryNo:'GE-'+YM+'-001',PlanNo:'PLN-'+YM+'-001',OrderNo:o1,SKUCode:'ANG-50X50',SKUName:'MS Angle 50x50',PlannedQty:9,DispatchQty:9},
+    {GateEntryNo:'GE-'+YM+'-002',PlanNo:'PLN-'+YM+'-002',OrderNo:o2,SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',PlannedQty:12,DispatchQty:12}
+  ];
+  let invoices=[
+    {OrderNo:o1,GateEntryNo:'GE-'+YM+'-001',InvoiceNo:'INV-9921',InvoiceAmount:1493880},
+    {OrderNo:o2,GateEntryNo:'GE-'+YM+'-002',InvoiceNo:'INV-9918',InvoiceAmount:214500}
+  ];
+  let podItems=[], pods=[{GateEntryNo:'GE-'+YM+'-002',OrderNo:o2,Status:'Delivered',HasReturn:false}], returns=[];
+  let collections=[{OrderNo:o2,CollectionAmount:145860,PaymentMode:'Bank Transfer',CollectionDate:'20 Jun 2026',RefNo:'NEFT9921'}];
+  let seq={PLN:4,GE:3,RET:0,COL:0,SCH:0};
+  let scheds=[], schedItems=[];
+  // ---------- ledger helpers (mirror Code.gs) ----------
+  const O=no=>orders.find(o=>o.OrderNo===no);
+  function loadedBySku(no){const m={};loadItems.filter(l=>l.OrderNo===no).forEach(l=>m[l.SKUCode]=(m[l.SKUCode]||0)+l.DispatchQty);return m;}
+  function openPlannedBySku(no){const m={};plans.filter(p=>p.OrderNo===no&&p.Status==='Open').forEach(p=>p.items.forEach(it=>m[it.SKUCode]=(m[it.SKUCode]||0)+it.PlannedQty));return m;}
+  function orderItemsFor(no){const ld=loadedBySku(no),op=openPlannedBySku(no);const sm={};let hasS=false;schedItems.filter(s=>s.OrderNo===no).forEach(s=>{hasS=true;sm[s.SKUCode]=(sm[s.SKUCode]||0)+s.ScheduledQty;});return (orderItems[no]||[]).map(i=>{const base=hasS?Math.min(i.Qty,sm[i.SKUCode]||0):i.Qty;const rem=base-(ld[i.SKUCode]||0)-(op[i.SKUCode]||0);return{SKUCode:i.SKUCode,SKUName:i.SKUName,OrderedQty:i.Qty,ScheduledQty:hasS?(sm[i.SKUCode]||0):i.Qty,LoadedQty:ld[i.SKUCode]||0,OpenPlannedQty:op[i.SKUCode]||0,RemainingQty:Math.max(rem,0)};}).filter(r=>r.RemainingQty>0);}
+  function skuRows(list){const K=(o,s)=>o+'|'+s;const plan={},load={},del={},rej={};plans.forEach(pl=>(pl.items||[]).forEach(it=>{plan[K(pl.OrderNo,it.SKUCode)]=(plan[K(pl.OrderNo,it.SKUCode)]||0)+(+it.PlannedQty||0);}));loadItems.forEach(l=>{load[K(l.OrderNo,l.SKUCode)]=(load[K(l.OrderNo,l.SKUCode)]||0)+(+l.DispatchQty||0);});podItems.forEach(p=>{const k=K(p.OrderNo,p.SKUCode);const lq=+p.LoadedQty||0,rq=+p.RejectedQty||0;del[k]=(del[k]||0)+Math.max(lq-rq,0);rej[k]=(rej[k]||0)+rq;});const byO={};list.forEach(o=>byO[o.OrderNo]=o);const rows=[];Object.keys(orderItems).forEach(no=>{const o=byO[no];if(!o)return;orderItems[no].forEach(it=>{const k=K(no,it.SKUCode);const ordered=+it.Qty||0,rate=+it.Rate||0,ld=load[k]||0;rows.push({OrderNo:no,Vendor:o.VendorName,SKUCode:it.SKUCode,SKU:it.SKUName,Ordered:ordered,Planned:plan[k]||0,Dispatched:ld,Delivered:del[k]||0,Rejected:rej[k]||0,Pending:Math.max(ordered-ld,0),Rate:rate,Value:Math.round(ordered*rate),Status:o.Status});});});return rows;}
+  function podRows(){return podItems.map(p=>{const g=gates.find(x=>x.GateEntryNo===p.GateEntryNo)||{};const lq=+p.LoadedQty||0,rq=+p.RejectedQty||0;return{OrderNo:p.OrderNo,GateEntryNo:p.GateEntryNo,Vehicle:g.VehicleNo||'',SKU:p.SKUName,Loaded:lq,Delivered:Math.max(lq-rq,0),Rejected:rq};});}
+  function coll(no){const inv=invoices.filter(i=>i.OrderNo===no);const invoiced=inv.reduce((a,i)=>a+i.InvoiceAmount,0);const rows=collections.filter(c=>c.OrderNo===no);const collected=rows.reduce((a,c)=>a+c.CollectionAmount,0);const o=O(no);return{orderNo:no,vendorName:o?o.VendorName:'',invoiceNo:inv.map(i=>i.InvoiceNo).join(', '),invoiced,collected,outstanding:Math.max(invoiced-collected,0),history:rows.slice().reverse().map(c=>({date:c.CollectionDate,amount:c.CollectionAmount,mode:c.PaymentMode,ref:c.RefNo}))};}
+  function recompute(no){const items=(orderItems[no]||[]);const ordered=items.reduce((s,i)=>s+(+i.Qty||0),0);const lmap={};loadItems.filter(l=>l.OrderNo===no).forEach(l=>lmap[l.SKUCode]=(lmap[l.SKUCode]||0)+(+l.DispatchQty||0));const loaded=Object.keys(lmap).reduce((s,k)=>s+lmap[k],0);const fullyShipped=ordered>0&&loaded>=ordered;const pend=orderItemsFor(no).reduce((s,i)=>s+i.RemainingQty,0);const gs=gates.filter(g=>g.OrderNo===no);const inFlight=gs.some(g=>['Vehicle Arrived','Loading Completed','Invoice Generated','Vehicle Dispatched'].includes(g.Status));const rp=gs.some(g=>g.Status==='Return Pending');const rt=returns.some(r=>r.OrderNo===no&&r.Status==='Returned');const c=coll(no);const o=O(no);let s;if(rp)s='Return Pending';else if(rt)s='Returned';else if(loaded>0&&!fullyShipped)s='Partially Dispatched';else if(c.invoiced>0&&c.outstanding>0)s=c.collected>0?'Partially Collected':'Delivered';else if(pend>0||inFlight)s='Partial Planning';else if(c.invoiced>0&&c.outstanding<=0&&fullyShipped)s='Fully Collected';else s='Closed';if(o)o.Status=s;return s;}
+  const sIdx=(s,scheduled)=>({'Pending Dispatch Planning':scheduled?1:0,'Partial Planning':2,'Fully Planned':2,'Vehicle Arrived':3,'Partial Loading':4,'Loading Completed':5,'Invoice Generated':6,'Vehicle Dispatched':7,'Delivered':8,'Return Pending':8,'Returned':8,'Partially Dispatched':8,'Partially Collected':8,'Fully Collected':9,'Closed':9}[s]!=null?({'Pending Dispatch Planning':scheduled?1:0,'Partial Planning':2,'Fully Planned':2,'Vehicle Arrived':3,'Partial Loading':4,'Loading Completed':5,'Invoice Generated':6,'Vehicle Dispatched':7,'Delivered':8,'Return Pending':8,'Returned':8,'Partially Dispatched':8,'Partially Collected':8,'Fully Collected':9,'Closed':9}[s]):0);
+  const isSched=no=>scheds.some(s=>s.OrderNo===no);
+  function bucket(s){const i=sIdx(s);return i===0?'Created':i<=2?'Dispatch':i<=5?'Loading':i<=7?'Delivery':'Collection';}
+  function dash(){const c=s=>orders.filter(o=>o.Status===s).length;const inv=invoices.reduce((a,i)=>a+i.InvoiceAmount,0),col=collections.reduce((a,c)=>a+c.CollectionAmount,0);return{totalOrders:orders.length,partialOrders:c('Partial Planning')+c('Partial Loading')+c('Partially Collected')+c('Partially Dispatched'),pendingDispatch:c('Pending Dispatch Planning'),dispatchPlanned:c('Fully Planned')+c('Partial Planning'),vehicleArrived:c('Vehicle Arrived'),loadingPending:c('Vehicle Arrived')+c('Partial Loading'),invoicePending:c('Loading Completed'),podPending:c('Vehicle Dispatched'),collectionPending:collOrders().length,fullyClosed:c('Fully Collected')+c('Closed'),outstanding:Math.max(inv-col,0)};}
+  function collOrders(){return orders.filter(o=>['Return Pending','Returned'].indexOf(o.Status)<0).map(o=>{const c=coll(o.OrderNo);return{OrderNo:o.OrderNo,VendorName:o.VendorName,outstanding:c.outstanding,invoiced:c.invoiced};}).filter(o=>o.invoiced>0&&o.outstanding>0);}
+  // ---------- P2P (mock) ----------
+  let pos=[], poItemsM={}, sens=[], senItemsM={}, qcs=[], receivings=[], preturns=[], payments=[];
+  let pseq={PO:0,SEN:0,GRN:0,PRN:0,PAY:0};
+  (function(){const no='PO-'+YM+'-'+String(++pseq.PO).padStart(3,'0');pos.push({PONo:no,PODate:'01 Jul 2026',SupplierCode:'VND-0142',SupplierName:'Bharat Steel Co.',TotalQty:1000,TotalValue:1180000,Status:'Sent to Supplier'});poItemsM[no]=[{PONo:no,SKUCode:'TMT-12MM',SKUName:'TMT Bar 12mm',Qty:600,Rate:1000,GSTPercent:18},{PONo:no,SKUCode:'TMT-16MM',SKUName:'TMT Bar 16mm',Qty:400,Rate:1000,GSTPercent:18}];})();
+  const POf=no=>pos.find(p=>p.PONo===no), SENf=no=>sens.find(s=>s.SENNo===no);
+  function poAccepted(no){const q={};qcs.forEach(x=>q[x.SENNo]=x.QCStatus);const m={};Object.keys(senItemsM).forEach(sn=>{const st=q[sn];if(st==='Accept'||st==='Accept with Deduction')senItemsM[sn].filter(i=>i.PONo===no).forEach(i=>m[i.SKUCode]=(m[i.SKUCode]||0)+i.ReceivedQty);});return m;}
+  function poPipeline(no){const q={};qcs.forEach(x=>q[x.SENNo]=x.QCStatus);const m={};Object.keys(senItemsM).forEach(sn=>{if(!q[sn])senItemsM[sn].filter(i=>i.PONo===no).forEach(i=>m[i.SKUCode]=(m[i.SKUCode]||0)+i.ReceivedQty);});return m;}
+  function poItemsForM(no){const acc=poAccepted(no),pipe=poPipeline(no);return (poItemsM[no]||[]).map(i=>{const a=acc[i.SKUCode]||0,p=pipe[i.SKUCode]||0;return{SKUCode:i.SKUCode,SKUName:i.SKUName,POQty:i.Qty,Rate:i.Rate,GSTPercent:i.GSTPercent,AcceptedQty:a,InPipelineQty:p,RemainingQty:Math.max(i.Qty-a-p,0)};});}
+  function recomputePOm(no){const po=POf(no);if(!po)return;const items=poItemsForM(no);const rem=items.reduce((s,i)=>s+i.RemainingQty,0),acc=items.reduce((s,i)=>s+i.AcceptedQty,0);po.Status=(acc>0&&rem<=0)?'Fully Received':(acc>0?'Partially Received':(po.Status==='Draft'?'Draft':'Sent to Supplier'));}
+  function senSheetM(no){const s=SENf(no);if(!s)return null;const rate={};(poItemsM[s.PONo]||[]).forEach(i=>rate[i.SKUCode]={rate:i.Rate,gst:i.GSTPercent});let value=0;const items=(senItemsM[no]||[]).map(i=>{const r=rate[i.SKUCode]||{rate:0,gst:0};value+=i.ReceivedQty*r.rate*(1+r.gst/100);return{SKUCode:i.SKUCode,SKUName:i.SKUName,POQty:i.POQty,ReceivedQty:i.ReceivedQty,Rate:r.rate};});const qc=qcs.find(q=>q.SENNo===no)||{};return{senNo:no,poNo:s.PONo,supplierName:s.SupplierName,vehicleNo:s.VehicleNo,invoiceNo:s.InvoiceNo,status:s.Status,items,qcStatus:qc.QCStatus||'',deduction:qc.DeductionAmount||0,value:Math.round(value)};}
+  function payListM(){const paid={};payments.forEach(p=>paid[p.SENNo]=(paid[p.SENNo]||0)+p.Amount);return sens.filter(s=>s.Status==='Material Received'||s.Status==='Paid').map(s=>{const sh=senSheetM(s.SENNo);const payable=Math.max((sh.value||0)-(sh.deduction||0),0);const pd=paid[s.SENNo]||0;return{SENNo:s.SENNo,PONo:s.PONo,SupplierName:s.SupplierName,payable,paid:pd,outstanding:Math.max(payable-pd,0)};}).filter(x=>x.outstanding>0);}
+  const senList=st=>sens.filter(s=>s.Status===st).map(s=>({SENNo:s.SENNo,PONo:s.PONo,SupplierName:s.SupplierName,GateDate:s.GateDate,VehicleNo:s.VehicleNo,Status:s.Status}));
+  return {
+    getBootstrap:()=>({user:{name:'Rajesh Kumar',role:'Admin',email:'admin@example.com'},masters,dashboard:dash()}),
+    getDashboard:()=>dash(),
+    getMasters:()=>masters,
+    savePO:(p)=>{const no='PO/'+FY+'-'+pad4(++pseq.PO);let tq=0,tv=0;const items=(p.items||[]).filter(it=>+it.qty>0).map(it=>{const amt=it.qty*it.rate*(1+(it.gstPercent||0)/100);tq+=+it.qty;tv+=amt;return{PONo:no,SKUCode:it.skuCode,SKUName:it.skuName,Qty:+it.qty,Rate:+it.rate,GSTPercent:+it.gstPercent||0,Amount:Math.round(amt)};});pos.unshift({PONo:no,PODate:p.poDate||'Today',SupplierCode:p.supplierCode||'',SupplierName:p.supplierName,TotalQty:tq,TotalValue:Math.round(tv),Status:'Draft'});poItemsM[no]=items;return{poNo:no,totalValue:Math.round(tv)};},
+    getPOs:()=>pos.map(p=>({PONo:p.PONo,PODate:p.PODate,SupplierName:p.SupplierName,TotalQty:p.TotalQty,TotalValue:p.TotalValue,Status:p.Status})),
+    sendPO:(no)=>{const p=POf(no);if(p&&p.Status==='Draft')p.Status='Sent to Supplier';return pos;},
+    getPOsForGate:()=>pos.filter(p=>['Sent to Supplier','Partially Received','Draft'].indexOf(p.Status)>-1).map(p=>({PONo:p.PONo,SupplierName:p.SupplierName,remaining:poItemsForM(p.PONo).reduce((s,i)=>s+i.RemainingQty,0)})).filter(p=>p.remaining>0),
+    getPOSheet:(no)=>{const p=POf(no);if(!p)return null;return{poNo:no,supplierName:p.SupplierName,supplierCode:p.SupplierCode,poDate:p.PODate,items:poItemsForM(no).filter(i=>i.RemainingQty>0)};},
+    saveGateEntryIn:(p)=>{const no='SEN-'+pad4(++pseq.SEN);sens.unshift({SENNo:no,PONo:p.poNo,SupplierName:p.supplierName,GateDate:'Today',VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',InvoiceNo:p.invoiceNo||'',Status:'Pending QC'});senItemsM[no]=(p.items||[]).filter(it=>+it.receivedQty>0).map(it=>({SENNo:no,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,POQty:+it.poQty||0,ReceivedQty:+it.receivedQty||0}));recomputePOm(p.poNo);return{senNo:no};},
+    getSENsForQC:()=>senList('Pending QC'),
+    getSENSheet:(no)=>senSheetM(no),
+    saveQC:(p)=>{const s=SENf(p.senNo);qcs.push({SENNo:p.senNo,PONo:s.PONo,QCStatus:p.qcStatus,DeductionAmount:+p.deductionAmount||0,Remarks:p.remarks||''});s.Status=(p.qcStatus==='Reject')?'QC Rejected':'QC Passed';recomputePOm(s.PONo);return{ok:true,next:s.Status};},
+    getSENsForReceiving:()=>senList('QC Passed'),
+    saveReceiving:(p)=>{const s=SENf(p.senNo);const grn='GRN-'+YM+'-'+String(++pseq.GRN).padStart(3,'0');receivings.push({GRNNo:grn,SENNo:p.senNo,PONo:s.PONo});s.Status='Material Received';recomputePOm(s.PONo);return{grnNo:grn};},
+    getSENsForReturn:()=>senList('QC Rejected'),
+    saveReturn:(p)=>{const s=SENf(p.senNo);const pr='PRN-'+YM+'-'+String(++pseq.PRN).padStart(3,'0');preturns.push({PRNo:pr,SENNo:p.senNo,PONo:s.PONo});s.Status='Material Returned';recomputePOm(s.PONo);return{prNo:pr};},
+    getSENsForPayment:()=>payListM(),
+    savePayment:(p)=>{const s=SENf(p.senNo);const no='PAY-'+YM+'-'+String(++pseq.PAY).padStart(3,'0');payments.push({PayNo:no,SENNo:p.senNo,PONo:s.PONo,Amount:+p.amount||0});if(!payListM().some(x=>x.SENNo===p.senNo))s.Status='Paid';return{payNo:no};},
+    getP2PDashboard:()=>({totalPO:pos.length,poOpen:pos.filter(p=>['Draft','Sent to Supplier','Partially Received'].indexOf(p.Status)>-1).length,pendingQC:sens.filter(s=>s.Status==='Pending QC').length,toReceive:sens.filter(s=>s.Status==='QC Passed').length,toReturn:sens.filter(s=>s.Status==='QC Rejected').length,toPay:payListM().length}),
+    saveVendor:(v)=>{masters.vendors.push({VendorCode:v.VendorCode,VendorName:v.VendorName,Address:v.Address||'',ContactPerson:v.ContactPerson||'',Mobile:v.Mobile||'',GST:v.GST||'',CreditDays:+v.CreditDays||0});return masters.vendors;},
+    saveSKU:(s)=>{masters.skus.push({SKUCode:s.SKUCode,SKUName:s.SKUName,Brand:s.Brand||'',Category:s.Category||'',UOM:s.UOM||'',GSTPercent:+s.GSTPercent||0,Rate:+s.Rate||0});return masters.skus;},
+    saveTransporter:(t)=>{masters.transporters.push({TransporterName:t.TransporterName,ContactNumber:t.ContactNumber||''});return masters.transporters;},
+    deleteVendor:(code)=>{masters.vendors=masters.vendors.filter(v=>v.VendorCode!==code);return masters.vendors;},
+    deleteSKU:(code)=>{masters.skus=masters.skus.filter(s=>s.SKUCode!==code);return masters.skus;},
+    deleteTransporter:(name)=>{masters.transporters=masters.transporters.filter(t=>t.TransporterName!==name);return masters.transporters;},
+    saveUser:(u)=>{users.push({Email:u.Email,Name:u.Name,Role:u.Role});return users;},
+    deleteUser:(email)=>{const i=users.findIndex(u=>u.Email===email);if(i>-1)users.splice(i,1);return users;},
+    getUsers:()=>users,
+    getOrders:(f)=>orders.map(o=>({...o,StageIndex:sIdx(o.Status,isSched(o.OrderNo))})).filter(o=>(f==='All'||!f)?true:bucket(o.Status)===f).slice().reverse(),
+    getOrderDetail:(no)=>{const o=O(no);if(!o)return null;const inv=invoices.filter(i=>i.OrderNo===no);const c=coll(no);return{order:{...o,Scheduled:isSched(no),StageIndex:sIdx(o.Status,isSched(no))},items:orderItems[no]||[],vehicles:gates.filter(g=>g.OrderNo===no).map(g=>{const gi=inv.find(i=>i.GateEntryNo===g.GateEntryNo);return{gateEntryNo:g.GateEntryNo,vehicleNo:g.VehicleNo,driver:g.DriverName,status:g.Status,invoiceNo:gi?gi.InvoiceNo:'',invoiceAmount:gi?gi.InvoiceAmount:0,gatedOut:['Vehicle Dispatched','Delivered','Return Pending','Returned','Closed'].includes(g.Status),delivered:['Delivered','Return Pending','Returned','Closed'].includes(g.Status)};}),invoiced:c.invoiced,collected:c.collected,outstanding:c.outstanding};},
+    getPendingDispatch:()=>orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)<0).map(o=>({OrderNo:o.OrderNo,VendorName:o.VendorName,TotalValue:o.TotalValue,Status:o.Status,RemainingQty:orderItemsFor(o.OrderNo).reduce((s,i)=>s+i.RemainingQty,0)})).filter(o=>o.RemainingQty>0),
+    getOrderItemsFor:(no)=>orderItemsFor(no),
+    getSchedulableOrders:()=>orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)<0).map(o=>({OrderNo:o.OrderNo,VendorName:o.VendorName,RemainingQty:orderItemsFor(o.OrderNo).reduce((s,i)=>s+i.RemainingQty,0)})).filter(o=>o.RemainingQty>0),
+    getScheduleSheet:(no)=>{const o=O(no);if(!o)return null;const ld=loadedBySku(no),op=openPlannedBySku(no);const sm={};schedItems.filter(s=>s.OrderNo===no).forEach(s=>sm[s.SKUCode]=(sm[s.SKUCode]||0)+s.ScheduledQty);const items=(orderItems[no]||[]).map(i=>{const pending=Math.max(i.Qty-(ld[i.SKUCode]||0)-(op[i.SKUCode]||0),0);return{SKUCode:i.SKUCode,SKUName:i.SKUName,OrderedQty:i.Qty,PendingQty:pending,ScheduledQty:(sm[i.SKUCode]!=null?sm[i.SKUCode]:pending)};});const ex=scheds.filter(s=>s.OrderNo===no).slice(-1)[0];return{orderNo:no,vendorName:o.VendorName,promisedDate:ex?ex.PromisedDate:'',promisedTime:ex?(ex.PromisedTime||''):'',items};},
+    saveSchedule:(p)=>{const no='SCH-'+YM+'-'+pad(++seq.SCH);scheds.push({ScheduleNo:no,OrderNo:p.orderNo,PromisedDate:p.promisedDate||'',PromisedTime:p.promisedTime||''});(p.items||[]).filter(it=>+it.scheduledQty>0).forEach(it=>schedItems.push({ScheduleNo:no,OrderNo:p.orderNo,SKUCode:it.skuCode,ScheduledQty:+it.scheduledQty}));return{scheduleNo:no};},
+    getDispatchPlanned:()=>{const used=gates.map(g=>g.PlanNo);return plans.filter(p=>p.Status==='Open'&&used.indexOf(p.PlanNo)<0).map(p=>{const o=O(p.OrderNo);return{PlanNo:p.PlanNo,OrderNo:p.OrderNo,VendorName:o?o.VendorName:'',Summary:p.items.map(i=>i.SKUName+' \u00d7'+i.PlannedQty).join(', ')};});},
+    getGateEntries:(st)=>gates.filter(g=>!st||g.Status===st).slice().reverse().map(g=>({GateEntryNo:g.GateEntryNo,PlanNo:g.PlanNo,OrderNo:g.OrderNo,VehicleNo:g.VehicleNo,DriverName:g.DriverName,Status:g.Status})),
+    getLoadingSheet:(ge)=>{const g=gates.find(x=>x.GateEntryNo===ge);const pl=plans.find(p=>p.PlanNo===g.PlanNo)||{items:[]};const o=O(g.OrderNo)||{};const vd=masters.vendors.find(v=>v.VendorName===o.VendorName)||{};const lt={};loadItems.filter(l=>l.GateEntryNo===ge).forEach(l=>lt[l.SKUCode]=(lt[l.SKUCode]||0)+l.DispatchQty);const skus=pl.items.map(pi=>{const bal=pi.PlannedQty-(lt[pi.SKUCode]||0);return{SKUCode:pi.SKUCode,SKUName:pi.SKUName,PlannedQty:pi.PlannedQty,BalanceQty:Math.max(bal,0),DispatchQty:0};}).filter(r=>r.BalanceQty>0);return{gateEntryNo:ge,planNo:g.PlanNo,orderNo:g.OrderNo,vehicleNo:g.VehicleNo,vendorName:o.VendorName||'',vendorCode:vd.VendorCode||'',vendorGST:vd.GST||'',skus};},
+    getPODSheet:(ge)=>{const g=gates.find(x=>x.GateEntryNo===ge);const items=loadItems.filter(l=>l.GateEntryNo===ge).map(l=>({SKUCode:l.SKUCode,SKUName:l.SKUName,LoadedQty:l.DispatchQty,DeliveredQty:l.DispatchQty,RejectedQty:0}));return{gateEntryNo:ge,orderNo:g.OrderNo,vehicleNo:g.VehicleNo,items};},
+    getInvoiceSheet:(ge)=>{const g=gates.find(x=>x.GateEntryNo===ge);if(!g)return null;const o=O(g.OrderNo)||{};const ois=orderItems[g.OrderNo]||[];let amt=0;const items=loadItems.filter(l=>l.GateEntryNo===ge).map(l=>{const s=masters.skus.find(x=>x.SKUCode===l.SKUCode)||{};const oi=ois.find(x=>x.SKUCode===l.SKUCode)||{};const rate=(oi.Rate!==undefined&&oi.Rate>0)?oi.Rate:(s.Rate||0);const gst=s.GSTPercent||0;const qty=l.DispatchQty||0,line=qty*rate*(1+gst/100);amt+=line;return{SKUCode:l.SKUCode,SKUName:l.SKUName,Qty:qty,Rate:rate,GSTPercent:gst,Amount:Math.round(line)};});return{gateEntryNo:ge,orderNo:g.OrderNo,vehicleNo:g.VehicleNo,vendorName:o.VendorName||'',items,suggestedAmount:Math.round(amt)};},
+    getReturnPending:()=>gates.filter(g=>g.Status==='Return Pending').slice().reverse().map(g=>({GateEntryNo:g.GateEntryNo,OrderNo:g.OrderNo,VehicleNo:g.VehicleNo,DriverName:g.DriverName})),
+    getReturnFlags:()=>({showReturns: gates.some(g=>g.Status==='Return Pending')||returns.some(r=>r.Status==='Returned')}),
+    getRejectedItems:(ge)=>podItems.filter(i=>i.GateEntryNo===ge&&i.RejectedQty>0).map(i=>({SKUCode:i.SKUCode,SKUName:i.SKUName,RejectedQty:i.RejectedQty})),
+    getReturnsToReceive:()=>returns.filter(r=>r.Status==='Returned').slice().reverse().map(r=>({ReturnNo:r.ReturnNo,GateEntryNo:r.GateEntryNo,OrderNo:r.OrderNo,VehicleNo:r.VehicleNo})),
+    getCollectionOrders:()=>collOrders(),
+    getCollection:(no)=>coll(no),
+    saveOrder:(p)=>{const no=FY+'-'+pad4(orders.length+1);let q=0,v=0;p.items.forEach(it=>{q+=it.qty;v+=it.qty*it.rate*(1+(it.sgst+it.cgst)/100);});orders.push({OrderNo:no,OrderDate:'24 Jun 2026',VendorName:p.vendorName,VendorCode:p.vendorCode,TotalQty:q,TotalValue:v,Status:'Pending Dispatch Planning'});orderItems[no]=p.items.map(it=>({SKUCode:it.skuCode,SKUName:it.skuName,Qty:it.qty,Rate:it.rate}));return{orderNo:no,totalValue:v};},
+    savePlanning:(p)=>{const no='PLN-'+DDMMYY+'-'+pad4(++seq.PLN);plans.push({PlanNo:no,OrderNo:p.orderNo,Status:'Open',items:(p.items||[]).filter(it=>+it.plannedQty>0).map(it=>({SKUCode:it.skuCode,SKUName:it.skuName,PlannedQty:+it.plannedQty}))});const rem=orderItemsFor(p.orderNo).reduce((s,i)=>s+i.RemainingQty,0);const o=O(p.orderNo);if(o)o.Status=rem>0?'Partial Planning':'Fully Planned';return{planNo:no};},
+    saveGateEntry:(p)=>{const no='GE-'+pad4(++seq.GE);gates.push({GateEntryNo:no,PlanNo:p.planNo,OrderNo:p.orderNo,VehicleNo:(p.vehicleNo||'').toUpperCase(),DriverName:(p.driverName||'').toUpperCase(),Status:'Vehicle Arrived'});const o=O(p.orderNo);if(o)o.Status='Vehicle Arrived';return{gateEntryNo:no};},
+    saveLoading:(p)=>{loadItems=loadItems.filter(l=>l.GateEntryNo!==p.gateEntryNo);(p.items||[]).filter(it=>+it.dispatchQty>0).forEach(it=>loadItems.push({GateEntryNo:p.gateEntryNo,PlanNo:p.planNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,PlannedQty:it.plannedQty,DispatchQty:+it.dispatchQty}));const pl=plans.find(x=>x.PlanNo===p.planNo);if(pl)pl.Status='Closed';const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Loading Completed';const o=O(p.orderNo);const ordered=(orderItems[p.orderNo]||[]).reduce((a,i)=>a+i.Qty,0);const loaded=loadItems.filter(l=>l.OrderNo===p.orderNo).reduce((a,l)=>a+l.DispatchQty,0);if(o)o.Status=loaded>=ordered?'Loading Completed':'Partial Loading';return{ok:true};},
+    saveInvoice:(p)=>{invoices.push({OrderNo:p.orderNo,GateEntryNo:p.gateEntryNo,InvoiceNo:p.invoiceNo,InvoiceAmount:+p.invoiceAmount});const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Invoice Generated';const o=O(p.orderNo);if(o)o.Status='Invoice Generated';return{ok:true};},
+    saveGateOut:(p)=>{const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Vehicle Dispatched';const o=O(p.orderNo);if(o)o.Status='Vehicle Dispatched';return{ok:true};},
+    savePOD:(p)=>{const items=p.items||[];const rej=items.reduce((s,i)=>s+(+i.rejectedQty||0),0);items.forEach(it=>{const loaded=+it.loadedQty||0,r=+it.rejectedQty||0;podItems.push({GateEntryNo:p.gateEntryNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,LoadedQty:loaded,DeliveredQty:Math.max(loaded-r,0),RejectedQty:r});});pods.push({GateEntryNo:p.gateEntryNo,OrderNo:p.orderNo,Status:rej>0?'Partial Delivery':'Delivered',HasReturn:rej>0});const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status=rej>0?'Return Pending':'Delivered';const st=recompute(p.orderNo);return{ok:true,hasReturn:rej>0,rejected:rej,orderStatus:st};},
+    saveReturnGateEntry:(p)=>{const no='RE-'+pad4(++seq.RET);returns.push({ReturnNo:no,GateEntryNo:p.gateEntryNo,OrderNo:p.orderNo,VehicleNo:(p.vehicleNo||'').toUpperCase(),DriverName:(p.driverName||'').toUpperCase(),Status:'Returned'});const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Returned';const o=O(p.orderNo);if(o)o.Status='Returned';return{returnNo:no};},
+    saveReturnReceived:(p)=>{const r=returns.find(x=>x.ReturnNo===p.returnNo);if(r){r.Status='Received';r.ReceiverName=(p.receiverName||'').toUpperCase();}const g=gates.find(x=>x.GateEntryNo===p.gateEntryNo);if(g)g.Status='Closed';const s=recompute(p.orderNo);return{ok:true,orderStatus:s};},
+    saveCollection:(p)=>{const no='COL-'+YM+'-'+pad(++seq.COL);collections.push({CollectionNo:no,OrderNo:p.orderNo,CollectionAmount:+p.amount,PaymentMode:p.mode,CollectionDate:'24 Jun 2026',RefNo:p.refNo});const c=coll(p.orderNo);recompute(p.orderNo);return c;},
+    getReport:(t)=>{
+      const open=orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)<0);
+      const closed=orders.filter(o=>['Fully Collected','Closed'].indexOf(o.Status)>-1);
+      const partial=orders.filter(o=>['Partial Planning','Partial Loading','Partially Collected','Partially Dispatched'].indexOf(o.Status)>-1);
+      const loaded=orders.filter(o=>o.Status==='Loading Completed');
+      if(t==='SKULedger')return skuRows(orders);
+      if(t==='OpenOrders')return skuRows(open);
+      if(t==='ClosedOrders')return skuRows(closed);
+      if(t==='PartialOrders')return skuRows(partial);
+      if(t==='InvoicePending')return skuRows(loaded);
+      if(t==='POD')return podRows();
+      if(t==='OrderRegister')return orders.map(o=>({OrderNo:o.OrderNo,Date:o.OrderDate,Vendor:o.VendorName,Value:o.TotalValue,Status:o.Status}));
+      if(t==='Outstanding')return orders.map(o=>{const c=coll(o.OrderNo);return{OrderNo:o.OrderNo,Invoiced:c.invoiced,Collected:c.collected,Outstanding:c.outstanding};}).filter(r=>r.Invoiced>0);
+      if(t==='CollectionRegister')return collections.map(c=>({CollectionNo:c.CollectionNo||'',OrderNo:c.OrderNo,Amount:c.CollectionAmount,Mode:c.PaymentMode,Date:c.CollectionDate}));
+      if(t==='GateEntry')return gates.map(g=>({GateEntryNo:g.GateEntryNo,OrderNo:g.OrderNo,Vehicle:g.VehicleNo,Status:g.Status}));
+      if(t==='GateOut')return gates.filter(g=>['Vehicle Dispatched','Delivered'].indexOf(g.Status)>-1).map(g=>({GateEntryNo:g.GateEntryNo,OrderNo:g.OrderNo,Vehicle:g.VehicleNo,Status:g.Status}));
+      if(t==='DispatchPlanning')return plans.map(p=>({PlanNo:p.PlanNo,OrderNo:p.OrderNo,Status:p.Status}));
+      if(t==='InvoiceRegister')return invoices.map(i=>({InvoiceNo:i.InvoiceNo,OrderNo:i.OrderNo,Amount:i.InvoiceAmount}));
+      if(t==='PartyCollection'){const m={};collections.forEach(c=>{const o=O(c.OrderNo);const v=o?o.VendorName:c.OrderNo;m[v]=(m[v]||0)+c.CollectionAmount;});return Object.keys(m).map(k=>({Vendor:k,Collected:m[k]}));}
+      return orders.map(o=>({OrderNo:o.OrderNo,Vendor:o.VendorName,Status:o.Status}));
+    }
+  };
+})();
+function ymM(){const d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0');}
+</script>
+</body>
+</html>
