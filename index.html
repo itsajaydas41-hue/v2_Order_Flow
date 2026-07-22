@@ -430,6 +430,8 @@ body.dark .btn-primary:hover{background:#15803D}
 .lc-step.ok{background:var(--ok-bg);color:var(--ok)}
 .lc-step.bad{background:var(--err-bg,rgba(220,38,38,.12));color:var(--err,#DC2626)}
 .lc-step.pend{opacity:.7}
+.lc-next{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.lc-next-l{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--t3);margin-bottom:7px;font-weight:700}
 .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
 .dgrid>div{display:flex;flex-direction:column;padding:4px 0;border-bottom:1px solid var(--line)}
 .dgrid .dk{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
@@ -1923,8 +1925,12 @@ function showPOLifecycle(poNo){
         <div class="lc-wrap">${stages}</div>
         <div class="sec" style="margin:6px 0 8px"><h3>Inward Details</h3></div>
         ${senBlocks}
-        <div class="btn-row" style="margin-top:14px">
-          <button class="btn btn-primary btn-sm" id="lcPdf">📄 View PO PDF</button>
+        ${L.next?`<div class="lc-next">
+          <div class="lc-next-l">Agla step</div>
+          <button class="btn btn-primary" id="lcNext" style="width:100%">${L.next.label} →</button>
+        </div>`:`<div class="lc-next"><div class="lc-next-l" style="text-align:center;padding:8px 0">✓ Is PO ke sabhi steps complete ho chuke hain</div></div>`}
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-ghost btn-sm" id="lcPdf">📄 View PO PDF</button>
           <button class="btn btn-ghost btn-sm" id="lcClose">Close</button>
         </div>
       </div></div></div>`;
@@ -1934,6 +1940,13 @@ function showPOLifecycle(poNo){
     document.getElementById('lcClose').onclick=close;
     document.getElementById('lcBg').onclick=e=>{ if(e.target.id==='lcBg') close(); };
     document.getElementById('lcPdf').onclick=()=>viewPOPdf(poNo);
+    const nb=document.getElementById('lcNext');
+    if(nb) nb.onclick=()=>{
+      close();
+      if(L.next.action==='send'){ doSendPO(poNo); return; }        // Draft → seedha Send modal
+      if(!canView(L.next.route)){ toast('Aapke paas is page ki permission nahi hai',true); return; }
+      go(L.next.route, L.next.arg||undefined);                      // baaki → us page par SEN/PO pre-selected
+    };
   }).catch(err=>toast(err.message||'Failed',true));
 }
 function poEmailBody(d){
