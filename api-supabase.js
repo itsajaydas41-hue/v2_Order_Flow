@@ -867,6 +867,7 @@ function getScheduleSheet(orderNo){
   return {orderNo:orderNo, vendorName:o.VendorName, promisedDate: existing?fmtDate_(existing.PromisedDate):'', promisedTime: existing?String(existing.PromisedTime||''):'', items:items};
 }
 function saveSchedule(p){
+  o2cOrder_(p.orderNo);                                    // CHAIN: order pehle
   const schNo=nextNumber_('Schedule','ScheduleNo','SCH');
   append_('Schedule',{ScheduleNo:schNo,OrderNo:p.orderNo,VendorName:p.vendorName||'',PromisedDate:p.promisedDate||'',PromisedTime:p.promisedTime||'',Remarks:p.remarks||'',CreatedBy:currentUser_().email,CreatedAt:new Date()});
   appendMany_('ScheduleItems',(p.items||[]).filter(it=>Number(it.scheduledQty)>0).map(it=>({ScheduleNo:schNo,OrderNo:p.orderNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),OrderedQty:Number(it.orderedQty)||0,ScheduledQty:Number(it.scheduledQty)||0})));
@@ -934,6 +935,7 @@ function loadedBySku_(orderNo){
 }
 
 function savePlanning(p){
+  o2cOrder_(p.orderNo);                                    // CHAIN: order pehle
   // p = { orderNo, plannedDate, plannedTime, transporterName, remarks, items:[{skuCode,skuName,plannedQty}] }
   const planNo = nextSeq_('Planning','PlanNo','PLN-'+Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'ddMMyy')+'-',4);
   append_('Planning', { PlanNo:planNo, OrderNo:p.orderNo, PlannedDate:p.plannedDate, PlannedTime:p.plannedTime,
@@ -980,6 +982,9 @@ function getDispatchPlanned(){
 }
 
 function saveGateEntry(p){
+  if(!p.planNo) throw new Error('Plan number missing.');
+  if(!readAll_('Planning').some(x=>x.PlanNo===p.planNo)) throw new Error('Pehle Dispatch Planning karein — plan nahi mila.');
+  if(readAll_('GateEntry').some(g=>g.PlanNo===p.planNo)) throw new Error('Is plan par gate entry pehle ho chuki hai.');
   // p = { planNo, orderNo, vehicleNo, driverName, mobileNo, dlNo, rcNo, transporterName }
   const geNo = nextSeqYearly_('GateEntry','GateEntryNo','GE-','GateDate',4);
   ['vehicleNo','driverName','dlNo','rcNo'].forEach(function(k){ if(p[k]) p[k]=String(p[k]).toUpperCase(); });
@@ -1026,6 +1031,8 @@ function getLoadingSheet(gateEntryNo){
 
 function saveLoading(p){
   // p = { gateEntryNo, planNo, orderNo, items:[{skuCode,skuName,plannedQty,dispatchQty}] }
+  o2cGate_(p.gateEntryNo);                                 // CHAIN: gate entry pehle
+  if(o2cHasInvoice_(p.gateEntryNo)) throw new Error('Is vehicle ka invoice ban chuka hai — ab loading change nahi ho sakti.');
   deleteWhere_('LoadItems','GateEntryNo',p.gateEntryNo);   // clear any prior load rows for this vehicle
   appendMany_('LoadItems', p.items.filter(it=>Number(it.dispatchQty)>0).map(it=>({
     GateEntryNo:p.gateEntryNo, PlanNo:p.planNo, OrderNo:p.orderNo, SKUCode:it.skuCode, SKUName:it.skuName,
@@ -1074,6 +1081,10 @@ function getInvoiceSheet(gateEntryNo){
 
 function saveInvoice(p){
   // p = { gateEntryNo, orderNo, invoiceNo, invoiceDate, invoiceAmount, file:{base64,name,mime} }
+  o2cGate_(p.gateEntryNo);
+  if(!o2cHasLoad_(p.gateEntryNo)) throw new Error('Pehle Vehicle Loading complete karein, tabhi invoice ban sakta hai.');
+  if(o2cHasInvoice_(p.gateEntryNo)) throw new Error('Is vehicle ka invoice pehle hi ban chuka hai.');
+  if(!p.invoiceNo || !String(p.invoiceNo).trim()) throw new Error('Invoice number is required.');
   let url='';
   if (p.file && p.file.base64) url = uploadFile_(p.file.base64, p.file.name, p.file.mime);
   append_('Invoice', { GateEntryNo:p.gateEntryNo, OrderNo:p.orderNo, InvoiceNo:p.invoiceNo,
@@ -1090,6 +1101,9 @@ function saveInvoice(p){
 /* ============================== GATE OUT ========================= */
 function saveGateOut(p){
   // p = { gateEntryNo, orderNo, vehicleNo, driverName, invoiceNo, checks:{invoice,lr,vehicle,docs} }
+  o2cGate_(p.gateEntryNo);
+  if(!o2cHasInvoice_(p.gateEntryNo)) throw new Error('Pehle Invoice Entry karein, tabhi gate out ho sakta hai.');
+  if(o2cHasGateOut_(p.gateEntryNo)) throw new Error('Ye vehicle pehle hi gate out ho chuka hai.');
   const c = p.checks||{};
   if (!(c.invoice && c.lr && c.vehicle && c.docs && c.weighment)) throw new Error('All verifications (including Weighment Done) are required before gate out.');
   const now = new Date();
@@ -1122,6 +1136,9 @@ function getPODSheet(gateEntryNo){
 function savePOD(p){
   // p = { gateEntryNo, orderNo, deliveryDate, receiverName, receiverMobile, remarks, file,
   //       items:[{skuCode,skuName,loadedQty,deliveredQty,rejectedQty}] }
+  o2cGate_(p.gateEntryNo);
+  if(!o2cHasGateOut_(p.gateEntryNo)) throw new Error('Pehle Gate Out karein, tabhi POD post ho sakta hai.');
+  if(o2cHasPOD_(p.gateEntryNo)) throw new Error('Is vehicle ka POD pehle hi post ho chuka hai.');
   let url='';
   if (p.file && p.file.base64) url = uploadFile_(p.file.base64, p.file.name, p.file.mime);
   const items = p.items||[];
@@ -1247,6 +1264,8 @@ function getCollection(orderNo){
 
 function saveCollection(p){
   // p = { orderNo, invoiceNo, vendorName, invoiceAmount, collectionDate, amount, mode, refNo, remarks }
+  o2cOrder_(p.orderNo);
+  if(!readAll_('POD').some(x=>x.OrderNo===p.orderNo)) throw new Error('Pehle POD (delivery proof) post karein, tabhi collection entry ho sakti hai.');
   if(!p.refNo || !String(p.refNo).trim()) throw new Error('Reference No. is required.');
   const colNo = nextNumber_('Collection','CollectionNo','COL');
   const _ded=Number(p.deductionAmount)||0, _amt=Number(p.amount)||0;
@@ -1583,18 +1602,39 @@ function poItemsFor(poNo){
              AcceptedQty:a, InPipelineQty:p, RemainingQty:Math.max(ordered-a-p,0) };
   });
 }
+/* Sirf wahi qty jiska GRN (Material Received) ho chuka hai */
+function poReceivedBySku_(poNo){
+  const grnSens={}; readAll_('Receiving').forEach(r=>grnSens[r.SENNo]=1);
+  const map={};
+  readAll_('SENItems').filter(s=>s.PONo===poNo).forEach(s=>{
+    if(grnSens[s.SENNo]) map[s.SKUCode]=(map[s.SKUCode]||0)+(Number(s.ReceivedQty)||0);
+  });
+  return map;
+}
 function recomputePOStatus_(poNo){
   const po=readAll_('PO').find(p=>p.PONo===poNo); if(!po) return;
   const items=poItemsFor(poNo);
   const remaining=items.reduce((s,i)=>s+i.RemainingQty,0);
-  const accepted=items.reduce((s,i)=>s+i.AcceptedQty,0);
+  /* CHAIN: "Fully Received" tabhi jab material actually receive (GRN) ho gaya ho —
+     sirf QC pass hone se PO complete nahi hota. */
+  const rcv=poReceivedBySku_(poNo);
+  const receivedQty=Object.keys(rcv).reduce((s,k)=>s+rcv[k],0);
   let st;
-  if (accepted>0 && remaining<=0) st=PO_STATUS.RECEIVED;
-  else if (accepted>0) st=PO_STATUS.PARTIAL;
+  if (receivedQty>0 && remaining<=0) st=PO_STATUS.RECEIVED;
+  else if (receivedQty>0)            st=PO_STATUS.PARTIAL;
   else st = (po.Status===PO_STATUS.DRAFT)?PO_STATUS.DRAFT:PO_STATUS.SENT;
   updateWhere_('PO','PONo',poNo,{Status:st});
   return st;
 }
+
+/* ================= O2C CHAIN GUARDS =================
+ * Har step tabhi allowed jab uska pichhla step complete ho — pipeline ki tarah. */
+function o2cOrder_(orderNo){ const o=readAll_('Orders').find(x=>x.OrderNo===orderNo); if(!o) throw new Error('Order not found: '+orderNo); return o; }
+function o2cGate_(gateEntryNo){ const g=readAll_('GateEntry').find(x=>x.GateEntryNo===gateEntryNo); if(!g) throw new Error('Gate entry not found: '+gateEntryNo); return g; }
+function o2cHasLoad_(gateEntryNo){ return readAll_('LoadItems').some(l=>l.GateEntryNo===gateEntryNo); }
+function o2cHasInvoice_(gateEntryNo){ return readAll_('Invoice').some(i=>i.GateEntryNo===gateEntryNo); }
+function o2cHasGateOut_(gateEntryNo){ return readAll_('GateOut').some(g=>g.GateEntryNo===gateEntryNo); }
+function o2cHasPOD_(gateEntryNo){ return readAll_('POD').some(p=>p.GateEntryNo===gateEntryNo); }
 
 /* ---- Purchase Order ---- */
 function savePO(p){
@@ -1663,7 +1703,27 @@ function getPOLifecycle(poNo){
     {key:'closed',  label:po.Status===PO_STATUS.CLOSED?'Closed':(po.Status===PO_STATUS.RECEIVED?'Fully Received':'In Progress'), done:[PO_STATUS.RECEIVED,PO_STATUS.CLOSED].indexOf(po.Status)>-1, date:'', sub:''}
   ];
   const totalRecv=poItemsFor(poNo).reduce((s,i)=>s+(i.AcceptedQty||0),0);
+  /* AGLA STEP — chain me jo abhi karna baaki hai */
+  let next=null;
+  const openSen=sens.find(function(s){
+    if(s.Status===SEN_STATUS.PENDING_QC) return true;
+    if(s.Status===SEN_STATUS.QC_PASSED && !recv.some(r=>r.SENNo===s.SENNo)) return true;
+    if(s.Status===SEN_STATUS.QC_REJECTED) return true;
+    if(s.Status===SEN_STATUS.RECEIVED && !pays.some(p=>p.SENNo===s.SENNo)) return true;
+    return false;
+  });
+  if(po.Status===PO_STATUS.DRAFT){
+    next={ action:'send', label:'Send to Supplier', route:'p2p_polist', arg:'' };
+  } else if(openSen){
+    if(openSen.Status===SEN_STATUS.PENDING_QC)       next={ action:'qc',        label:'QC Check — '+openSen.SENNo,          route:'p2p_qc',        arg:openSen.SENNo };
+    else if(openSen.Status===SEN_STATUS.QC_PASSED)   next={ action:'receiving', label:'Material Received — '+openSen.SENNo, route:'p2p_receiving', arg:openSen.SENNo };
+    else if(openSen.Status===SEN_STATUS.QC_REJECTED) next={ action:'return',    label:'Material Return — '+openSen.SENNo,   route:'p2p_return',    arg:openSen.SENNo };
+    else                                            next={ action:'payment',   label:'Payment — '+openSen.SENNo,           route:'p2p_payment',   arg:openSen.SENNo };
+  } else if(po.Status!==PO_STATUS.RECEIVED && po.Status!==PO_STATUS.CLOSED){
+    next={ action:'gate', label:'Gate Entry (SEN)', route:'p2p_gate', arg:po.PONo };
+  }
   return {
+    next:next,
     poNo:po.PONo, supplier:po.SupplierName, broker:po.BrokerName||'', poDate:fmtDate_(po.PODate),
     status:po.Status, totalQty:po.TotalQty, totalValue:po.TotalValue, receivedQty:totalRecv,
     stages:stages, sens:senBlocks
@@ -1681,6 +1741,10 @@ function getPOSheet(poNo){
   return {poNo:poNo, supplierName:po.SupplierName, supplierCode:po.SupplierCode, poDate:fmtDate_(po.PODate), items:poItemsFor(poNo).filter(i=>i.RemainingQty>0)};
 }
 function saveGateEntryIn(p){
+  const po_=readAll_('PO').find(x=>x.PONo===p.poNo);
+  if(!po_) throw new Error('PO not found.');
+  if(po_.Status===PO_STATUS.DRAFT) throw new Error('Pehle PO supplier ko bhejein (Send to Supplier), tabhi gate entry ho sakti hai.');
+  if(po_.Status===PO_STATUS.CLOSED) throw new Error('Ye PO close ho chuka hai.');
   const senNo=nextSeqYearly_('SEN','SENNo','SEN-','CreatedAt',4); const now=new Date();
   append_('SEN',{SENNo:senNo,PONo:p.poNo,SupplierName:p.supplierName,GateDate:now,GateTime:fmtTime_(now),VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',DriverMobile:p.driverMobile||'',InvoiceNo:p.invoiceNo||'',Status:SEN_STATUS.PENDING_QC,CreatedAt:now});
   appendMany_('SENItems',(p.items||[]).filter(it=>Number(it.receivedQty)>0).map(it=>({SENNo:senNo,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),POQty:Number(it.poQty)||0,ReceivedQty:Number(it.receivedQty)||0})));
@@ -1725,6 +1789,7 @@ function getSENSheet(senNo){
 function getSENsForQC(){ return getSENs(SEN_STATUS.PENDING_QC); }
 function saveQC(p){
   const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
+  if(sen.Status!==SEN_STATUS.PENDING_QC) throw new Error('Is SEN ka QC pehle ho chuka hai (status: '+sen.Status+').');
   append_('QC',{SENNo:p.senNo,PONo:sen.PONo,QCStatus:p.qcStatus,DeductionAmount:Number(p.deductionAmount)||0,HL:p.hl||'',Moisture:p.moisture||'',Infestation:p.infestation||'',Gluten:p.gluten||'',ForeignMatter:p.foreignMatter||'',KB:p.kb||'',Inspector:p.inspector||currentUser_().name,Remarks:p.remarks||'',QCDate:new Date()});
   const next=(p.qcStatus===QC_STATUS.REJECT)?SEN_STATUS.QC_REJECTED:SEN_STATUS.QC_PASSED;
   updateWhere_('SEN','SENNo',p.senNo,{Status:next});
@@ -1778,6 +1843,8 @@ function getSENsForPayment(){
 }
 function savePayment(p){
   const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
+  const hasGRN=readAll_('Receiving').some(r=>r.SENNo===p.senNo);
+  if(!hasGRN) throw new Error('Pehle Material Received (GRN) karein, uske baad payment.');
   const payNo=nextNumber_('Payment','PayNo','PAY');
   append_('Payment',{PayNo:payNo,PONo:sen.PONo,SENNo:p.senNo,SupplierName:sen.SupplierName,Amount:Number(p.amount)||0,PayDate:new Date(),PaymentMode:p.paymentMode||'',RefNo:p.refNo||'',Remarks:p.remarks||'',CreatedAt:new Date()});
   if(!getSENsForPayment().some(x=>x.SENNo===p.senNo)) updateWhere_('SEN','SENNo',p.senNo,{Status:SEN_STATUS.PAID});
