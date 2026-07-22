@@ -130,9 +130,9 @@ const SHEETS = {
   /* ---- Purchase-to-Payment (P2P) ---- */
   PO:                ['PONo','PODate','SupplierCode','SupplierName','BrokerName','SupplierEmail','TransportType','NumVehicles','DeductionCondition','PackingTerms','Remarks','TotalQty','TotalValue','Status','CreatedBy','CreatedAt'],
   POItems:           ['PONo','SKUCode','SKUName','UOM','Qty','Rate','GSTPercent','Amount'],
-  SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','InvoiceNo','Status','CreatedAt'],
+  SEN:               ['SENNo','PONo','SupplierName','GateDate','GateTime','VehicleNo','DriverName','DriverMobile','InvoiceNo','Status','CreatedAt'],
   SENItems:          ['SENNo','PONo','SKUCode','SKUName','UOM','POQty','ReceivedQty'],
-  QC:                ['SENNo','PONo','QCStatus','DeductionAmount','Inspector','Remarks','QCDate'],
+  QC:                ['SENNo','PONo','QCStatus','DeductionAmount','HL','Moisture','Infestation','Gluten','ForeignMatter','KB','Inspector','Remarks','QCDate'],
   Receiving:         ['GRNNo','SENNo','PONo','ReceiveDate','ReceiverName','FactoryGrossWeight','FactoryTareWeight','FactoryNetWeight','PartyNetWeight','Remarks','Status'],
   PurchaseReturn:    ['PRNo','SENNo','PONo','ReturnDate','Reason','Status'],
   Payment:           ['PayNo','PONo','SENNo','SupplierName','Amount','PayDate','PaymentMode','RefNo','Remarks','CreatedAt'],
@@ -1271,6 +1271,112 @@ function saveCollection(p){
 
 
 
+/* ===== NAYE P2P REPORTS (apna alag format — 18-col normalise nahi hote) ===== */
+function rptSupplierOf_(poNo){
+  const po=readAll_('PO').find(p=>p.PONo===poNo)||{};
+  const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
+  return {po:po, sup:sup};
+}
+/* 5) PO Report */
+function rptPOReport(){
+  const out=[];
+  readAll_('PO').forEach(function(po){
+    const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
+    readAll_('POItems').filter(i=>i.PONo===po.PONo).forEach(function(i){
+      const qty=Number(i.Qty)||0, rate=Number(i.Rate)||0, gst=Number(i.GSTPercent)||0;
+      const taxable=qty*rate, tax=taxable*gst/100;
+      out.push({
+        'Date':fmtDate_(po.PODate), 'PO Number':po.PONo, 'Supplier Name':po.SupplierName||'',
+        'Broker Name':po.BrokerName||'', 'Supplier Add':sup.Address||'', 'Broker Add':sup.BrokerAddress||'',
+        'Item':i.SKUName||'', 'UOM':i.UOM||'',
+        'PO Qty':qty, 'PO Rate':rate, 'GST %':gst,
+        'Taxable Amount':Math.round(taxable), 'Tax Amount':Math.round(tax), 'Total Amount':Math.round(taxable+tax),
+        'Status':po.Status||''
+      });
+    });
+  });
+  return out;
+}
+/* 6) QC Status Report */
+function rptQCStatus(){
+  const sens=readAll_('SEN'), qcs=readAll_('QC'), items=readAll_('SENItems'), pois=readAll_('POItems');
+  return qcs.map(function(q){
+    const sen=sens.find(s=>s.SENNo===q.SENNo)||{};
+    const x=rptSupplierOf_(sen.PONo||q.PONo);
+    const its=items.filter(i=>i.SENNo===q.SENNo);
+    const invQty=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
+    const first=its[0]||{};
+    const poi=pois.find(i=>i.PONo===(sen.PONo||q.PONo) && i.SKUCode===first.SKUCode)||{};
+    return {
+      'SEN Number':q.SENNo, 'Gate Entry Date':fmtDate_(sen.GateDate), 'Time':sen.GateTime||'',
+      'PO Number':sen.PONo||q.PONo, 'Supplier Name':sen.SupplierName||'', 'Broker Name':x.po.BrokerName||'',
+      'Invoice Number':sen.InvoiceNo||'', 'Invoice Qty':invQty, 'Rate':Number(poi.Rate)||0,
+      'QC Date':fmtDate_(q.QCDate), 'QC Status':q.QCStatus||'',
+      'HL':q.HL||'', 'Moisture (%)':q.Moisture||'', 'Infestation':q.Infestation||'',
+      'Gluten (%)':q.Gluten||'', 'Foreign Matter':q.ForeignMatter||'', 'KB':q.KB||'',
+      'Deduction':Number(q.DeductionAmount)||0, 'Inspector':q.Inspector||''
+    };
+  });
+}
+/* 7) GRN / Receiving Report */
+function rptGRN(){
+  const sens=readAll_('SEN'), qcs=readAll_('QC'), items=readAll_('SENItems'), pois=readAll_('POItems');
+  return readAll_('Receiving').map(function(r){
+    const sen=sens.find(s=>s.SENNo===r.SENNo)||{};
+    const qc=qcs.find(q=>q.SENNo===r.SENNo)||{};
+    const x=rptSupplierOf_(r.PONo||sen.PONo);
+    const its=items.filter(i=>i.SENNo===r.SENNo);
+    const poQty=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
+    const first=its[0]||{};
+    const poi=pois.find(i=>i.PONo===(r.PONo||sen.PONo) && i.SKUCode===first.SKUCode)||{};
+    return {
+      'GRN Date':fmtDate_(r.ReceiveDate), 'GRN Number':r.GRNNo, 'SEN Number':r.SENNo,
+      'QC Status':qc.QCStatus||'', 'PO Number':r.PONo||sen.PONo,
+      'Supplier Name':sen.SupplierName||'', 'Broker Name':x.po.BrokerName||'',
+      'PO Qty':poQty, 'Rate':Number(poi.Rate)||0,
+      'Weighment (KG)':Number(r.FactoryGrossWeight)||0,
+      'Factory Tare Weight (KG)':Number(r.FactoryTareWeight)||0,
+      'Factory Net Weight (KG)':Number(r.FactoryNetWeight)||0,
+      'Party Net Weight (KG)':Number(r.PartyNetWeight)||0,
+      'Received By':r.ReceiverName||''
+    };
+  });
+}
+/* 8) Return / Rejected Report */
+function rptReturn(){
+  const sens=readAll_('SEN'), items=readAll_('SENItems'), pois=readAll_('POItems'), qcs=readAll_('QC');
+  return readAll_('PurchaseReturn').map(function(pr){
+    const sen=sens.find(s=>s.SENNo===pr.SENNo)||{};
+    const x=rptSupplierOf_(pr.PONo||sen.PONo);
+    const its=items.filter(i=>i.SENNo===pr.SENNo);
+    const qty=its.reduce((s,i)=>s+(Number(i.ReceivedQty)||0),0);
+    const first=its[0]||{};
+    const poi=pois.find(i=>i.PONo===(pr.PONo||sen.PONo) && i.SKUCode===first.SKUCode)||{};
+    const qc=qcs.find(q=>q.SENNo===pr.SENNo)||{};
+    return {
+      'Return Number':pr.PRNo, 'SEN Number':pr.SENNo, 'Date':fmtDate_(pr.ReturnDate),
+      'PO Number':pr.PONo||sen.PONo, 'Supplier Name':sen.SupplierName||'', 'Broker Name':x.po.BrokerName||'',
+      'Return Qty':qty, 'Rate':Number(poi.Rate)||0,
+      'QC Status':qc.QCStatus||'', 'Reason':pr.Reason||'', 'Status':pr.Status||''
+    };
+  });
+}
+/* 9) PO Status Report */
+function rptPOStatus(){
+  return readAll_('PO').map(function(po){
+    const its=poItemsFor(po.PONo);
+    const totalQty=its.reduce((s,i)=>s+(i.POQty||0),0);
+    const recvQty=its.reduce((s,i)=>s+(i.AcceptedQty||0),0);
+    const pending=Math.max(totalQty-recvQty,0);
+    const rate=its.length?its[0].Rate:0;
+    return {
+      'PO Number':po.PONo, 'PO Date':fmtDate_(po.PODate), 'Supplier Name':po.SupplierName||'',
+      'Rate':rate, 'Total PO Qty':totalQty, 'Received Qty':recvQty, 'Pending PO Qty':pending,
+      'Status':po.Status||''
+    };
+  });
+}
+
 /* ============================== REPORTS ========================= */
 /* Har report ke SAARE possible columns (data khaali ho tab bhi customise me dikhein).
    Frontend inhe default order+visibility ke liye use karta hai.                       */
@@ -1289,7 +1395,15 @@ var REPORT_COLS = {
   CollectionRegister: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
   Outstanding: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
   PartyCollection: ['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'],
+  /* --- P2P reports: apna alag format --- */
+  POReport:       ['Date','PO Number','Supplier Name','Broker Name','Supplier Add','Broker Add','Item','UOM','PO Qty','PO Rate','GST %','Taxable Amount','Tax Amount','Total Amount','Status'],
+  QCStatusReport: ['SEN Number','Gate Entry Date','Time','PO Number','Supplier Name','Broker Name','Invoice Number','Invoice Qty','Rate','QC Date','QC Status','HL','Moisture (%)','Infestation','Gluten (%)','Foreign Matter','KB','Deduction','Inspector'],
+  GRNReport:      ['GRN Date','GRN Number','SEN Number','QC Status','PO Number','Supplier Name','Broker Name','PO Qty','Rate','Weighment (KG)','Factory Tare Weight (KG)','Factory Net Weight (KG)','Party Net Weight (KG)','Received By'],
+  ReturnReport:   ['Return Number','SEN Number','Date','PO Number','Supplier Name','Broker Name','Return Qty','Rate','QC Status','Reason','Status'],
+  POStatusReport: ['PO Number','PO Date','Supplier Name','Rate','Total PO Qty','Received Qty','Pending PO Qty','Status']
 };
+/* Ye reports apne columns rakhte hain — 18-column normalise nahi hote */
+var REPORT_CUSTOM_SHAPE = ['POReport','QCStatusReport','GRNReport','ReturnReport','POStatusReport'];
 function getReportColumns(type){ return REPORT_COLS[type] || []; }
 
 /* Har order ke chaaro dates ek jagah: Created, Order, Delivery (aakhri POD), Collection (aakhri) */
@@ -1324,6 +1438,11 @@ function getReportRaw(type){
     case 'CollectionRegister':{ const D=rptDates_(); return readAll_('Collection').map(cl=>({ CollectionNo:cl.CollectionNo, OrderNo:cl.OrderNo, InvoiceNo:cl.InvoiceNo, Vendor:cl.VendorName, CreatedDate:fmtDate_(cl.CreatedAt), OrderDate:D.order(cl.OrderNo), DeliveryDate:D.delivery(cl.OrderNo), CollectionDate:fmtDate_(cl.CollectionDate), InvoiceAmount:Number(cl.InvoiceAmount)||0, Collected:Number(cl.CollectionAmount)||0, Deduction:Number(cl.DeductionAmount)||0, ActualReceived:Number(cl.ActualReceived)||0, Mode:cl.PaymentMode||'', RefNo:cl.RefNo||'' })); }
     case 'Outstanding':    return outstandingReport_();
     case 'PartyCollection':return partyCollection_();
+    case 'POReport':       return rptPOReport();
+    case 'QCStatusReport': return rptQCStatus();
+    case 'GRNReport':      return rptGRN();
+    case 'ReturnReport':   return rptReturn();
+    case 'POStatusReport': return rptPOStatus();
     default: return [];
   }
 }
@@ -1334,6 +1453,7 @@ function getReportRaw(type){
 var REPORT_STD=['OrderNo','CreatedDate','OrderDate','DeliveryDate','CollectionDate','Vendor','SKUCode','SKU','UOM','Ordered','Planned','Dispatched','Delivered','Rejected','Pending','Rate','Value','Status'];
 function getReport(type){
   const rows=getReportRaw(type)||[];
+  if(REPORT_CUSTOM_SHAPE.indexOf(type)>-1) return rows;   // apna format, jaisa hai waisa hi
   const D=rptDates_();
   return rows.map(function(r){
     const no=r.OrderNo||'';
@@ -1562,7 +1682,7 @@ function getPOSheet(poNo){
 }
 function saveGateEntryIn(p){
   const senNo=nextSeqYearly_('SEN','SENNo','SEN-','CreatedAt',4); const now=new Date();
-  append_('SEN',{SENNo:senNo,PONo:p.poNo,SupplierName:p.supplierName,GateDate:now,GateTime:fmtTime_(now),VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',InvoiceNo:p.invoiceNo||'',Status:SEN_STATUS.PENDING_QC,CreatedAt:now});
+  append_('SEN',{SENNo:senNo,PONo:p.poNo,SupplierName:p.supplierName,GateDate:now,GateTime:fmtTime_(now),VehicleNo:p.vehicleNo||'',DriverName:p.driverName||'',DriverMobile:p.driverMobile||'',InvoiceNo:p.invoiceNo||'',Status:SEN_STATUS.PENDING_QC,CreatedAt:now});
   appendMany_('SENItems',(p.items||[]).filter(it=>Number(it.receivedQty)>0).map(it=>({SENNo:senNo,PONo:p.poNo,SKUCode:it.skuCode,SKUName:it.skuName,UOM:uomOf_(it.skuCode),POQty:Number(it.poQty)||0,ReceivedQty:Number(it.receivedQty)||0})));
   recomputePOStatus_(p.poNo);
   try{
@@ -1594,7 +1714,7 @@ function getSENSheet(senNo){
   const sup=readAll_('SupplierMaster').find(s=>String(s.SupplierCode)===String(po.SupplierCode))||{};
   const totalPOQty=readAll_('POItems').filter(i=>i.PONo===sen.PONo).reduce((s,i)=>s+(Number(i.Qty)||0),0);
   return {senNo:senNo,poNo:sen.PONo,supplierName:sen.SupplierName,vehicleNo:sen.VehicleNo,driverName:sen.DriverName||'',invoiceNo:sen.InvoiceNo,status:sen.Status,
-          gateDate:fmtDate_(sen.GateDate),gateTime:sen.GateTime||'',
+          gateDate:fmtDate_(sen.GateDate),gateTime:sen.GateTime||'',driverMobile:sen.DriverMobile||'',
           poDate:fmtDate_(po.PODate),brokerName:po.BrokerName||'',totalPOQty:totalPOQty,poValue:Number(po.TotalValue)||0,
           transportType:po.TransportType||'',numVehicles:po.NumVehicles||0,deductionCondition:po.DeductionCondition||'',packingTerms:po.PackingTerms||'',
           supplierCode:po.SupplierCode||'',supplierGST:sup.GST||'',supplierAddress:sup.Address||'',supplierContact:sup.ContactPerson||'',supplierMobile:sup.Mobile||'',supplierEmail:sup.Email||'',
@@ -1605,7 +1725,7 @@ function getSENSheet(senNo){
 function getSENsForQC(){ return getSENs(SEN_STATUS.PENDING_QC); }
 function saveQC(p){
   const sen=readAll_('SEN').find(s=>s.SENNo===p.senNo); if(!sen) throw new Error('SEN not found');
-  append_('QC',{SENNo:p.senNo,PONo:sen.PONo,QCStatus:p.qcStatus,DeductionAmount:Number(p.deductionAmount)||0,Inspector:p.inspector||currentUser_().name,Remarks:p.remarks||'',QCDate:new Date()});
+  append_('QC',{SENNo:p.senNo,PONo:sen.PONo,QCStatus:p.qcStatus,DeductionAmount:Number(p.deductionAmount)||0,HL:p.hl||'',Moisture:p.moisture||'',Infestation:p.infestation||'',Gluten:p.gluten||'',ForeignMatter:p.foreignMatter||'',KB:p.kb||'',Inspector:p.inspector||currentUser_().name,Remarks:p.remarks||'',QCDate:new Date()});
   const next=(p.qcStatus===QC_STATUS.REJECT)?SEN_STATUS.QC_REJECTED:SEN_STATUS.QC_PASSED;
   updateWhere_('SEN','SENNo',p.senNo,{Status:next});
   recomputePOStatus_(sen.PONo);
