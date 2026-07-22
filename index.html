@@ -675,11 +675,27 @@ const PERM_MODULES=PERM_GROUPS.reduce((a,g)=>a.concat(g.items.map(i=>i[0])),[]);
 const PERM_LABEL={}; PERM_GROUPS.forEach(g=>g.items.forEach(i=>PERM_LABEL[i[0]]=i[1]));
 const PERM_OPTS=[['edit','View/Edit'],['view','View only'],['none','No access']];
 
+/* Material type ke hisaab se supplier list — 'Both' aur bina type wale dono me aate hain */
+function suppliersOfType(mtype){
+  const all=STATE.masters.suppliers||[];
+  return all.filter(function(s){
+    const t=String(s.SupplierType||'').trim();
+    if(!t) return true;
+    return t===mtype || t==='Both';
+  });
+}
 function isAdminRole(r){ return String(r||'').trim().toLowerCase()==='admin'; }
 function perm(id){
   if(STATE.user && isAdminRole(STATE.user.role)) return 'edit';    // Admin = full access
   const v=PERMS&&PERMS[id];
-  return (v==='edit'||v==='view')?v:'none';
+  if(v==='edit'||v==='view') return v;
+  if(v==='none') return 'none';                                     // admin ne jaan-boojh kar band kiya
+  /* Module permission list me hai hi nahi (naya feature jud gaya) —
+     tab tak role ke hisaab se dikhao jab tak admin set na kare. */
+  if(PERMS && Object.prototype.hasOwnProperty.call(PERMS,id)) return 'none';
+  const m=(typeof MODULES!=='undefined')?MODULES.find(x=>x.id===id):null;
+  if(m && m.roles && STATE.user && m.roles.indexOf(STATE.user.role)>-1) return 'edit';
+  return 'none';
 }
 function canView(id){ return perm(id)!=='none'; }
 function canEdit(id){ return perm(id)==='edit'; }
@@ -1625,7 +1641,7 @@ function renderP2PDashboard(){
 let poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}];
 function renderPOCreate(){
   poLines=[{skuCode:'',skuName:'',qty:0,rate:0,gst:18}]; window._poSup=null;
-  const v=STATE.masters.suppliers||[];
+  let v=suppliersOfType('Raw Material');       // default RM; material type badalne par refresh hoga
   view.innerHTML=head('Purchase Order','Raise a PO to a supplier','Purchases')+`
     <div class="two-col"><div>
       <div class="card"><div class="card-p">
@@ -1690,6 +1706,12 @@ function renderPOCreate(){
   document.getElementById('poMatType').addEventListener('change',e=>{
     const isPM=e.target.value==='Packing Material';
     document.getElementById('poQuoteWrap').style.display=isPM?'block':'none';
+    /* supplier dropdown usi type ka */
+    const list=suppliersOfType(isPM?'Packing Material':'Raw Material');
+    window._poSup=null;
+    const si=document.getElementById('poSup'); if(si) si.value='';
+    document.getElementById('poSupCard').innerHTML = list.length?'':'<div class="empty" style="margin-top:8px">Is type ka koi supplier nahi mila — Master Data → Supplier me add karein.</div>';
+    if(window._bindSup) window._bindSup(list);
     if(isPM){
       api('getSelectedQuotes').then(list=>{
         const s=document.getElementById('poQuote');
@@ -1714,10 +1736,15 @@ function renderPOCreate(){
     }
   });
   if(!v.length){ document.getElementById('poSupCard').innerHTML='<div class="empty" style="margin-top:8px">Koi supplier nahi mila — pehle Master Data → Supplier me add karein.</div>'; }
-  makeCombo(document.getElementById('poSup'),v,x=>x.SupplierName,vd=>{ window._poSup=vd;
-    const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
-    if(bk) bk.value=vd.BrokerName||''; if(em) em.value=vd.Email||'';
-    document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(vd.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.SupplierName}</div><div class="sub">${vd.SupplierCode} · ${vd.GST||'—'}${vd.BrokerName?' · Broker: '+vd.BrokerName:''}</div></div></div>`; });
+  function bindSupplierCombo(list){
+    const inp=document.getElementById('poSup'); if(!inp) return;
+    makeCombo(inp,list,x=>x.SupplierName,vd=>{ window._poSup=vd;
+      const bk=document.getElementById('poBroker'), em=document.getElementById('poEmail');
+      if(bk) bk.value=vd.BrokerName||''; if(em) em.value=vd.Email||'';
+      document.getElementById('poSupCard').innerHTML=`<div class="vendcard"><div class="av">${(vd.SupplierName||'?').slice(0,2).toUpperCase()}</div><div><div class="nm">${vd.SupplierName}</div><div class="sub">${vd.SupplierCode} · ${vd.GST||'—'}${vd.BrokerName?' · Broker: '+vd.BrokerName:''}</div></div></div>`; });
+  }
+  bindSupplierCombo(v);
+  window._bindSup=bindSupplierCombo;
   document.getElementById('poAddLi').onclick=()=>{poLines.push({skuCode:'',skuName:'',qty:0,rate:0,gst:18});renderPOLines();};
   document.getElementById('savePO').onclick=doSavePO;
 }
@@ -2282,7 +2309,7 @@ const MASTER_CFG={
   Vendor:{fn:'saveVendor',delFn:'deleteVendor',key:'vendors',idCol:'VendorCode',req:['VendorCode','VendorName'],cols:['VendorCode','VendorName','ContactPerson','Mobile','GST','CreditDays','Address']},
   SKU:{fn:'saveSKU',delFn:'deleteSKU',key:'skus',idCol:'SKUCode',req:['SKUCode','SKUName'],cols:['SKUCode','SKUName','Brand','Category','UOM','GSTPercent','Rate']},
   Transporter:{fn:'saveTransporter',delFn:'deleteTransporter',key:'transporters',idCol:'TransporterName',req:['TransporterName'],cols:['TransporterName','ContactNumber']},
-  Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','BrokerName','Email','ContactPerson','Mobile','GST','CreditDays','Address']},
+  Supplier:{fn:'saveSupplier',delFn:'deleteSupplier',key:'suppliers',idCol:'SupplierCode',req:['SupplierCode','SupplierName'],cols:['SupplierCode','SupplierName','SupplierType','BrokerName','Email','ContactPerson','Mobile','GST','CreditDays','Address']},
   'Raw Material':{fn:'saveRawMaterial',delFn:'deleteRawMaterial',key:'rawmaterials',idCol:'RMCode',req:['RMCode','RMName'],cols:['RMCode','RMName','Brand','Category','UOM','GSTPercent','Rate']},
   'Packing Material':{fn:'savePackingMaterial',delFn:'deletePackingMaterial',key:'packingmaterials',idCol:'PMCode',req:['PMCode','PMName'],cols:['PMCode','PMName','Category','UOM','GSTPercent','Rate','MOQ','ReorderLevel','CurrentStock']}
 };
@@ -2307,6 +2334,12 @@ function masterFields(tab){
   if(tab==='Supplier') return `<div class="grid2">
     <div class="field"><label>Supplier Code <span class="rq">*</span></label><input class="inp" id="mf_SupplierCode" placeholder="SUP-0000"></div>
     <div class="field"><label>Supplier Name <span class="rq">*</span></label><input class="inp" id="mf_SupplierName" placeholder="Company name"></div>
+    <div class="field"><label>Supplier Type <span class="rq">*</span></label>
+      <select class="sel" id="mf_SupplierType">
+        <option value="Raw Material">Raw Material (RM)</option>
+        <option value="Packing Material">Packing Material (PM)</option>
+        <option value="Both">Both (RM + PM)</option>
+      </select></div>
     <div class="field"><label>Broker Name</label><input class="inp" id="mf_BrokerName" placeholder="Broker / agent (optional)"></div>
     <div class="field"><label>Email ID</label><input class="inp" id="mf_Email" type="email" placeholder="supplier@company.com"></div>
     <div class="field"><label>Contact Person</label><input class="inp" id="mf_ContactPerson"></div>
@@ -2345,7 +2378,7 @@ function renderMasters(){
   let body='';
   if(masterTab==='Vendor') body=m.vendors.map(v=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#16A34A,#22C55E)">${(v.VendorName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${v.VendorName}</div><div class="b">${v.VendorCode} · ${v.GST||'—'}</div></div><button class="row-del" data-mdel="${v.VendorCode}" title="Remove vendor">${I.trash}</button></div>`).join('');
   else if(masterTab==='SKU') body=m.skus.map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0D9488,#14B8A6)">${I.box}</div><div class="um"><div class="a">${s.SKUName}</div><div class="b">${s.SKUCode} · ${s.Brand||'—'} · ${inr(s.Rate)} · GST ${s.GSTPercent}%${s.UOM?' · '+s.UOM:''}</div></div><button class="row-del" data-mdel="${s.SKUCode}" title="Remove SKU">${I.trash}</button></div>`).join('');
-  else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName}${s.BrokerName?' <span class="uomtag" style="background:rgba(124,58,237,.12);color:#7C3AED;border-color:rgba(124,58,237,.25)">Broker: '+s.BrokerName+'</span>':''}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.Email?' · '+s.Email:''}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
+  else if(masterTab==='Supplier') body=(m.suppliers||[]).map(s=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">${(s.SupplierName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${s.SupplierName} <span class="uomtag" style="${s.SupplierType==='Packing Material'?'background:rgba(2,132,199,.12);color:#0284C7;border-color:rgba(2,132,199,.25)':(s.SupplierType==='Both'?'background:rgba(124,58,237,.12);color:#7C3AED;border-color:rgba(124,58,237,.25)':'')}">${s.SupplierType==='Packing Material'?'PM':(s.SupplierType==='Both'?'RM+PM':'RM')}</span>${s.BrokerName?' <span class="uomtag" style="background:rgba(124,58,237,.12);color:#7C3AED;border-color:rgba(124,58,237,.25)">Broker: '+s.BrokerName+'</span>':''}</div><div class="b">${s.SupplierCode} · ${s.GST||'—'}${s.Email?' · '+s.Email:''}${s.CreditDays?' · '+s.CreditDays+'d credit':''}</div></div><button class="row-del" data-mdel="${s.SupplierCode}" title="Remove supplier">${I.trash}</button></div>`).join('');
   else if(masterTab==='Packing Material') body=(m.packingmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#0284C7,#38BDF8)">${I.box}</div><div class="um"><div class="a">${r.PMName}</div><div class="b">${r.PMCode} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''} · stock ${(Number(r.CurrentStock)||0).toLocaleString('en-IN')}${r.MOQ?' · MOQ '+r.MOQ:''}</div></div><button class="row-del" data-mdel="${r.PMCode}" title="Remove">${I.trash}</button></div>`).join('');
   else if(masterTab==='Raw Material') body=(m.rawmaterials||[]).map(r=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#EA580C,#FB923C)">${I.box}</div><div class="um"><div class="a">${r.RMName}</div><div class="b">${r.RMCode} · ${r.Brand||'—'} · ${inr(r.Rate)} · GST ${r.GSTPercent}%${r.UOM?' · '+r.UOM:''}</div></div><button class="row-del" data-mdel="${r.RMCode}" title="Remove raw material">${I.trash}</button></div>`).join('');
   else body=m.transporters.map(t=>`<div class="urow"><div class="ua" style="background:linear-gradient(135deg,#D97706,#F59E0B)">${(t.TransporterName||'?').slice(0,2).toUpperCase()}</div><div class="um"><div class="a">${t.TransporterName}</div><div class="b">${t.ContactNumber||'—'}</div></div><button class="row-del" data-mdel="${t.TransporterName}" title="Remove transporter">${I.trash}</button></div>`).join('');
@@ -2400,7 +2433,7 @@ const BULK_COLS={
   VendorMaster:['VendorCode','VendorName','Address','ContactPerson','Mobile','GST','CreditDays'],
   SKUMaster:['SKUCode','SKUName','Brand','Category','UOM','Rate','GSTPercent'],
   TransporterMaster:['TransporterCode','TransporterName','ContactPerson','ContactNumber','Address'],
-  SupplierMaster:['SupplierCode','SupplierName','BrokerName','Email','Address','ContactPerson','Mobile','GST','CreditDays'],
+  SupplierMaster:['SupplierCode','SupplierName','SupplierType','BrokerName','Email','Address','ContactPerson','Mobile','GST','CreditDays'],
   RawMaterialMaster:['RMCode','RMName','Brand','Category','UOM','Rate','GSTPercent'],
   PackingMaterialMaster:['PMCode','PMName','Category','UOM','Rate','GSTPercent','MOQ','ReorderLevel','CurrentStock']
 };
@@ -2761,7 +2794,9 @@ function openQuoteForm(prNo){
   qLines=d.prItems.map(it=>({pmCode:it.PMCode,pmName:it.PMName,uom:it.UOM,qty:it.RequiredQty,rate:0,gstPercent:18}));
   document.getElementById('qFormWrap').style.display='block';
   renderQLines();
-  makeCombo(document.getElementById('qSup'),STATE.masters.suppliers||[],x=>x.SupplierName,s=>{ window._qSup=s; });
+  const pmSups=suppliersOfType('Packing Material');
+  if(!pmSups.length) toast('Packing Material type ka koi supplier nahi hai — Master Data me add karein',true);
+  makeCombo(document.getElementById('qSup'),pmSups,x=>x.SupplierName,s=>{ window._qSup=s; });
   document.getElementById('saveQuote').onclick=()=>doSaveQuote(prNo);
   document.getElementById('qCancel').onclick=()=>{ document.getElementById('qFormWrap').style.display='none'; };
   document.getElementById('qFormWrap').scrollIntoView({behavior:'smooth',block:'center'});
