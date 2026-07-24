@@ -591,6 +591,7 @@ body.dark{--nb:#39493F}
 <div class="toast" id="toast"><svg id="toastIc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span id="toastMsg"></span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="config.js"></script>
 <script src="api-supabase.js"></script>
 <script>
@@ -1989,6 +1990,22 @@ function poPdfHtml(d){
     <div class="foot">This is a system-generated Purchase Order. PO No. ${p.PONo} | Page 1 of 1</div>
   </div></body></html>`;
 }
+/* Actual PDF file banao aur download karao (html2pdf.js se) — email attach karne ke liye */
+function downloadPOPdfFile(d){
+  return new Promise((resolve,reject)=>{
+    if(typeof html2pdf==='undefined'){ reject(new Error('PDF library load nahi hui — internet check karein')); return; }
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;left:-9999px;top:0;width:800px';
+    wrap.innerHTML=poPdfHtml(d).replace(/^[\s\S]*?<body>/,'').replace(/<\/body>[\s\S]*$/,'');
+    document.body.appendChild(wrap);
+    const fname=(d.po.PONo||'PO').replace(/[^a-zA-Z0-9._-]/g,'_')+'.pdf';
+    html2pdf().set({ margin:0, filename:fname, image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true}, jsPDF:{unit:'pt',format:'a4',orientation:'portrait'} })
+      .from(wrap).save()
+      .then(()=>{ wrap.remove(); resolve(); })
+      .catch(err=>{ wrap.remove(); reject(err); });
+  });
+}
 function openPOPdf(d){
   const w=window.open('','_blank');
   if(!w){ toast('Popup blocked — allow popups to open the PDF',true); return; }
@@ -2119,12 +2136,16 @@ function showPOSendModal(d){
       <div class="field" style="margin-top:10px"><label>Supplier Email</label>
         <input class="inp" id="poSendEmail" type="email" value="${email}" placeholder="supplier@company.com"></div>
       <div style="font-size:12px;color:var(--t3);margin-top:6px">
-        1) <b>PDF</b> → print window khulega → "Save as PDF" chuno.<br>
-        2) <b>Email</b> → aapke mail app me draft ban jayega → PDF attach karke bhej dein.
+        <b>Send via Gmail</b> — PDF apne aap download hoga, phir Gmail compose khulega.
+        Browser kisi bhi website ko email me file seedha attach karne nahi deta (security) —
+        isliye PDF ko compose window me <b>ek baar drag-drop</b> karna padega, baaki sab bhara milega.
       </div>
       <div class="btn-row" style="margin-top:14px">
-        <button class="btn btn-primary btn-sm" id="poGenPdf">📄 PDF</button>
-        <button class="btn btn-primary btn-sm" id="poOpenMail">✉ Email</button>
+        <button class="btn btn-primary" id="poSendGmail" style="width:100%">📎 PDF download + Gmail kholo</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-ghost btn-sm" id="poGenPdf">📄 Sirf PDF dekhein</button>
+        <button class="btn btn-ghost btn-sm" id="poOpenMail">✉ Sirf email kholein</button>
       </div>
       <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
         <button class="btn btn-ok btn-sm" id="poMarkSent" style="width:100%">${I.check}Mark as Sent to Supplier</button>
@@ -2135,19 +2156,27 @@ function showPOSendModal(d){
   document.getElementById('poSendX').onclick=close;
   document.getElementById('poSendBg').onclick=e=>{ if(e.target.id==='poSendBg') close(); };
   document.getElementById('poGenPdf').onclick=()=>openPOPdf(d);
-  document.getElementById('poOpenMail').onclick=()=>{
+  function checkEmail(){
     const em=(document.getElementById('poSendEmail').value||'').trim();
-    if(!em){ toast('Email address daaliye',true); return; }
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ toast('Valid email address daaliye',true); return; }
-    d.po.SupplierEmail=em;
+    if(!em){ toast('Email address daaliye',true); return null; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ toast('Valid email address daaliye',true); return null; }
+    d.po.SupplierEmail=em; return em;
+  }
+  function openGmailCompose(em){
     const sub='Purchase Order '+p.PONo+' - '+COMPANY.name;
-    /* anchor click sabse bharosemand hai — window.location.href kayi browsers me block ho jata hai */
-    const url='mailto:'+em+'?subject='+encodeURIComponent(sub)+'&body='+encodeURIComponent(poEmailBody(d));
-    const a=document.createElement('a');
-    a.href=url; a.style.display='none'; document.body.appendChild(a);
-    a.click();
-    setTimeout(()=>{ a.remove(); }, 500);
-    toast('Mail app khul raha hai — na khule to email copy karke bhej dein');
+    /* mail.google.com specifically Gmail kholta hai — mailto: se alag, jo kisi bhi default app ko kholta hai */
+    const url='https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(em)+'&su='+encodeURIComponent(sub)+'&body='+encodeURIComponent(poEmailBody(d));
+    window.open(url,'_blank');
+  }
+  document.getElementById('poOpenMail').onclick=()=>{ const em=checkEmail(); if(em) openGmailCompose(em); };
+  document.getElementById('poSendGmail').onclick=()=>{
+    const em=checkEmail(); if(!em) return;
+    const btn=document.getElementById('poSendGmail'); btn.disabled=true; btn.textContent='PDF taiyar ho raha hai…';
+    downloadPOPdfFile(d).then(()=>{
+      toast('PDF download ho gaya — ab Gmail me drag-drop karke attach kar dein');
+      openGmailCompose(em);
+    }).catch(err=>{ toast('PDF banane me dikkat: '+(err.message||err),true); })
+      .finally(()=>{ btn.disabled=false; btn.textContent='📎 PDF download + Gmail kholo'; });
   };
   document.getElementById('poMarkSent').onclick=()=>{
     api('sendPO',p.PONo).then(()=>{ toast('PO marked as sent'); close(); renderPOList(); })
