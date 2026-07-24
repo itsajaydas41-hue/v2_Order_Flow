@@ -1994,16 +1994,24 @@ function poPdfHtml(d){
 function downloadPOPdfFile(d){
   return new Promise((resolve,reject)=>{
     if(typeof html2pdf==='undefined'){ reject(new Error('PDF library load nahi hui — internet check karein')); return; }
+    const full=poPdfHtml(d);
+    /* BUG FIX: pehle sirf <body> ka content liya jata tha, <style> (poora CSS) chhoot jata tha —
+       isliye PDF blank/unstyled aata tha. Ab style + body dono le rahe hain. */
+    const styleMatch=full.match(/<style>[\s\S]*?<\/style>/);
+    const bodyMatch=full.match(/<body>([\s\S]*?)<\/body>/);
     const wrap=document.createElement('div');
-    wrap.style.cssText='position:fixed;left:-9999px;top:0;width:800px';
-    wrap.innerHTML=poPdfHtml(d).replace(/^[\s\S]*?<body>/,'').replace(/<\/body>[\s\S]*$/,'');
+    wrap.style.cssText='position:fixed;left:-9999px;top:0;width:800px;background:#fff';
+    wrap.innerHTML=(styleMatch?styleMatch[0]:'')+(bodyMatch?bodyMatch[1]:full);
     document.body.appendChild(wrap);
     const fname=(d.po.PONo||'PO').replace(/[^a-zA-Z0-9._-]/g,'_')+'.pdf';
-    html2pdf().set({ margin:0, filename:fname, image:{type:'jpeg',quality:0.98},
-      html2canvas:{scale:2,useCORS:true}, jsPDF:{unit:'pt',format:'a4',orientation:'portrait'} })
-      .from(wrap).save()
-      .then(()=>{ wrap.remove(); resolve(); })
-      .catch(err=>{ wrap.remove(); reject(err); });
+    /* thoda wait taaki style apply ho jaye render se pehle */
+    setTimeout(()=>{
+      html2pdf().set({ margin:0, filename:fname, image:{type:'jpeg',quality:0.98},
+        html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'}, jsPDF:{unit:'pt',format:'a4',orientation:'portrait'} })
+        .from(wrap).save()
+        .then(()=>{ wrap.remove(); resolve(); })
+        .catch(err=>{ wrap.remove(); reject(err); });
+    }, 60);
   });
 }
 function openPOPdf(d){
@@ -2111,13 +2119,23 @@ function showPOLifecycle(poNo){
 function poEmailBody(d){
   const p=d.po;
   const NL='\n';
+  const isPM=(p.MaterialType==='Packing Material');
   const lines=(d.items||[]).map(it=>'  - '+(it.SKUName||'')+' - '+(it.POQty||it.Qty||0)+' '+(it.UOM||'')+' @ Rs.'+(Number(it.Rate)||0).toLocaleString('en-IN')).join(NL);
+  const has=v=>v && String(v).trim() && String(v).trim().toLowerCase()!=='n/a';
+  let extra='';
+  if(isPM){
+    if(has(p.PRNo)) extra+='PR Number: '+p.PRNo+NL;
+    if(has(p.ExpectedDeliveryDate)) extra+='Expected Delivery: '+p.ExpectedDeliveryDate+NL;
+  } else {
+    if(has(p.TransportType)) extra+='Transport: '+p.TransportType+(has(p.NumVehicles)?' | Vehicles/Wagons: '+p.NumVehicles:'')+NL;
+    if(has(p.DeductionCondition)) extra+='Deduction: '+p.DeductionCondition+NL;
+    if(has(p.PackingTerms)) extra+='Packing: '+p.PackingTerms+NL;
+    if(has(p.BrokerName)) extra+='Broker: '+p.BrokerName+NL;
+  }
   return 'Dear '+(p.SupplierName||'')+','+NL+NL+
     'Please find our Purchase Order '+p.PONo+' dated '+p.PODate+'.'+NL+NL+
     'Items:'+NL+lines+NL+NL+
-    'Transport: '+(p.TransportType||'-')+' | Vehicles/Wagons: '+(p.NumVehicles||'-')+NL+
-    'Deduction: '+(p.DeductionCondition||'-')+' | Packing: '+(p.PackingTerms||'-')+NL+
-    (p.BrokerName?('Broker: '+p.BrokerName+NL):'')+NL+
+    (extra?extra+NL:'')+
     'Total Quantity: '+(p.TotalQty||0)+NL+
     'Net Payable: Rs. '+(Number(p.TotalValue)||0).toLocaleString('en-IN')+NL+NL+
     'Kindly confirm receipt and expected delivery date. The detailed PO (PDF) is attached.'+NL+NL+
